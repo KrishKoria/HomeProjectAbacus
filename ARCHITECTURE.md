@@ -424,41 +424,41 @@ flowchart TD
 
 **claims_1000.csv** (Primary table — 1,000 records)
 
-```
-claim_id       VARCHAR — Unique identifier (C0001, C0002...)
-patient_id     VARCHAR — Patient reference (P055, P177...)
-provider_id    VARCHAR — Foreign key to providers table
-diagnosis_code VARCHAR — Foreign key to diagnosis table (D10–D60)
-procedure_code VARCHAR — Foreign key to cost table (PROC1–PROC6), NULLABLE
-billed_amount  FLOAT   — Amount billed in INR, NULLABLE
-date           DATE    — Claim submission date
-```
+| Column | Type | Notes |
+|---|---|---|
+| claim_id | VARCHAR | Unique identifier (C0001, C0002...) |
+| patient_id | VARCHAR | Patient reference (P055, P177...) — PHI |
+| provider_id | VARCHAR | Foreign key to providers table |
+| diagnosis_code | VARCHAR | Foreign key to diagnosis table (D10–D60) — PHI |
+| procedure_code | VARCHAR | Foreign key to cost table (PROC1–PROC6) — NULLABLE |
+| billed_amount | FLOAT | Amount billed in INR — NULLABLE — PHI |
+| date | DATE | Claim submission date |
 
 **providers_1000.csv**
 
-```
-provider_id  VARCHAR — Primary key
-doctor_name  VARCHAR — Provider full name
-specialty    VARCHAR — Medical specialty (Neurology, Cardiology, General...)
-location     VARCHAR — City (Bangalore, Mumbai...), NULLABLE
-```
+| Column | Type | Notes |
+|---|---|---|
+| provider_id | VARCHAR | Primary key |
+| doctor_name | VARCHAR | Provider full name |
+| specialty | VARCHAR | Medical specialty (Neurology, Cardiology, General...) |
+| location | VARCHAR | City (Bangalore, Mumbai...) — NULLABLE |
 
 **diagnosis.csv** (Lookup)
 
-```
-diagnosis_code VARCHAR — D10=Heart, D20=Bone, D30=Fever, D40=Skin, D50=Diabetes, D60=Cold
-category       VARCHAR — Diagnosis category
-severity       VARCHAR — High | Low
-```
+| Column | Type | Notes |
+|---|---|---|
+| diagnosis_code | VARCHAR | D10=Heart, D20=Bone, D30=Fever, D40=Skin, D50=Diabetes, D60=Cold |
+| category | VARCHAR | Diagnosis category |
+| severity | VARCHAR | High \| Low |
 
 **cost.csv** (Lookup)
 
-```
-procedure_code VARCHAR — PROC1–PROC6
-average_cost   INTEGER — Historical average cost in INR
-expected_cost  INTEGER — Expected/benchmark cost in INR
-region         VARCHAR — Regional benchmark (Delhi, Mumbai, Bangalore...)
-```
+| Column | Type | Notes |
+|---|---|---|
+| procedure_code | VARCHAR | PROC1–PROC6 |
+| average_cost | INTEGER | Historical average cost in INR |
+| expected_cost | INTEGER | Expected/benchmark cost in INR |
+| region | VARCHAR | Regional benchmark (Delhi, Mumbai, Bangalore...) |
 
 ### 9.2 Data Quality Issues Identified
 
@@ -494,6 +494,7 @@ Every technology choice is justified against alternatives.
 | ---------------------- | --------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Data Platform          | **Databricks**                                      | Apache Airflow + Spark standalone, AWS Glue | Unified platform for ETL, ML, and serving. Native Delta Lake, Unity Catalog for governance, MLflow built-in. HIPAA controls and BAA support are available when the required compliance configuration is enabled. |
 | Storage Format         | **Delta Lake**                                      | Parquet, Iceberg                            | ACID transactions (no partial writes = data integrity for HIPAA), time-travel for audit, Change Data Feed for incremental processing. Z-ordering/liquid clustering for query performance.              |
+| ETL Orchestration      | **Lakeflow Spark Declarative Pipelines (SDP)**      | Manual Auto Loader notebooks, Apache Spark structured streaming | Databricks' production-grade ETL framework. Pipeline logic in plain `.sql`/`.py` files — not notebooks — enabling version control and CI/CD via Databricks Asset Bundles. Manages checkpointing, schema evolution, and incremental state automatically via `read_files()`. |
 | Catalog & Governance   | **Unity Catalog**                                   | Apache Ranger, AWS Lake Formation           | Centralized governance for all Databricks assets. Fine-grained access control at row/column level. Automatic data lineage tracking. HIPAA audit requirement met natively.                              |
 | ML Framework           | **XGBoost + SHAP**                                  | Random Forest, LightGBM, Neural Networks    | XGBoost fits tabular risk scoring well and is easy to operationalize. SHAP improves analyst trust, debugging, and model governance. In v1 this model is explicitly calibrated on proxy labels, not true payer outcomes. |
 | ML Tracking            | **MLflow**                                          | Weights & Biases, Neptune                   | Built into Databricks. Model versioning, experiment tracking, model registry. Promotes models: Development → Staging → Production.                                                                     |
@@ -564,30 +565,30 @@ graph TB
 flowchart LR
     subgraph SRC["Input Sources"]
         C["claims_1000.csv"]
-        P["providers.csv"]
+        P["providers_1000.csv"]
         D["diagnosis.csv"]
         K["cost.csv"]
         PDF["Policy PDFs"]
     end
 
     subgraph BRONZE["Bronze Layer\nRaw · As-Is · Append-Only\nIngestion TS · Source File\nNo Transform"]
-        B1["raw_claims\n(Delta)"]
-        B2["raw_providers\n(Delta)"]
-        B3["raw_diagnosis\n(Delta)"]
-        B4["raw_cost\n(Delta)"]
-        B5["raw_policies\n(Delta)"]
+        B1["healthcare.bronze.claims\n(Delta)"]
+        B2["healthcare.bronze.providers\n(Delta)"]
+        B3["healthcare.bronze.diagnosis\n(Delta)"]
+        B4["healthcare.bronze.cost\n(Delta)"]
+        B5["healthcare.bronze.policies\n(Delta)"]
     end
 
     subgraph SILVER["Silver Layer\nDeduplicated · Null Flagged\nCodes Validated · Schema Fixed\nType Cast"]
-        S1["clean_claims\n(Delta)"]
-        S2["clean_providers\n(Delta)"]
-        S3["clean_diagnosis\n(Delta)"]
-        S4["clean_cost\n(Delta)"]
-        S5["policy_chunks\n(Delta)"]
+        S1["healthcare.silver.claims\n(Delta)"]
+        S2["healthcare.silver.providers\n(Delta)"]
+        S3["healthcare.silver.diagnosis\n(Delta)"]
+        S4["healthcare.silver.cost\n(Delta)"]
+        S5["healthcare.silver.policy_chunks\n(Delta)"]
     end
 
     subgraph GOLD["Gold Layer\nML Features · Joins Done\nRisk Features · Aggregations\nReady for ML"]
-        G1["claim_features\n(Delta)"]
+        G1["healthcare.gold.claim_features\n(Delta)"]
         G2["Vector Search\nIndex"]
     end
 
@@ -605,42 +606,9 @@ flowchart LR
 **Why Bronze is non-negotiable for HIPAA:**
 The architecture needs the ability to reconstruct the original state of ingested records for audits, disputes, and incident review. Bronze retention plus Delta time-travel supports that requirement.
 
-**Implementation:**
+**Implementation Approach:**
 
-```python
-# Databricks Auto Loader — Incremental Ingestion
-from pyspark.sql.functions import current_timestamp, input_file_name
-
-bronze_claims = (
-    spark.readStream
-    .format("cloudFiles")          # Auto Loader detects new files
-    .option("cloudFiles.format", "csv")
-    .option("cloudFiles.inferColumnTypes", "true")
-    .option("cloudFiles.schemaEvolutionMode", "addNewColumns")  # Handle new fields
-    .load("/mnt/landing/claims/")
-    .withColumn("_ingested_at", current_timestamp())   # Audit timestamp
-    .withColumn("_source_file", input_file_name())     # Data lineage
-    .withColumn("_pipeline_run_id", lit(dbutils.widgets.get("run_id")))
-)
-
-bronze_claims.writeStream
-    .format("delta")
-    .outputMode("append")
-    .option("checkpointLocation", "/mnt/checkpoints/bronze/claims")
-    .option("mergeSchema", "true")    # Tolerates new columns
-    .table("healthcare.bronze.claims")
-```
-
-**Bronze Table Properties:**
-
-```sql
-ALTER TABLE healthcare.bronze.claims
-SET TBLPROPERTIES (
-    'delta.enableChangeDataFeed' = 'true',     -- Track changes for Silver
-    'delta.logRetentionDuration' = 'interval 6 years',  -- HIPAA: 6yr audit
-    'delta.deletedFileRetentionDuration' = 'interval 6 years'
-);
-```
+Bronze tables are defined as Lakeflow Spark Declarative Pipeline (SDP) streaming tables using `read_files()` with `format=csv`, `header=true`, `inferColumnTypes=true`, and `schemaEvolutionMode=addNewColumns`. Checkpoint location and schema state are managed automatically by SDP. TBLPROPERTIES are declared inline at table creation — not applied retroactively — keeping configuration declarative and version-controlled within the Databricks Asset Bundle. The landing zone path is configured in the pipeline configuration, not hardcoded.
 
 ### 12.3 Silver Layer — Cleaned & Validated
 
@@ -657,106 +625,17 @@ SET TBLPROPERTIES (
 | date              | String       | Cast to DateType, reject invalid dates      |
 | provider.location | NULL         | Fill with 'Unknown'                         |
 
-**Silver Notebook (PySpark):**
+**Implementation Approach:**
 
-```python
-from pyspark.sql import functions as F
-from pyspark.sql.window import Window
-from delta.tables import DeltaTable
-
-# Read incremental from Bronze using Change Data Feed
-bronze_new = (
-    spark.readStream
-    .format("delta")
-    .option("readChangeFeed", "true")
-    .option("startingVersion", get_last_processed_version("bronze.claims"))
-    .table("healthcare.bronze.claims")
-)
-
-silver_claims = (
-    bronze_new
-    # Flag missing critical fields
-    .withColumn("is_procedure_missing", F.col("procedure_code").isNull())
-    .withColumn("is_amount_missing", F.col("billed_amount").isNull())
-    # Cast types
-    .withColumn("date", F.to_date("date", "yyyy-MM-dd"))
-    .withColumn("billed_amount", F.col("billed_amount").cast("double"))
-    # Deduplicate within batch
-    .withColumn("row_num", F.row_number().over(
-        Window.partitionBy("claim_id").orderBy(F.desc("_ingested_at"))
-    ))
-    .filter(F.col("row_num") == 1)
-    .drop("row_num")
-    # Silver audit columns
-    .withColumn("_silver_processed_at", F.current_timestamp())
-    .withColumn("_data_quality_flags",
-        F.array(
-            F.when(F.col("is_procedure_missing"), F.lit("MISSING_PROCEDURE")),
-            F.when(F.col("is_amount_missing"), F.lit("MISSING_AMOUNT"))
-        )
-    )
-)
-
-# MERGE into Silver (upsert on claim_id)
-DeltaTable.forName(spark, "healthcare.silver.claims").alias("target").merge(
-    silver_claims.alias("source"),
-    "target.claim_id = source.claim_id"
-).whenMatchedUpdateAll().whenNotMatchedInsertAll().execute()
-```
+Silver reads incrementally from Bronze via Change Data Feed. Transformations apply null flags, type casts, and deduplication (keep latest record per `claim_id`). Audit columns `_silver_processed_at` and `_data_quality_flags` are added. Results are merged (upserted) into `healthcare.silver.claims` on `claim_id`.
 
 ### 12.4 Gold Layer — Business & ML-Ready Features
 
 **Purpose:** Compute all features needed for ML model. One-stop-shop for analytics.
 
-**Gold Feature Engineering:**
+**Implementation Approach:**
 
-```python
-# Join all Silver tables + compute risk features
-gold_features = (
-    silver_claims.alias("c")
-    .join(silver_providers.alias("p"), "provider_id", "left")
-    .join(silver_diagnosis.alias("d"), "diagnosis_code", "left")
-    .join(silver_cost.alias("k"),
-          F.col("c.procedure_code") == F.col("k.procedure_code"), "left")
-    # Feature: billing ratio vs benchmark
-    .withColumn("amount_to_benchmark_ratio",
-        F.when(F.col("k.expected_cost") > 0,
-               F.col("c.billed_amount") / F.col("k.expected_cost"))
-        .otherwise(F.lit(None))
-    )
-    # Feature: severity encoded
-    .withColumn("diagnosis_severity_encoded",
-        F.when(F.col("d.severity") == "High", 1).otherwise(0)
-    )
-    # Feature: specialty-diagnosis mismatch
-    .withColumn("specialty_diagnosis_mismatch",
-        F.when(
-            (F.col("p.specialty") == "Cardiology") & (F.col("d.category") != "Heart"), 1
-        ).when(
-            (F.col("p.specialty") == "Neurology") & (F.col("d.category").isin(["Bone", "Skin"])), 1
-        ).otherwise(0)
-    )
-    # Feature: provider historical denial rate (window function)
-    .withColumn("provider_claim_count_30d",
-        F.count("c.claim_id").over(
-            Window.partitionBy("c.provider_id")
-            .orderBy(F.col("c.date").cast("long"))
-            .rangeBetween(-30*86400, 0)
-        )
-    )
-    # Derived label for training (rule-based ground truth)
-    .withColumn("denial_label",
-        F.when(
-            F.col("is_procedure_missing") | F.col("is_amount_missing") |
-            (F.col("amount_to_benchmark_ratio") > 2.0), 1
-        ).otherwise(0)
-    )
-)
-
-gold_features.write.format("delta").mode("overwrite") \
-    .option("overwriteSchema", "true") \
-    .table("healthcare.gold.claim_features")
-```
+Gold joins all four Silver tables (claims, providers, diagnosis, cost) and computes the eight denial risk features defined in Section 9.3. A rule-based `denial_label` is derived as a proxy training target. The result is written to `healthcare.gold.claim_features` as the ML feature store.
 
 ---
 
@@ -793,48 +672,7 @@ flowchart TD
 
 Explainability is included for analyst trust, debugging, and model governance. In this project, SHAP supports transparent risk scoring and remediation, but it is **not** presented as a standalone HIPAA mandate.
 
-```python
-import shap
-import mlflow
-import xgboost as xgb
-
-class ClaimRiskModel(mlflow.pyfunc.PythonModel):
-    def load_context(self, context):
-        self.model = xgb.XGBClassifier()
-        self.model.load_model(context.artifacts["model_path"])
-        # Load pre-computed SHAP explainer
-        with open(context.artifacts["explainer_path"], "rb") as f:
-            self.explainer = pickle.load(f)
-
-    def predict(self, context, model_input):
-        # Prediction
-        prob = self.model.predict_proba(model_input)[:, 1]
-
-        # SHAP values for explainability
-        shap_values = self.explainer.shap_values(model_input)
-
-        # Map SHAP to feature names
-        feature_names = model_input.columns.tolist()
-        explanations = []
-        for i, sv in enumerate(shap_values):
-            sorted_features = sorted(
-                zip(feature_names, sv),
-                key=lambda x: abs(x[1]),
-                reverse=True
-            )
-            explanations.append({
-                "top_reasons": [
-                    {"feature": f, "impact": float(v), "direction": "increases_risk" if v > 0 else "decreases_risk"}
-                    for f, v in sorted_features[:3]
-                ]
-            })
-
-        return {
-            "risk_score": prob.tolist(),
-            "risk_level": ["HIGH" if p > 0.7 else "MEDIUM" if p > 0.3 else "LOW" for p in prob],
-            "explanations": explanations
-        }
-```
+The model is packaged as an MLflow `pyfunc` model that returns risk score (0–1), risk level (LOW/MEDIUM/HIGH), and top-3 SHAP feature contributions per prediction. The SHAP explainer is pre-computed and bundled with the model artifact at registration time.
 
 ### 13.3 Model Governance
 
@@ -877,65 +715,20 @@ flowchart TD
 
 ### 14.2 PHI Firewall — Critical HIPAA Control
 
-The RAG query NEVER includes PHI. The query is constructed from denial features only:
-
-```python
-def build_rag_query(denial_reasons: list[str], diagnosis_category: str,
-                    procedure_missing: bool) -> str:
-    """Build LLM query with NO PHI — only clinical/coding concepts."""
-    # These are safe: code names, clinical terms, billing concepts
-    # These are NOT included: patient_id, patient_name, dates, provider_name
-    parts = []
-    if procedure_missing:
-        parts.append(f"missing procedure code for {diagnosis_category} diagnosis")
-    for reason in denial_reasons:
-        parts.append(reason)
-    return " ".join(parts)
-    # Result: "missing procedure code for Heart diagnosis overbilling detected"
-    # No PHI included
-```
+The RAG query NEVER includes PHI. The query is constructed from denial features only — diagnosis category, procedure status, and denial reason codes. Patient identifiers, names, dates, and billed amounts are never included. Example query: `"missing procedure code for Heart diagnosis overbilling detected"` — no PHI.
 
 For v1, deployment is single-organization. If the platform is later expanded to multiple organizations, every indexed document must carry `org_id`, `payer_id`, and policy metadata, and the application layer must enforce those filters on every Vector Search query. Vector Search endpoint ACLs do not replace application-level document isolation.
 
-### 14.3 LLM Prompt Engineering
+### 14.3 LLM Prompt Design Principles
 
-```python
-import os
+The LLM is prompted as a healthcare billing compliance assistant that answers strictly from retrieved policy documents. Key constraints enforced in the system prompt:
 
-SYSTEM_PROMPT = """You are a healthcare billing compliance assistant.
-You analyze insurance claim denial risks based on billing rules and CMS guidelines.
-You ONLY provide information based on the retrieved policy documents.
-Do NOT make up policy references. Do NOT include patient information.
-Always cite the specific policy section you are referencing."""
+- Respond only from retrieved policy context — no hallucinated policy references
+- Never include patient information in the response
+- Always cite the specific policy section referenced
+- Low temperature (factual, deterministic responses)
 
-def generate_explanation(denial_reason: str, retrieved_chunks: list[str]) -> str:
-    context = "\n\n".join([f"[Policy {i+1}]: {chunk}" for i, chunk in enumerate(retrieved_chunks)])
-
-    prompt = f"""Based on these insurance policy guidelines:
-
-{context}
-
-Explain why the following claim issue causes a denial risk and provide the specific
-corrective action required:
-
-Issue: {denial_reason}
-
-Provide:
-1. Brief explanation (2-3 sentences)
-2. Specific policy reference
-3. Recommended corrective action"""
-
-    response = databricks_foundation_model.chat_completion(
-        model=os.getenv("DATABRICKS_FM_ENDPOINT"),
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=500,
-        temperature=0.1   # Low temperature for factual responses
-    )
-    return response
-```
+The structured output per explanation request: brief explanation (2–3 sentences), specific policy reference, and recommended corrective action.
 
 ---
 
@@ -1017,19 +810,7 @@ flowchart TD
 
 ### 16.2 Error Response Standard
 
-All errors follow RFC 7807 Problem Details:
-
-```json
-{
-  "type": "https://api.claimguard.internal/errors/validation-error",
-  "title": "Claim Validation Failed",
-  "status": 422,
-  "detail": "billed_amount must be greater than 0",
-  "instance": "/api/v1/claims/validate",
-  "request_id": "req_01J4XYZABC123",
-  "timestamp": "2024-04-16T14:32:00Z"
-}
-```
+All errors follow RFC 7807 Problem Details format, returning a structured JSON body with `type` (error URI), `title`, `status` (HTTP code), `detail` (human-readable reason), `instance` (request path), `request_id`, and `timestamp`.
 
 ---
 
@@ -1067,28 +848,7 @@ graph TD
 
 ### 17.2 Session Management (App-Enforced Auto-Logoff Policy)
 
-Streamlit's identity cookie can outlive an individual browser session, so the application enforces its own inactivity timeout policy for regulated workflows and requires re-authentication for protected pages.
-
-```python
-import streamlit as st
-from datetime import datetime, timedelta
-
-SESSION_TIMEOUT_MINUTES = 15
-
-def check_session_timeout():
-    if "last_activity" not in st.session_state:
-        return False
-    elapsed = datetime.now() - st.session_state.last_activity
-    if elapsed > timedelta(minutes=SESSION_TIMEOUT_MINUTES):
-        st.session_state.clear()
-        st.logout()
-        return True
-    st.session_state.last_activity = datetime.now()
-    return False
-
-# Called on every page interaction
-check_session_timeout()
-```
+Streamlit's identity cookie can outlive an individual browser session, so the application enforces its own inactivity timeout policy for regulated workflows and requires re-authentication for protected pages. The 15-minute timeout is checked on every page interaction — on expiry, the session state is cleared and the user is logged out.
 
 ---
 
@@ -1194,55 +954,11 @@ sequenceDiagram
     F-->>S: 12. Protected resource response
 ```
 
-JWT Payload:
-
-```json
-{
-  "sub": "user_id_uuid",
-  "email": "analyst@hospital.com",
-  "role": "billing_analyst",
-  "org_id": "ORG_001",
-  "scope": "claims:read claims:write",
-  "iat": 1713275520,
-  "exp": 1713276420,
-  "jti": "unique_token_id"
-}
-```
+JWT claims include: `sub` (user ID), `role`, `org_id`, `scope`, `iat`/`exp`, and `jti` (unique token ID for revocation).
 
 ### 20.2 JWT Security Implementation
 
-```python
-from jose import JWTError, jwt
-from datetime import datetime, timedelta
-from cryptography.hazmat.primitives import serialization
-
-# RS256 asymmetric signing (private key signs, public key verifies)
-ALGORITHM = "RS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 15
-REFRESH_TOKEN_EXPIRE_HOURS = 8
-
-def create_access_token(user_id: str, role: str, org_id: str) -> str:
-    payload = {
-        "sub": user_id,
-        "role": role,
-        "org_id": org_id,
-        "iat": datetime.utcnow(),
-        "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
-        "jti": str(uuid.uuid4()),   # Unique ID for revocation
-        "type": "access"
-    }
-    return jwt.encode(payload, PRIVATE_KEY, algorithm=ALGORITHM)
-
-def verify_token(token: str) -> dict:
-    try:
-        payload = jwt.decode(token, PUBLIC_KEY, algorithms=[ALGORITHM])
-        # Check revocation list (token store)
-        if is_token_revoked(payload["jti"]):
-            raise HTTPException(status_code=401, detail="Token has been revoked")
-        return payload
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-```
+Access tokens are signed with RS256 (asymmetric — private key signs, public key verifies). Expiry is 15 minutes for access tokens, 8 hours for refresh tokens. Every token carries a unique `jti` that is checked against a revocation list on each request, enabling immediate invalidation on logout or account suspension.
 
 ---
 
@@ -1266,41 +982,15 @@ PHI, audit events, and production data flows must remain inside the approved com
 
 ### 22.1 Exception Hierarchy
 
-```python
-# Custom exception hierarchy
-class ClaimGuardException(Exception):
-    """Base exception with audit context"""
-    def __init__(self, message: str, claim_id: str = None, user_id: str = None):
-        super().__init__(message)
-        self.claim_id = claim_id
-        self.user_id = user_id
-        # Log to audit system on creation
-        audit_logger.error(f"Exception: {message}", extra={
-            "claim_id": mask_phi(claim_id),
-            "user_id": user_id,
-            "exception_type": self.__class__.__name__
-        })
+All exceptions extend a base `ClaimGuardException` that automatically logs to the audit system on creation with PHI masked. HTTP status codes are declared on the exception class so the API layer maps them consistently.
 
-class DataValidationException(ClaimGuardException):
-    """Raised when input data fails Pydantic validation"""
-    http_status = 422
-
-class MLPredictionException(ClaimGuardException):
-    """Raised when ML endpoint is unavailable or returns invalid response"""
-    http_status = 503
-
-class RAGException(ClaimGuardException):
-    """Raised when RAG retrieval or LLM call fails"""
-    http_status = 503
-
-class DatabricksConnectionException(ClaimGuardException):
-    """Raised when Databricks cluster is unreachable"""
-    http_status = 503
-
-class AuthorizationException(ClaimGuardException):
-    """Raised when user lacks permission for requested resource"""
-    http_status = 403
-```
+| Exception | HTTP Status | Trigger |
+|---|---|---|
+| DataValidationException | 422 | Input fails Pydantic validation |
+| MLPredictionException | 503 | ML endpoint unavailable or invalid response |
+| RAGException | 503 | Vector Search or LLM call fails |
+| DatabricksConnectionException | 503 | Databricks cluster unreachable |
+| AuthorizationException | 403 | User lacks permission for resource |
 
 ### 22.2 Fallback Strategy
 
@@ -1311,24 +1001,9 @@ class AuthorizationException(ClaimGuardException):
 | Database        | PostgreSQL primary          | Graceful degradation (read-only mode)                          | Write operations are queued and retried; read queries continue from replica              |
 | Databricks ETL  | Scheduled job               | Retry with exponential backoff (max 3 retries, 5min intervals) | Alert after 3 failures                                                                   |
 
-### 22.3 Data Pipeline Exception Handling (PySpark)
+### 22.3 Data Pipeline Exception Handling
 
-```python
-from pyspark.sql import functions as F
-
-# Bad records handling — never fail the pipeline on bad data
-silver_claims = (
-    spark.read.format("delta")
-    .option("badRecordsPath", "/mnt/quarantine/silver/claims/")  # Quarantine bad rows
-    .table("healthcare.bronze.claims")
-)
-
-# Quarantine monitoring: alert if > 5% records quarantined
-quarantine_count = spark.read.json("/mnt/quarantine/silver/claims/").count()
-total_count = bronze_claims.count()
-if quarantine_count / total_count > 0.05:
-    send_alert(f"Data quality alert: {quarantine_count} records quarantined ({quarantine_count/total_count:.1%})")
-```
+Bad records are quarantined to a separate location rather than failing the pipeline — the pipeline continues processing valid records. A monitoring check alerts if more than 5% of records in a batch are quarantined, indicating a systemic data quality issue requiring investigation.
 
 ---
 
@@ -1340,38 +1015,21 @@ All application logs are structured JSON with PHI values scrubbed (only IDs logg
 
 ### 23.1 HIPAA Audit Logging Schema
 
-```sql
--- Append-only audit log in PostgreSQL
-CREATE TABLE audit_log (
-    audit_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_time      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    user_id         UUID NOT NULL REFERENCES users(id),
-    user_email      TEXT NOT NULL,  -- NOT masked in audit logs
-    action          TEXT NOT NULL,  -- e.g., 'CLAIM_VALIDATED', 'PHI_ACCESSED'
-    resource_type   TEXT NOT NULL,  -- e.g., 'claim', 'user', 'report'
-    resource_id     TEXT,           -- claim_id (kept for audit, access controlled)
-    ip_address      INET NOT NULL,
-    user_agent      TEXT,
-    request_id      UUID NOT NULL,
-    outcome         TEXT NOT NULL,  -- 'SUCCESS' | 'FAILURE' | 'DENIED'
-    metadata        JSONB           -- Additional context (NO PHI values, only IDs)
-) PARTITION BY RANGE (event_time);  -- Partition by month for retention management
+The `audit_log` table in PostgreSQL is append-only (UPDATE/DELETE/TRUNCATE revoked from all roles). Row-level security restricts reads to audit admins only. The table is partitioned by month for retention management.
 
--- Index for HIPAA audit queries
-CREATE INDEX idx_audit_user_time ON audit_log(user_id, event_time DESC);
-CREATE INDEX idx_audit_resource ON audit_log(resource_type, resource_id);
-
--- Access control: write-only for app logger, read access only for audit admins
-REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM PUBLIC;
-GRANT INSERT ON audit_log TO app_audit_writer;
-GRANT SELECT ON audit_log TO audit_admin_role;
-
--- Row-level security: admin read access only
-ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
-CREATE POLICY audit_log_admin_only ON audit_log
-    FOR SELECT
-    USING (current_setting('app.current_role', true) = 'audit_admin');
-```
+| Column | Type | Notes |
+|---|---|---|
+| audit_id | UUID | Auto-generated primary key |
+| event_time | TIMESTAMPTZ | Indexed with user_id for fast HIPAA queries |
+| user_id | UUID | References users table |
+| user_email | TEXT | Not masked in audit logs |
+| action | TEXT | e.g., `CLAIM_VALIDATED`, `PHI_ACCESSED` |
+| resource_type | TEXT | e.g., `claim`, `user`, `report` |
+| resource_id | TEXT | claim_id — kept for audit, access controlled |
+| ip_address | INET | Required |
+| request_id | UUID | Correlates to API request |
+| outcome | TEXT | `SUCCESS` \| `FAILURE` \| `DENIED` |
+| metadata | JSONB | Additional context — NO PHI values, only IDs |
 
 Long-term retention should be enforced by exporting completed audit partitions to immutable object storage or a SIEM/WORM target according to enterprise retention policy.
 
@@ -1510,13 +1168,14 @@ gantt
 
 **Tasks:**
 
-- Set up Databricks workspace + Unity Catalog (`healthcare` catalog)
-- Create Bronze schema and tables with Delta
-- Implement Auto Loader for claims, providers, diagnosis, cost CSVs
-- Enable Change Data Feed + 6-year log retention (HIPAA)
-- Configure audit columns: `_ingested_at`, `_source_file`
+- Set up Databricks workspace + Unity Catalog (`healthcare` catalog) and `healthcare.bronze` schema
+- Initialise SDP project using `databricks pipelines init` — creates a Databricks Asset Bundle (DAB); pipeline logic in `.sql`/`.py` files, not notebooks
+- Define Bronze streaming table pipelines using `read_files()` for claims, providers, diagnosis, cost CSVs
+- Declare HIPAA TBLPROPERTIES inline in each pipeline definition: Change Data Feed + 6-year log retention (45 CFR § 164.316(b)(2)(i))
+- Configure audit columns: `_ingested_at`, `_source_file` (`_metadata.file_path`), `_pipeline_run_id`
+- Apply Unity Catalog RBAC to all four Bronze tables: ETL service account (INSERT only), billing analyst role (SELECT only)
 
-**Exit Criteria:** All 4 datasets ingested into Bronze Delta tables; 100% row count match with source CSVs; no data loss on re-run (idempotent)
+**Exit Criteria:** All 4 datasets ingested into `healthcare.bronze.*` Delta tables; 100% row count match with source CSVs; SDP pipeline re-run produces no duplicate rows (idempotent); TBLPROPERTIES verified via `DESCRIBE EXTENDED`; RBAC confirmed (analyst SELECT succeeds, INSERT denied)
 
 ---
 
