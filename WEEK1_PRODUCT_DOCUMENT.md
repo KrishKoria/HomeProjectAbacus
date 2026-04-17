@@ -99,10 +99,9 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    CSV["CSV Files\n/mnt/landing/claims/"] -->|"Auto Loader\ncloudFiles format\nIncremental only"| AL["Databricks Auto Loader\nDetects new files only\nNo full re-scan"]
-    AL -->|"Append-only write"| BT["Bronze Delta Table\nhealthcare.bronze.claims\nRaw data preserved as-is"]
-    BT --> CP["Checkpoint\n/mnt/checkpoints/bronze/claims\nIdempotent — no duplicate rows on re-run"]
-    BT --> UC["Unity Catalog\nGovernance · RBAC · Lineage"]
+    CSV["CSV Files\nLanding Zone\n(cloud storage path — decided at implementation)"] -->|"read_files() function\nCSV format · incremental only"| SDP["Lakeflow Spark Declarative Pipeline\nStreaming Table definition\nCheckpoint + schema state managed by SDP"]
+    SDP -->|"Append-only write"| BT["Bronze Delta Table\nhealthcare.bronze.claims\nRaw data preserved as-is"]
+    BT --> UC["Unity Catalog\nGovernance · RBAC · Lineage · Data Lineage"]
 ```
 
 ---
@@ -123,12 +122,13 @@ flowchart TD
 
 ## 5. Technology Stack — Week 1
 
-| Component            | Choice                       | Why This Choice                                                                                                                                         |
-| -------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data Platform        | **Databricks**               | Unified ETL + ML + governance on a single platform. Native Delta Lake. HIPAA controls and BAA support available with required compliance configuration. |
-| Storage Format       | **Delta Lake**               | ACID transactions (no partial writes), time-travel for HIPAA audit, Change Data Feed for incremental reads, schema evolution without pipeline failure.  |
-| Ingestion Pattern    | **Auto Loader (cloudFiles)** | Processes only new files incrementally — no expensive full re-scan on every run. Handles schema evolution automatically.                                |
-| Catalog & Governance | **Unity Catalog**            | Centralized RBAC at row/column level. Automatic data lineage tracking from source to Gold. Meets HIPAA audit requirement natively.                      |
+| Component            | Choice                                         | Why This Choice                                                                                                                                                                                                                                                                                               |
+| -------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Data Platform        | **Databricks**                                 | Unified ETL + ML + governance on a single platform. Native Delta Lake. HIPAA controls and BAA support available with required compliance configuration.                                                                                                                                                       |
+| Storage Format       | **Delta Lake**                                 | ACID transactions (no partial writes), time-travel for HIPAA audit, Change Data Feed for incremental reads, schema evolution without pipeline failure.                                                                                                                                                        |
+| ETL Orchestration    | **Lakeflow Spark Declarative Pipelines (SDP)** | Databricks' modern, production-grade ETL framework. Replaces manual notebook-based Auto Loader. Manages checkpointing, schema evolution, and incremental state automatically. Pipeline code lives in plain `.sql` or `.py` files — not notebooks — enabling version control and CI/CD. Serverless by default. |
+| Ingestion Function   | **`read_files()` via SDP**                     | SDP's `read_files()` function uses Auto Loader under the hood but abstracts away manual configuration of checkpoint paths, schema locations, and streaming setup. CSV is a supported format.                                                                                                                  |
+| Catalog & Governance | **Unity Catalog**                              | Centralized RBAC at row/column level. Automatic data lineage tracking from source to Gold. Required for serverless SDP pipelines. Meets HIPAA audit requirement natively.                                                                                                                                     |
 
 ---
 
@@ -181,13 +181,13 @@ Every Bronze Delta table must have the following properties set at creation — 
 
 ### 7.4 Unity Catalog Access Control
 
-Apply least-privilege access from day one on all four Bronze tables:
+Apply least-privilege access from day one on all four Bronze tables. Exact principal names are decided at workspace setup — the table below shows the required roles, not specific names:
 
-| Principal                 | Permission  | Reason                                      |
-| ------------------------- | ----------- | ------------------------------------------- |
-| ingestion_service_account | INSERT only | Pipeline writes data; cannot read or delete |
-| billing_analyst role      | SELECT only | Analysts can query; cannot modify raw data  |
-| public                    | No access   | Default-deny for all other principals       |
+| Principal                                                      | Permission  | Reason                                      |
+| -------------------------------------------------------------- | ----------- | ------------------------------------------- |
+| ETL ingestion service account (name decided at implementation) | INSERT only | Pipeline writes data; cannot read or delete |
+| Billing analyst role or group (name decided at implementation) | SELECT only | Analysts can query; cannot modify raw data  |
+| public                                                         | No access   | Default-deny for all other principals       |
 
 ### 7.5 Secrets Management
 
@@ -208,41 +208,112 @@ The Bronze layer must not constrain these system-level targets:
 | NFR-COMP-02  | Audit log retention                   | Minimum 6 years, immutable             |
 | NFR-SCALE-01 | Claims throughput                     | 10,000/day initial, scalable to 1M/day |
 
-> Auto Loader's incremental-only design is the Bronze layer's direct contribution to NFR-SCALE-01. A full re-scan ingestion pattern would bottleneck throughput at scale.
+> SDP's `read_files()` incremental-only design is the Bronze layer's direct contribution to NFR-SCALE-01. A full re-scan ingestion pattern would bottleneck throughput at scale.
 
 ---
 
-## 9. Cost Estimation — Development Environment
+## 9. Cost Estimation
 
-| Component          | Service                                 | Estimated Cost/Month |
-| ------------------ | --------------------------------------- | -------------------- |
-| Databricks         | Free Edition or trial                   | ~$0–$25              |
-| Delta Lake storage | Minimal dev data (4 small CSVs)         | ~$0–$5               |
-| Unity Catalog      | Included in all Databricks editions     | $0                   |
-| **Dev Total**      | Synthetic data only, not HIPAA-eligible | **~$0–$30/month**    |
+**Cloud:** AWS (us-east-1 region)
+**Databricks Tier:** Premium — required for HIPAA compliance controls, Unity Catalog enterprise governance, and audit logging. Standard tier does not cover these requirements.
 
-### Cost Optimization for Bronze Layer
+> Prices are AWS and Databricks public list prices researched April 2026. Enterprise agreements typically carry 20–40% negotiated discounts. These are bottom-up planning estimates — not vendor quotes. Verify current rates at databricks.com/pricing and aws.amazon.com/pricing before budgeting.
 
-| Strategy                                     | Saving                                           | Approach                                               |
-| -------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------ |
-| Auto Loader vs full CSV re-scan              | Avoids reprocessing entire dataset on every run  | Use cloudFiles incremental format                      |
-| Job clusters instead of all-purpose clusters | 30–40% compute saving                            | Clusters auto-terminate after the job; no idle billing |
-| Checkpoint location                          | Prevents duplicate processing and wasted compute | Set checkpoint path before first run                   |
+---
+
+### 9.1 Usage Assumptions
+
+All cost estimates below are derived from these assumptions. Changing one assumption scales the cost proportionally.
+
+| Parameter                                  | Staging                                | Production               | Basis                                     |
+| ------------------------------------------ | -------------------------------------- | ------------------------ | ----------------------------------------- |
+| Claims processed per day                   | 1,000                                  | 10,000                   | NFR-SCALE-01: 10,000/day initial target   |
+| Claims processed per month                 | 30,000                                 | 300,000                  | 30 working days                           |
+| HIGH-risk claims receiving LLM explanation | 15,000/month                           | 150,000/month            | Assumed 50% of claims flagged HIGH risk   |
+| Avg. tokens per LLM call                   | 800 input / 500 output                 | 800 input / 500 output   | System prompt + 5 retrieved policy chunks |
+| Concurrent analyst users                   | 2                                      | 10                       | Billing team size                         |
+| Policy document corpus                     | ~500 chunks (768-dim)                  | ~500 chunks              | ~50 insurance policy PDFs                 |
+| Delta Lake storage growth                  | ~15 MB/month                           | ~150 MB/month            | 300K claims/month × ~500 bytes/record     |
+| Audit log rows inserted/month              | 30,000                                 | 300,000                  | 1 audit event per claim + admin activity  |
+| ETL job runtime per day                    | 30 min                                 | 60 min                   | Daily batch processing window             |
+| ML model serving                           | 1 CPU replica, scale-to-zero overnight | 1 CPU replica, always-on | XGBoost inference — no GPU required       |
+
+---
+
+### 9.2 Unit Pricing Reference
+
+| Component                                                                                | Unit Price                                        | Source                                                            |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------- |
+| Databricks Premium — Jobs Compute, AWS                                                   | ~$0.37/DBU + EC2 cost                             | Databricks public pricing, Premium tier                           |
+| Databricks Vector Search Standard, AWS                                                   | $0.07/DBU · 4 DBU/unit/hour = **$0.28/unit/hour** | Confirmed: Databricks Vector Search pricing page (April 2026)     |
+| Foundation Model API — Meta Llama 3.3 70B                                                | $0.90/M input tokens · $2.70/M output tokens      | Databricks Foundation Model API pricing (approximate, April 2026) |
+| Foundation Model API — GTE Large embeddings                                              | $0.10/M tokens                                    | Databricks Foundation Model API pricing                           |
+| AWS EC2 r5.xlarge on-demand (us-east-1) — indicative, confirmed after performance sizing | $0.252/hour                                       | AWS EC2 pricing                                                   |
+| AWS EC2 r5.xlarge spot (us-east-1) — indicative                                          | ~$0.08/hour                                       | AWS Spot pricing (varies)                                         |
+| AWS RDS PostgreSQL db.t3.medium (us-east-1) — indicative for staging                     | ~$0.068/hour                                      | AWS RDS pricing                                                   |
+| AWS RDS PostgreSQL db.r6g.large (us-east-1) — indicative for production                  | ~$0.192/hour                                      | AWS RDS pricing                                                   |
+| AWS RDS gp3 storage                                                                      | $0.115/GB-month                                   | AWS RDS pricing                                                   |
+| AWS S3 Standard (us-east-1, first 50 TB)                                                 | $0.023/GB-month                                   | AWS S3 pricing                                                    |
+
+---
+
+### 9.3 Staging Cost Breakdown
+
+**Basis:** 1,000 claims/day · 30,000 claims/month · 15,000 LLM calls/month
+
+| Component                         | Calculation                                                                                                                        | Est./Month      |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Databricks ETL (Jobs Compute)     | 2-node r5.xlarge cluster · 30 min/day · 30 days = 15 hrs. DBU: 4 DBU/hr × $0.37 × 15 = $22. EC2 spot: 2 × $0.08 × 15 = $2.40       | ~$25            |
+| Databricks Model Serving (CPU)    | 1 small CPU replica · scale-to-zero overnight (12 hrs active/day) · ~2 DBU/hr × $0.07 × 360 hrs                                    | ~$50            |
+| Databricks Vector Search          | 1 Standard unit × 4 DBU/hr × $0.07/DBU × 720 hrs/month = $201.60                                                                   | ~$202           |
+| Foundation Model API — LLM        | 15,000 calls × 800 input tokens = 12M tokens × $0.90/M = $10.80 input. 15,000 × 500 output = 7.5M tokens × $2.70/M = $20.25 output | ~$31            |
+| Foundation Model API — Embeddings | Initial indexing only: 500 chunks × 200 tokens = 100K tokens × $0.10/M = $0.01 (one-time, negligible)                              | ~$0             |
+| AWS RDS PostgreSQL (db.t3.medium) | $0.068/hr × 720 hrs = $49. Storage: 1 GB × $0.115 = $0.12                                                                          | ~$50            |
+| AWS S3 (Delta Lake)               | ~1 GB total staging data × $0.023 + request costs                                                                                  | ~$5             |
+| App Hosting (2× EC2 t3.small)     | FastAPI + Streamlit · 2 × ~$15/month                                                                                               | ~$30            |
+| Networking + monitoring           | VPC, CloudWatch, basic WAF                                                                                                         | ~$50            |
+| **Staging Total**                 |                                                                                                                                    | **~$443/month** |
+
+---
+
+### 9.4 Production Cost Breakdown
+
+**Basis:** 10,000 claims/day · 300,000 claims/month · 150,000 LLM calls/month
+
+| Component                             | Calculation                                                                                                                  | Est./Month               |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| Databricks ETL (Jobs Compute)         | 2-node r5.xlarge cluster · 60 min/day · 30 days = 30 hrs. DBU: 4 DBU/hr × $0.37 × 30 = $44. EC2 spot: 2 × $0.08 × 30 = $4.80 | ~$50                     |
+| Databricks Model Serving (CPU)        | 1 CPU replica always-on · auto-scale under load. ~300K predictions/month at <150ms each                                      | ~$150–$250               |
+| Databricks Vector Search              | 1 Standard unit × 4 DBU/hr × $0.07/DBU × 720 hrs/month = $201.60                                                             | ~$202                    |
+| Foundation Model API — LLM            | 150,000 calls × 800 input = 120M tokens × $0.90/M = $108 input. 150,000 × 500 output = 75M × $2.70/M = $202.50 output        | ~$311                    |
+| AWS RDS PostgreSQL (db.r6g.large)     | $0.192/hr × 720 hrs = $138. Storage: 5 GB × $0.115 = $0.58. Multi-AZ read replica for HA                                     | ~$175                    |
+| AWS S3 (Delta Lake)                   | ~5 GB after 3 months × $0.023 + ~1M PUT requests/month × $0.005/1K = $5                                                      | ~$20                     |
+| App Hosting (EC2 t3.medium × 2 + ALB) | FastAPI + Streamlit · load-balanced                                                                                          | ~$100                    |
+| Networking + compliance               | AWS PrivateLink (~$50) · CloudWatch (~$40) · WAF ($25) · Secrets Manager ($5)                                                | ~$120                    |
+| **Production Total**                  |                                                                                                                              | **~$1,128–$1,228/month** |
+
+> **Largest fixed cost: Vector Search at ~$202/month regardless of claim volume.** For deployments below 500 claims/day, consider pre-computing policy explanations during ETL rather than real-time RAG to eliminate this cost.
+
+---
+
+### 9.5 Cost Optimization Strategies
+
+| Strategy                                | Saving                              | Approach                                                                    |
+| --------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
+| Spot instances for ETL clusters         | ~70% on EC2 compute                 | ETL jobs tolerate interruption; Auto Loader checkpoint ensures safe restart |
+| Job clusters over all-purpose clusters  | 30–40% DBU saving                   | Clusters auto-terminate after job — no idle billing                         |
+| Scale-to-zero on staging model endpoint | Eliminates ~12 hrs/day serving cost | Enable in staging; keep always-on in production only                        |
+| LLM explanation caching                 | Avoids repeated FM calls            | Cache output by denial-reason hash — same rule flag = same explanation      |
+| Use Llama 3.3 70B over Llama 3.1 405B   | ~5× cheaper per token               | 70B is sufficient for structured billing explanations                       |
+| Triggered Vector Search sync only       | Removes continuous indexing cost    | Rebuild index only when policy corpus is updated                            |
 
 ---
 
 ## 10. Process — What You Will Do
 
-### Step 1: Create Project Structure
+### Step 1: Initialise the SDP Pipeline Project
 
-Organize notebooks into four folders:
-
-| Folder           | Purpose                                        |
-| ---------------- | ---------------------------------------------- |
-| 01_ingestion     | Auto Loader notebooks — one per dataset        |
-| 02_bronze_tables | Table creation and TBLPROPERTIES configuration |
-| 03_profiling     | Data quality analysis notebooks                |
-| 04_docs          | Architecture draft and problem document        |
+The ETL pipeline is built using **Lakeflow Spark Declarative Pipelines (SDP)**, not ad-hoc notebooks. Initialise the project using the Databricks CLI (`databricks pipelines init`), which creates a **Databricks Asset Bundle (DAB)** — a version-controlled, deployable project. Pipeline logic lives in plain `.sql` or `.py` files, not notebooks. One pipeline file is created per dataset (claims, providers, diagnosis, cost). Profiling remains as separate exploratory notebooks.
 
 ### Step 2: Create Unity Catalog Namespace
 
@@ -251,39 +322,34 @@ Create the catalog and schema in Databricks Unity Catalog before any tables are 
 - Catalog name: `healthcare`
 - Schema name: `healthcare.bronze`
 
-### Step 3: Load Raw Data with Auto Loader
+### Step 3: Define Bronze Ingestion Pipelines
 
-Use **Auto Loader** (cloudFiles incremental format) — not a batch CSV read. The batch approach re-processes the entire file on every run, which is not production-grade.
+Each dataset gets its own SDP streaming table definition using the `read_files()` function, which uses Auto Loader under the hood. Auto Loader officially supports CSV (`format => 'csv'` is an explicitly listed allowed value alongside json, parquet, avro, orc, text, and binaryFile — confirmed from Databricks Auto Loader options docs).
 
-Auto Loader officially supports CSV via `cloudFiles.format = "csv"` (confirmed: Databricks Auto Loader options docs list csv as an allowed value alongside json, parquet, avro, orc, text, binaryFile, and xml).
+SDP manages checkpoint state and schema location automatically — these do not need to be configured manually. The required `read_files()` parameters are:
 
-Auto Loader configuration requirements:
+| Parameter           | Value         | Reason                                                                                                                              |
+| ------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| format              | csv           | Declares the source file type — required, no default                                                                                |
+| header              | true          | **CSV-specific — defaults to false.** All four datasets have header rows; without this, the header row is ingested as a data record |
+| inferColumnTypes    | true          | Infers exact column types (integer, date, float) — use this SDP parameter, not the generic `inferSchema` option                     |
+| schemaEvolutionMode | addNewColumns | Tolerates new columns in source files without failing the pipeline                                                                  |
 
-| Configuration                  | Value                           | Reason                                                                                                                                                                                 |
-| ------------------------------ | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Format                         | cloudFiles                      | Enables incremental file detection — only new files processed per run                                                                                                                  |
-| cloudFiles.format              | csv                             | Declares the source file type; required, no default                                                                                                                                    |
-| header                         | true                            | **CSV-specific — defaults to false.** All four source datasets have header rows; without this, the header row is ingested as a data record                                             |
-| cloudFiles.inferColumnTypes    | true                            | Infers exact column types (integer, date, float) rather than defaulting everything to string. Use this option for Auto Loader — not the generic `inferSchema` option                   |
-| cloudFiles.schemaLocation      | /mnt/schema/bronze/{table}      | **Required for schema inference.** Auto Loader persists the inferred schema here so it does not re-infer on every run. Without this, schema inference runs from scratch each execution |
-| cloudFiles.schemaEvolutionMode | addNewColumns                   | Tolerates new fields in source files without failing the pipeline                                                                                                                      |
-| Output mode                    | append                          | Bronze is append-only — never overwrite raw data                                                                                                                                       |
-| Checkpoint location            | /mnt/checkpoints/bronze/{table} | Tracks which files have been processed; ensures idempotency across re-runs                                                                                                             |
-| mergeSchema                    | true                            | Accepts schema additions to the Delta table without error                                                                                                                              |
+Audit columns to add to every Bronze streaming table:
 
-Audit columns to add to every Bronze table at ingestion time:
+| Column             | Value                                                     | Purpose                                                                                                                                  |
+| ------------------ | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `_ingested_at`     | `current_timestamp()`                                     | HIPAA: records exactly when data entered the system                                                                                      |
+| `_source_file`     | `_metadata.file_path`                                     | Data lineage: which file the record came from. Use `_metadata.file_path` — `input_file_name()` is a legacy function not supported in SDP |
+| `_pipeline_run_id` | Injected at runtime (mechanism decided at implementation) | Links each row to the pipeline execution that created it                                                                                 |
 
-| Column            | Value             | Purpose                                                  |
-| ----------------- | ----------------- | -------------------------------------------------------- |
-| \_ingested_at     | Current timestamp | HIPAA: records exactly when data entered the system      |
-| \_source_file     | Input file name   | Data lineage: which file the record came from            |
-| \_pipeline_run_id | Runtime parameter | Links each row to the pipeline execution that created it |
+Create one pipeline file per dataset: claims, providers, diagnosis, cost.
 
-Repeat the ingestion notebook for all four datasets: claims, providers, diagnosis, cost.
+### Step 4: Verify Bronze Table Properties
 
-### Step 4: Set Bronze Table Properties
+In SDP, TBLPROPERTIES are declared **inside** the `CREATE OR REFRESH STREAMING TABLE` definition in the pipeline file itself — they are not applied as a separate `ALTER TABLE` step after creation. This keeps configuration declarative and version-controlled within the DAB, and aligns with Section 7.3's requirement that properties be set at creation, not retroactively.
 
-Immediately after table creation, configure the HIPAA and CDF properties defined in Section 7.3 on all four Bronze tables.
+After the pipeline runs for the first time, verify the HIPAA and CDF properties from Section 7.3 are correctly applied by running `DESCRIBE EXTENDED` on each of the four Bronze tables.
 
 ### Step 5: Apply Access Control
 
@@ -359,70 +425,40 @@ The three architecture diagrams in Section 3 serve as the architecture deliverab
 
 ## 12. Testing & Exit Criteria
 
-| Check                    | How to Verify                                        | Pass Criteria                                             |
-| ------------------------ | ---------------------------------------------------- | --------------------------------------------------------- |
-| Row count match          | Compare table row count vs source CSV line count     | 100% match, no data loss                                  |
-| Idempotent re-run        | Trigger Auto Loader twice on the same file           | Checkpoint prevents duplicate rows                        |
-| TBLPROPERTIES set        | Run DESCRIBE EXTENDED on each Bronze table           | CDF enabled and 6-year retention visible on all 4 tables  |
-| Audit columns present    | Query each table and inspect first row               | \_ingested_at and \_source_file are populated on all rows |
-| RBAC applied             | Attempt a SELECT and INSERT with analyst credentials | SELECT succeeds; INSERT is denied                         |
-| No hardcoded credentials | Manual review of all notebooks                       | Zero plaintext credentials in any cell                    |
-| Profiling complete       | Review profiling notebook outputs                    | All 6 profiling questions answered for all 4 tables       |
+| Check                    | How to Verify                                           | Pass Criteria                                                                          |
+| ------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Row count match          | Compare table row count vs source CSV line count        | 100% match, no data loss                                                               |
+| Idempotent re-run        | Re-run the SDP pipeline a second time on the same files | No duplicate rows — SDP checkpoint state prevents re-processing already-ingested files |
+| TBLPROPERTIES set        | Run DESCRIBE EXTENDED on each Bronze table              | CDF enabled and 6-year retention visible on all 4 tables                               |
+| Audit columns present    | Query each table and inspect first row                  | \_ingested_at and \_source_file are populated on all rows                              |
+| RBAC applied             | Attempt a SELECT and INSERT with analyst credentials    | SELECT succeeds; INSERT is denied                                                      |
+| No hardcoded credentials | Manual review of all notebooks                          | Zero plaintext credentials in any cell                                                 |
+| Profiling complete       | Review profiling notebook outputs                       | All 6 profiling questions answered for all 4 tables                                    |
 
 ---
 
 ## 13. Common Mistakes
 
-| Mistake                                                        | Why It Is Wrong                                                                                                            |
-| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Using batch CSV read instead of Auto Loader                    | Batch read re-processes the entire dataset on every run — not incremental, not production-grade                            |
-| Not setting header = true for CSV                              | Auto Loader defaults header to false — the header row is ingested as a data record, corrupting row counts and column names |
-| Omitting cloudFiles.schemaLocation                             | Without a schema location, Auto Loader re-infers the schema from scratch on every run — slow and unstable in production    |
-| Using pandas syntax in Databricks notebooks                    | Databricks uses PySpark DataFrames — pandas methods will throw AttributeError at runtime                                   |
-| Using a flat table name instead of the Unity Catalog namespace | Correct format is healthcare.bronze.claims (catalog.schema.table) — flat names bypass governance                           |
-| Not setting TBLPROPERTIES after table creation                 | Change Data Feed and 6-year retention must be configured explicitly — they are not defaults                                |
-| Cleaning or transforming data in Bronze                        | Bronze is raw and append-only — any transformation belongs in Silver                                                       |
-| Hardcoding storage credentials in notebooks                    | Credentials must come from Databricks Secrets — hardcoding is a HIPAA security violation                                   |
-| Skipping profiling                                             | Without profiling, data quality issues are invisible until they break downstream pipelines                                 |
+| Mistake                                                        | Why It Is Wrong                                                                                                                                                                                                              |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Writing ETL in ad-hoc notebooks instead of SDP pipeline files  | SDP manages checkpointing, schema evolution, and incremental state automatically. Notebooks require all of this to be wired manually, cannot be deployed via DAB, and are not treated as first-class version-controlled code |
+| Using batch CSV read instead of SDP / read_files()             | Batch read re-processes the entire dataset on every run — not incremental, not production-grade                                                                                                                              |
+| Not setting header = true for CSV                              | Auto Loader (used by read_files() under the hood) defaults header to false — the header row is ingested as a data record, corrupting row counts and column names                                                             |
+| Using pandas syntax in Databricks notebooks                    | Databricks uses PySpark DataFrames — pandas methods will throw AttributeError at runtime                                                                                                                                     |
+| Using a flat table name instead of the Unity Catalog namespace | Correct format is healthcare.bronze.claims (catalog.schema.table) — flat names bypass governance                                                                                                                             |
+| Not setting TBLPROPERTIES after table creation                 | Change Data Feed and 6-year retention must be configured explicitly — they are not defaults                                                                                                                                  |
+| Cleaning or transforming data in Bronze                        | Bronze is raw and append-only — any transformation belongs in Silver                                                                                                                                                         |
+| Hardcoding storage credentials in notebooks                    | Credentials must come from Databricks Secrets — hardcoding is a HIPAA security violation                                                                                                                                     |
+| Skipping profiling                                             | Without profiling, data quality issues are invisible until they break downstream pipelines                                                                                                                                   |
 
 ---
 
 ## 14. Risk Register
 
-| Risk                                      | Likelihood | Impact | Mitigation                                                                     |
-| ----------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------ |
-| Databricks trial expires mid-week         | Medium     | High   | Use Databricks Community Edition as fallback; start trial on Monday            |
-| CSV schema changes (new column added)     | Low        | Medium | cloudFiles.schemaEvolutionMode set to addNewColumns handles this automatically |
-| Storage mount credentials expire          | Low        | High   | Store in Databricks Secrets with rotation policy                               |
-| Auto Loader checkpoint corrupted          | Low        | Medium | Delete checkpoint folder and re-run — source CSVs are the source of truth      |
-| Row count mismatch between CSV and Bronze | Medium     | High   | Compare table count vs source file line count; investigate before proceeding   |
-
----
-
-## 15. Week 1 Success Criteria
-
-- [ ] All 4 datasets loaded into `healthcare.bronze.*` Delta tables
-- [ ] Row counts match source CSV files exactly
-- [ ] Auto Loader used for ingestion — incremental pattern confirmed, not batch read
-- [ ] All Bronze tables have `_ingested_at`, `_source_file`, `_pipeline_run_id` columns
-- [ ] Change Data Feed enabled on all 4 Bronze tables
-- [ ] 6-year log retention set on all 4 Bronze tables
-- [ ] Unity Catalog RBAC applied — analyst can SELECT, cannot INSERT
-- [ ] No hardcoded credentials in any notebook
-- [ ] Profiling report produced — all data quality issues documented
-- [ ] Re-run is idempotent — no duplicate rows after running twice
-
----
-
-## Summary
-
-**Week 1 = Understand + Load + Store + Govern**
-
-1. Understand the problem and primary user
-2. Collect synthetic datasets (claims, providers, diagnosis, cost)
-3. Create Unity Catalog namespace — `healthcare.bronze`
-4. Ingest with Auto Loader — incremental, checkpoint-backed, append-only
-5. Set HIPAA table properties — Change Data Feed and 6-year retention
-6. Apply RBAC — least privilege from day one
-7. Profile data — find nulls, duplicates, and anomalies using PySpark
-8. Secure credentials — Databricks Secrets, nothing hardcoded
+| Risk                                      | Likelihood | Impact | Mitigation                                                                                                                                                                                |
+| ----------------------------------------- | ---------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Databricks trial expires mid-week         | Medium     | High   | Use Databricks Community Edition as fallback; start trial on Monday                                                                                                                       |
+| CSV schema changes (new column added)     | Low        | Medium | cloudFiles.schemaEvolutionMode set to addNewColumns handles this automatically                                                                                                            |
+| Storage credentials expire                | Low        | High   | Store in Databricks Secrets with rotation policy — applies regardless of whether storage is accessed via DBFS mount, Unity Catalog external location, or direct cloud storage             |
+| SDP pipeline state corrupted              | Low        | Medium | SDP manages checkpoint state internally. Recovery is a full pipeline refresh — re-run the pipeline; source CSVs are the source of truth. No manual checkpoint folder management required. |
+| Row count mismatch between CSV and Bronze | Medium     | High   | Compare table count vs source file line count; investigate before proceeding                                                                                                              |
