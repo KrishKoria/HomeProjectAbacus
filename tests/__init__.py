@@ -1,1 +1,0 @@
-"""Bronze pipeline contract tests."""
