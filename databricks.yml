@@ -1,0 +1,22 @@
+bundle:
+  name: homeprojectabacus-bronze
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog for Bronze tables and the governed landing volume.
+    default: healthcare
+  schema:
+    description: Unity Catalog schema for Bronze tables and the governed landing volume.
+    default: bronze
+  volume:
+    description: Unity Catalog volume that holds the landed Bronze source files.
+    default: raw_landing
+  repo_root:
+    description: Workspace repo root used by pipeline code to import shared src modules.
+    default: .
+  pipeline_label:
+    description: Stable Bronze pipeline label recorded in the _pipeline_run_id audit column.
+    default: bronze-m001
