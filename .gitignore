@@ -3,7 +3,8 @@
 .firecrawl/
 .remember/
 .serena
-
+*.cmd
+*.ps1
 # ── GSD baseline (auto-generated) ──
 .gsd
 .gsd-id
