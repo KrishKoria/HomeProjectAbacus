@@ -283,14 +283,14 @@ flowchart TD
 
 ### 6.2 ML Prediction (FR-ML)
 
-| ID       | Requirement                                                                     |
-| -------- | ------------------------------------------------------------------------------- |
-| FR-ML-01 | System SHALL produce a claim denial risk score between 0 and 1                  |
-| FR-ML-02 | System SHALL classify risk as LOW (<0.3), MEDIUM (0.3–0.7), or HIGH (>0.7)      |
-| FR-ML-03 | System SHALL provide top-3 SHAP feature contributions for every prediction      |
-| FR-ML-04 | During v1, system SHALL achieve >80% recall on proxy-labeled HIGH-risk claims   |
-| FR-ML-05 | System SHALL version all models in MLflow registry                              |
-| FR-ML-06 | System SHALL log model predictions with claim_id for audit purposes             |
+| ID       | Requirement                                                                   |
+| -------- | ----------------------------------------------------------------------------- |
+| FR-ML-01 | System SHALL produce a claim denial risk score between 0 and 1                |
+| FR-ML-02 | System SHALL classify risk as LOW (<0.3), MEDIUM (0.3–0.7), or HIGH (>0.7)    |
+| FR-ML-03 | System SHALL provide top-3 SHAP feature contributions for every prediction    |
+| FR-ML-04 | During v1, system SHALL achieve >80% recall on proxy-labeled HIGH-risk claims |
+| FR-ML-05 | System SHALL version all models in MLflow registry                            |
+| FR-ML-06 | System SHALL log model predictions with claim_id for audit purposes           |
 
 ### 6.3 RAG & Explanation (FR-RAG)
 
@@ -300,7 +300,7 @@ flowchart TD
 | FR-RAG-02 | System SHALL cite the specific policy document, section, and page number             |
 | FR-RAG-03 | System SHALL generate human-readable explanations using Databricks Foundation Models |
 | FR-RAG-04 | System SHALL NOT include PHI in prompts sent to the LLM                              |
-| FR-RAG-05 | System SHALL return first-pass explanations and citations within 5 seconds            |
+| FR-RAG-05 | System SHALL return first-pass explanations and citations within 5 seconds           |
 
 ### 6.4 Agent & Remediation (FR-AGENT)
 
@@ -316,7 +316,7 @@ flowchart TD
 | ID        | Requirement                                                                              |
 | --------- | ---------------------------------------------------------------------------------------- |
 | FR-API-01 | System SHALL expose a RESTful API with OpenAPI documentation                             |
-| FR-API-02 | System SHALL authenticate all requests via OIDC/OAuth-issued JWT tokens                 |
+| FR-API-02 | System SHALL authenticate all requests via OIDC/OAuth-issued JWT tokens                  |
 | FR-API-03 | System SHALL enforce rate limiting (100 req/min per user, 1000 req/min per organization) |
 | FR-API-04 | System SHALL validate all input with Pydantic models                                     |
 | FR-API-05 | System SHALL return standardized error responses                                         |
@@ -338,14 +338,14 @@ flowchart TD
 
 ### 7.1 Performance
 
-| ID          | Requirement                           | Target                    |
-| ----------- | ------------------------------------- | ------------------------- |
-| NFR-PERF-01 | Single-claim validation latency, risk path only (p95) | < 2 seconds   |
-| NFR-PERF-02 | Batch claim validation (100 claims)   | < 30 seconds              |
-| NFR-PERF-03 | Dashboard page load time              | < 1.5 seconds             |
-| NFR-PERF-04 | API throughput                        | > 500 concurrent requests |
-| NFR-PERF-05 | ML model inference (single claim, p95)     | < 150ms             |
-| NFR-PERF-06 | RAG retrieval plus first explanation draft (p95) | < 5 seconds      |
+| ID          | Requirement                                           | Target                    |
+| ----------- | ----------------------------------------------------- | ------------------------- |
+| NFR-PERF-01 | Single-claim validation latency, risk path only (p95) | < 2 seconds               |
+| NFR-PERF-02 | Batch claim validation (100 claims)                   | < 30 seconds              |
+| NFR-PERF-03 | Dashboard page load time                              | < 1.5 seconds             |
+| NFR-PERF-04 | API throughput                                        | > 500 concurrent requests |
+| NFR-PERF-05 | ML model inference (single claim, p95)                | < 150ms                   |
+| NFR-PERF-06 | RAG retrieval plus first explanation draft (p95)      | < 5 seconds               |
 
 ### 7.2 Security
 
@@ -362,14 +362,14 @@ flowchart TD
 
 ### 7.3 Compliance
 
-| ID          | Requirement                                                                     |
-| ----------- | ------------------------------------------------------------------------------- |
-| NFR-COMP-01 | System SHALL comply with HIPAA Technical Safeguards (45 CFR § 164.312)          |
+| ID          | Requirement                                                                                           |
+| ----------- | ----------------------------------------------------------------------------------------------------- |
+| NFR-COMP-01 | System SHALL comply with HIPAA Technical Safeguards (45 CFR § 164.312)                                |
 | NFR-COMP-02 | System SHALL maintain append-only audit events with immutable long-term retention for minimum 6 years |
-| NFR-COMP-03 | System SHALL implement automatic session timeout after 15 minutes of inactivity |
-| NFR-COMP-04 | System SHALL provide emergency access procedures                                |
-| NFR-COMP-05 | System SHALL NOT transmit PHI to external APIs or services                      |
-| NFR-COMP-06 | Business Associate Agreement (BAA) SHALL be signed with Databricks              |
+| NFR-COMP-03 | System SHALL implement automatic session timeout after 15 minutes of inactivity                       |
+| NFR-COMP-04 | System SHALL provide emergency access procedures                                                      |
+| NFR-COMP-05 | System SHALL NOT transmit PHI to external APIs or services                                            |
+| NFR-COMP-06 | Business Associate Agreement (BAA) SHALL be signed with Databricks                                    |
 
 ### 7.4 Reliability
 
@@ -396,25 +396,25 @@ flowchart TD
 
 ### 8.1 Assumptions
 
-| ID   | Assumption                                                                      | Rationale                                                                          |
-| ---- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| A-01 | Dataset in `datasets/` folder is representative of production data schema       | Schema shows real-world claim structure (ICD codes, CPT codes, providers, amounts) |
-| A-02 | Cloud provider will be AWS, GCP, or Azure (Databricks-supported)                | All architecture decisions are cloud-agnostic within this boundary                 |
-| A-03 | Databricks BAA can be signed before production go-live                          | Required for HIPAA compliance                                                      |
-| A-04 | Policy documents for RAG are non-PHI (insurance policy text)                    | Safe to use as LLM context                                                         |
+| ID   | Assumption                                                                                  | Rationale                                                                          |
+| ---- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| A-01 | Dataset in `datasets/` folder is representative of production data schema                   | Schema shows real-world claim structure (ICD codes, CPT codes, providers, amounts) |
+| A-02 | Cloud provider will be AWS, GCP, or Azure (Databricks-supported)                            | All architecture decisions are cloud-agnostic within this boundary                 |
+| A-03 | Databricks BAA can be signed before production go-live                                      | Required for HIPAA compliance                                                      |
+| A-04 | Policy documents for RAG are non-PHI (insurance policy text)                                | Safe to use as LLM context                                                         |
 | A-05 | Users will authenticate via an OIDC/OAuth 2.0-compatible identity provider with MFA support | Standards-based auth flow without vendor lock-in                                   |
-| A-06 | The 8-week timeline is for development; production hardening occurs post-Week 8 | Reasonable for an end-to-end ML system                                             |
-| A-07 | The claims dataset uses synthetic/anonymized data for development               | No real PHI in development environment                                             |
+| A-06 | The 8-week timeline is for development; production hardening occurs post-Week 8             | Reasonable for an end-to-end ML system                                             |
+| A-07 | The claims dataset uses synthetic/anonymized data for development                           | No real PHI in development environment                                             |
 
 ### 8.2 Constraints
 
-| ID   | Constraint                                 | Impact                                                                                                          |
-| ---- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| C-01 | No PHI to external LLM APIs                | Use Databricks Foundation Models only                                                                           |
-| C-02 | 8-week development timeline                | Feature scope limited to core validation + ML + RAG + Agent                                                     |
+| ID   | Constraint                                 | Impact                                                                                                                           |
+| ---- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| C-01 | No PHI to external LLM APIs                | Use Databricks Foundation Models only                                                                                            |
+| C-02 | 8-week development timeline                | Feature scope limited to core validation + ML + RAG + Agent                                                                      |
 | C-03 | HIPAA-eligible managed cloud deployment    | Managed services are allowed only with required compliance controls, BAA coverage, encryption, logging, and private connectivity |
-| C-04 | Cloud provider not finalized               | Architecture designed so deployment target is a pluggable decision; no cloud-specific code in application layer |
-| C-05 | Dataset schema is fixed (limited features) | ML model features derived from 4 tables only                                                                    |
+| C-04 | Cloud provider not finalized               | Architecture designed so deployment target is a pluggable decision; no cloud-specific code in application layer                  |
+| C-05 | Dataset schema is fixed (limited features) | ML model features derived from 4 tables only                                                                                     |
 
 ---
 
@@ -424,49 +424,49 @@ flowchart TD
 
 **claims_1000.csv** (Primary table — 1,000 records)
 
-| Column | Type | Notes |
-|---|---|---|
-| claim_id | VARCHAR | Unique identifier (C0001, C0002...) |
-| patient_id | VARCHAR | Patient reference (P055, P177...) — PHI |
-| provider_id | VARCHAR | Foreign key to providers table |
-| diagnosis_code | VARCHAR | Foreign key to diagnosis table (D10–D60) — PHI |
+| Column         | Type    | Notes                                              |
+| -------------- | ------- | -------------------------------------------------- |
+| claim_id       | VARCHAR | Unique identifier (C0001, C0002...)                |
+| patient_id     | VARCHAR | Patient reference (P055, P177...) — PHI            |
+| provider_id    | VARCHAR | Foreign key to providers table                     |
+| diagnosis_code | VARCHAR | Foreign key to diagnosis table (D10–D60) — PHI     |
 | procedure_code | VARCHAR | Foreign key to cost table (PROC1–PROC6) — NULLABLE |
-| billed_amount | FLOAT | Amount billed in INR — NULLABLE — PHI |
-| date | DATE | Claim submission date |
+| billed_amount  | FLOAT   | Amount billed in INR — NULLABLE — PHI              |
+| date           | DATE    | Claim submission date                              |
 
 **providers_1000.csv**
 
-| Column | Type | Notes |
-|---|---|---|
-| provider_id | VARCHAR | Primary key |
-| doctor_name | VARCHAR | Provider full name |
-| specialty | VARCHAR | Medical specialty (Neurology, Cardiology, General...) |
-| location | VARCHAR | City (Bangalore, Mumbai...) — NULLABLE |
+| Column      | Type    | Notes                                                 |
+| ----------- | ------- | ----------------------------------------------------- |
+| provider_id | VARCHAR | Primary key                                           |
+| doctor_name | VARCHAR | Provider full name                                    |
+| specialty   | VARCHAR | Medical specialty (Neurology, Cardiology, General...) |
+| location    | VARCHAR | City (Bangalore, Mumbai...) — NULLABLE                |
 
 **diagnosis.csv** (Lookup)
 
-| Column | Type | Notes |
-|---|---|---|
+| Column         | Type    | Notes                                                            |
+| -------------- | ------- | ---------------------------------------------------------------- |
 | diagnosis_code | VARCHAR | D10=Heart, D20=Bone, D30=Fever, D40=Skin, D50=Diabetes, D60=Cold |
-| category | VARCHAR | Diagnosis category |
-| severity | VARCHAR | High \| Low |
+| category       | VARCHAR | Diagnosis category                                               |
+| severity       | VARCHAR | High \| Low                                                      |
 
 **cost.csv** (Lookup)
 
-| Column | Type | Notes |
-|---|---|---|
-| procedure_code | VARCHAR | PROC1–PROC6 |
-| average_cost | INTEGER | Historical average cost in INR |
-| expected_cost | INTEGER | Expected/benchmark cost in INR |
-| region | VARCHAR | Regional benchmark (Delhi, Mumbai, Bangalore...) |
+| Column         | Type    | Notes                                            |
+| -------------- | ------- | ------------------------------------------------ |
+| procedure_code | VARCHAR | PROC1–PROC6                                      |
+| average_cost   | INTEGER | Historical average cost in INR                   |
+| expected_cost  | INTEGER | Expected/benchmark cost in INR                   |
+| region         | VARCHAR | Regional benchmark (Delhi, Mumbai, Bangalore...) |
 
 ### 9.2 Data Quality Issues Identified
 
-| Issue                     | Affected Column       | Bronze Treatment           | Silver Treatment                          |
-| ------------------------- | --------------------- | -------------------------- | ----------------------------------------- |
-| Missing procedure_code    | claims.procedure_code | Store null as-is with flag | Flag as `is_procedure_missing=True`       |
-| Missing billed_amount     | claims.billed_amount  | Store null as-is with flag | Flag as `is_amount_missing=True`          |
-| Missing provider location | providers.location    | Store null as-is           | Impute with "Unknown"                     |
+| Issue                     | Affected Column       | Bronze Treatment           | Silver Treatment                                                                                          |
+| ------------------------- | --------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Missing procedure_code    | claims.procedure_code | Store null as-is with flag | Flag as `is_procedure_missing=True`                                                                       |
+| Missing billed_amount     | claims.billed_amount  | Store null as-is with flag | Flag as `is_amount_missing=True`                                                                          |
+| Missing provider location | providers.location    | Store null as-is           | Impute with "Unknown"                                                                                     |
 | No denied/approved label  | claims table          | N/A                        | Derive a rule-based proxy label for v1 training; treat it as a surrogate target, not a true payer outcome |
 
 ### 9.3 Derived Denial Risk Features (Gold Layer)
@@ -490,70 +490,400 @@ Every technology choice is justified against alternatives.
 
 ### 10.1 Data & ML Platform
 
-| Component              | Choice                                              | Alternatives Considered                     | Why This Choice                                                                                                                                                                                        |
-| ---------------------- | --------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Data Platform          | **Databricks**                                      | Apache Airflow + Spark standalone, AWS Glue | Unified platform for ETL, ML, and serving. Native Delta Lake, Unity Catalog for governance, MLflow built-in. HIPAA controls and BAA support are available when the required compliance configuration is enabled. |
-| Storage Format         | **Delta Lake**                                      | Parquet, Iceberg                            | ACID transactions (no partial writes = data integrity for HIPAA), time-travel for audit, Change Data Feed for incremental processing. Z-ordering/liquid clustering for query performance.              |
+| Component              | Choice                                              | Alternatives Considered                                         | Why This Choice                                                                                                                                                                                                                                                            |
+| ---------------------- | --------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Data Platform          | **Databricks**                                      | Apache Airflow + Spark standalone, AWS Glue                     | Unified platform for ETL, ML, and serving. Native Delta Lake, Unity Catalog for governance, MLflow built-in. HIPAA controls and BAA support are available when the required compliance configuration is enabled.                                                           |
+| Storage Format         | **Delta Lake**                                      | Parquet, Iceberg                                                | ACID transactions (no partial writes = data integrity for HIPAA), time-travel for audit, Change Data Feed for incremental processing. Z-ordering/liquid clustering for query performance.                                                                                  |
 | ETL Orchestration      | **Lakeflow Spark Declarative Pipelines (SDP)**      | Manual Auto Loader notebooks, Apache Spark structured streaming | Databricks' production-grade ETL framework. Pipeline logic in plain `.sql`/`.py` files — not notebooks — enabling version control and CI/CD via Databricks Asset Bundles. Manages checkpointing, schema evolution, and incremental state automatically via `read_files()`. |
-| Catalog & Governance   | **Unity Catalog**                                   | Apache Ranger, AWS Lake Formation           | Centralized governance for all Databricks assets. Fine-grained access control at row/column level. Automatic data lineage tracking. HIPAA audit requirement met natively.                              |
-| ML Framework           | **XGBoost + SHAP**                                  | Random Forest, LightGBM, Neural Networks    | XGBoost fits tabular risk scoring well and is easy to operationalize. SHAP improves analyst trust, debugging, and model governance. In v1 this model is explicitly calibrated on proxy labels, not true payer outcomes. |
-| ML Tracking            | **MLflow**                                          | Weights & Biases, Neptune                   | Built into Databricks. Model versioning, experiment tracking, model registry. Promotes models: Development → Staging → Production.                                                                     |
-| LLM / Foundation Model | **Databricks-hosted Foundation Model API endpoint** | OpenAI direct API, Anthropic direct API     | Keeps inference inside the Databricks security perimeter. The exact model endpoint is selected at deployment time from the current supported Databricks-hosted models based on region, compliance, latency, and cost. |
-| Vector Store           | **Databricks Vector Search**                        | ChromaDB, Pinecone, Weaviate                | Native integration with Delta tables and Databricks governance. Reduces infrastructure sprawl. Application-layer filters must still be enforced for document isolation because vector indexes do not replace tenant-level authorization logic. |
-| Embedding Model        | **Databricks GTE Large (managed embeddings)**       | Self-hosted sentence-transformers, Cohere   | Simplifies the RAG path by using a Databricks-hosted embedding endpoint within the same managed platform and security perimeter.                                                                        |
+| Catalog & Governance   | **Unity Catalog**                                   | Apache Ranger, AWS Lake Formation                               | Centralized governance for all Databricks assets. Fine-grained access control at row/column level. Automatic data lineage tracking. HIPAA audit requirement met natively.                                                                                                  |
+| ML Framework           | **XGBoost + SHAP**                                  | Random Forest, LightGBM, Neural Networks                        | XGBoost fits tabular risk scoring well and is easy to operationalize. SHAP improves analyst trust, debugging, and model governance. In v1 this model is explicitly calibrated on proxy labels, not true payer outcomes.                                                    |
+| ML Tracking            | **MLflow**                                          | Weights & Biases, Neptune                                       | Built into Databricks. Model versioning, experiment tracking, model registry. Promotes models: Development → Staging → Production.                                                                                                                                         |
+| LLM / Foundation Model | **Databricks-hosted Foundation Model API endpoint** | OpenAI direct API, Anthropic direct API                         | Keeps inference inside the Databricks security perimeter. The exact model endpoint is selected at deployment time from the current supported Databricks-hosted models based on region, compliance, latency, and cost.                                                      |
+| Vector Store           | **Databricks Vector Search**                        | ChromaDB, Pinecone, Weaviate                                    | Native integration with Delta tables and Databricks governance. Reduces infrastructure sprawl. Application-layer filters must still be enforced for document isolation because vector indexes do not replace tenant-level authorization logic.                             |
+| Embedding Model        | **Databricks GTE Large (managed embeddings)**       | Self-hosted sentence-transformers, Cohere                       | Simplifies the RAG path by using a Databricks-hosted embedding endpoint within the same managed platform and security perimeter.                                                                                                                                           |
 
 ### 10.2 Backend
 
-| Component            | Choice                     | Alternatives Considered                  | Why This Choice                                                                                                                                                                                                                         |
-| -------------------- | -------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API Framework        | **FastAPI 0.115+**         | Flask, Django REST Framework, Express.js | Async-native (handles concurrent claim submissions). Pydantic v2 for strict input validation (prevents injection attacks, validates claim schema). Auto-generates OpenAPI docs (audit trail). Python ecosystem = direct ML integration. |
-| Input Validation     | **Pydantic v2**            | Marshmallow, Cerberus                    | Fastest Python validator. Type-safe claim schema enforcement. Rejects malformed input at boundary.                                                                                                                                      |
-| Authentication       | **OIDC + Authorization Code + PKCE + JWT** | API Keys, Session Cookies, password-only auth | Standards-based login flow with a provider-agnostic identity layer. Keeps the architecture portable while following current OAuth 2.x best practices. |
-| Rate Limiting        | **slowapi**                | Custom middleware                        | Per-user rate limits. Token bucket allows burst while preventing sustained abuse.                                                                                                                                                       |
-| Database (App State) | **PostgreSQL**             | MySQL, SQLite, MongoDB                   | HIPAA audit logs require ACID compliance. Relational model for user/session/audit data. pgcrypto for column-level encryption of PHI.                                                                                                    |
-| ORM                  | **SQLAlchemy 2.0 (async)** | Tortoise ORM, raw SQL                    | Async support for FastAPI. Type-safe queries. Alembic migrations for schema version control.                                                                                                                                            |
+| Component            | Choice                                     | Alternatives Considered                       | Why This Choice                                                                                                                                                                                                                         |
+| -------------------- | ------------------------------------------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API Framework        | **FastAPI 0.115+**                         | Flask, Django REST Framework, Express.js      | Async-native (handles concurrent claim submissions). Pydantic v2 for strict input validation (prevents injection attacks, validates claim schema). Auto-generates OpenAPI docs (audit trail). Python ecosystem = direct ML integration. |
+| Input Validation     | **Pydantic v2**                            | Marshmallow, Cerberus                         | Fastest Python validator. Type-safe claim schema enforcement. Rejects malformed input at boundary.                                                                                                                                      |
+| Authentication       | **OIDC + Authorization Code + PKCE + JWT** | API Keys, Session Cookies, password-only auth | Standards-based login flow with a provider-agnostic identity layer. Keeps the architecture portable while following current OAuth 2.x best practices.                                                                                   |
+| Rate Limiting        | **slowapi**                                | Custom middleware                             | Per-user rate limits. Token bucket allows burst while preventing sustained abuse.                                                                                                                                                       |
+| Database (App State) | **PostgreSQL**                             | MySQL, SQLite, MongoDB                        | HIPAA audit logs require ACID compliance. Relational model for user/session/audit data. pgcrypto for column-level encryption of PHI.                                                                                                    |
+| ORM                  | **SQLAlchemy 2.0 (async)**                 | Tortoise ORM, raw SQL                         | Async support for FastAPI. Type-safe queries. Alembic migrations for schema version control.                                                                                                                                            |
 
 ### 10.3 Frontend
 
-| Component           | Choice                      | Alternatives Considered | Why This Choice                                                                                                                                                                                 |
-| ------------------- | --------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dashboard Framework | **Streamlit**               | React + Next.js, Dash   | Python-native and fast to deliver for an internal analyst console. Strong fit for a training-project scope where the main goal is architecture clarity, not pixel-perfect public product UX. |
-| Auth (Frontend)     | **Streamlit native OIDC**   | streamlit-authenticator, custom JWT handling | Keeps frontend authentication provider-agnostic and separates login concerns from application authorization.                                                             |
-| Charts              | **Plotly**                  | Matplotlib, Altair      | Interactive charts (hover, zoom, filter). Well-supported in Streamlit.                                                                                                                          |
+| Component           | Choice                    | Alternatives Considered                      | Why This Choice                                                                                                                                                                              |
+| ------------------- | ------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard Framework | **Streamlit**             | React + Next.js, Dash                        | Python-native and fast to deliver for an internal analyst console. Strong fit for a training-project scope where the main goal is architecture clarity, not pixel-perfect public product UX. |
+| Auth (Frontend)     | **Streamlit native OIDC** | streamlit-authenticator, custom JWT handling | Keeps frontend authentication provider-agnostic and separates login concerns from application authorization.                                                                                 |
+| Charts              | **Plotly**                | Matplotlib, Altair                           | Interactive charts (hover, zoom, filter). Well-supported in Streamlit.                                                                                                                       |
 
 ---
 
 ## 11. System Architecture (High-Level)
 
-### 11.1 Architecture Diagram
+### 11.1 Architecture Overview
+
+The top-level architecture is intentionally presented in **two complementary corporate views**:
+
+1. The **landscape view** shows where every major component lives: users, identity provider, internet-facing edge controls, Streamlit, FastAPI, middleware, API routers, orchestration services, PostgreSQL, Databricks, object storage, and cross-cutting platform services.
+2. The **runtime view** shows what one real validation request does end-to-end: login, token issuance, middleware enforcement, API execution, Databricks calls, audit persistence, and the response path back to the browser.
+
+Together, these views show the complete round-trip from the user, through authentication and security controls, into the application and Databricks workspace, and back to the user with a rendered risk score, policy citations, and remediation guidance.
+
+### 11.2 Enterprise Reference Architecture — Landscape View
 
 ```mermaid
-graph TB
-    User["Browser — Analyst / Admin"] -->|"HTTPS TLS 1.3"| ST["Streamlit Dashboard\nClaim Form · History · Analytics"]
-    ST -->|"REST API calls"| API["FastAPI Backend\nAuth · Rule Engine · Agent Orchestrator"]
-    API --> PG[("PostgreSQL\nUsers · Sessions · Audit Log")]
-
-    subgraph DB["Databricks Workspace (BAA-covered)"]
-        direction TB
-        BR["Bronze Layer\nRaw Delta Tables"] --> SI["Silver Layer\nCleaned & Validated"]
-        SI --> GO["Gold Layer\nML Feature Store"]
-        GO --> ML["ML Layer\nXGBoost + SHAP\nMLflow Registry · Risk Scoring Endpoint"]
-        GO --> RAG["RAG Layer\nVector Search Index\nDatabricks-hosted FM endpoint"]
-        UC["Unity Catalog\nGovernance · Lineage · RBAC"]
+flowchart TB
+    %% ================= CLIENT TIER =================
+    subgraph CLIENT["① CLIENT TIER — End-User Devices"]
+        direction LR
+        U1["Billing Analyst<br/>Browser (TLS 1.3)"]
+        U2["Billing Admin<br/>Browser (TLS 1.3)"]
     end
 
-    API -->|"Feature vector"| ML
-    API -->|"PHI-safe query"| RAG
+    %% ================= IDENTITY =================
+    subgraph IDP["② IDENTITY PROVIDER — External, BAA-covered"]
+        direction TB
+        IDP1["OIDC Authorization Server<br/>/authorize · /token · /jwks · /userinfo"]
+        IDP2["MFA Service<br/>TOTP · WebAuthn"]
+        IDP3["User Directory<br/>roles · groups · org_id"]
+        IDP4["JWKS Public Keys<br/>RS256 signature verification"]
+        IDP1 --- IDP2
+        IDP1 --- IDP3
+        IDP1 --- IDP4
+    end
+
+    %% ================= EDGE / PERIMETER =================
+    subgraph EDGE["③ EDGE / PERIMETER — Internet-Facing"]
+        direction TB
+        DNS["DNS + ACME TLS 1.3<br/>auto-renew certificates"]
+        WAF["Web Application Firewall<br/>OWASP Top-10 · bot rules"]
+        DDOS["DDoS Protection<br/>network-level rate limiting"]
+        LB["Load Balancer<br/>health checks · TLS termination"]
+        DNS --> WAF --> DDOS --> LB
+    end
+
+    %% ================= APPLICATION TIER =================
+    subgraph APP["④ APPLICATION TIER — Private Subnet (VPC / VNet, egress-controlled)"]
+        direction TB
+
+        subgraph UI["Streamlit Frontend — Container (stateless, horizontally scalable)"]
+            direction TB
+            ST1["OIDC Client<br/>PKCE code_verifier · code_challenge"]
+            ST2["Login Page + MFA prompt"]
+            ST3["Claim Form · CSV Batch Upload"]
+            ST4["Dashboard · History · Analytics"]
+            ST5["Admin Pages (role-gated)"]
+            ST6["Session Manager<br/>15-min inactivity timeout · token refresh"]
+        end
+
+        subgraph API["FastAPI Backend — Container (stateless, horizontally scalable)"]
+            direction TB
+
+            subgraph MW["Middleware Pipeline — executed in order on every request"]
+                direction TB
+                MW1["1 · TrustedHost<br/>host-header allowlist"]
+                MW2["2 · HTTPSRedirect<br/>force TLS"]
+                MW3["3 · CORS<br/>strict origin allowlist"]
+                MW4["4 · RateLimit (slowapi)<br/>100 req/min user · 1000 req/min org"]
+                MW5["5 · JWT Auth<br/>RS256 verify · jti revocation list"]
+                MW6["6 · RBAC Policy<br/>billing_analyst · billing_admin · read_only"]
+                MW7["7 · Pydantic Validation<br/>regex · range · extra=forbid"]
+                MW8["8 · Audit Middleware<br/>PHI-scrubbed request logging"]
+                MW9["9 · Security Headers<br/>HSTS · CSP · X-Frame-Options · XCTO"]
+                MW1 --> MW2 --> MW3 --> MW4 --> MW5 --> MW6 --> MW7 --> MW8 --> MW9
+            end
+
+            subgraph ROUTES["API Routers (v1) — OpenAPI documented"]
+                direction TB
+                R1["/auth<br/>/token · /refresh · /logout"]
+                R2["/claims<br/>/validate · /batch · /{id} · /history"]
+                R3["/analytics<br/>/denial-rates · /top-reasons"]
+                R4["/admin<br/>/audit-logs · /users · /health"]
+            end
+
+            subgraph ORCH["Orchestration Layer — business logic"]
+                direction TB
+                O1["Rule Engine<br/>20+ deterministic validators"]
+                O2["ML Client<br/>HTTPS + service token"]
+                O3["RAG Client<br/>PHI firewall · query builder"]
+                O4["Agent Orchestrator<br/>merges rules + ML + RAG + SHAP"]
+                O5["Response Assembler<br/>RFC 7807 error envelope"]
+                O1 --> O4
+                O2 --> O4
+                O3 --> O4
+                O4 --> O5
+            end
+
+            MW9 --> ROUTES --> ORCH
+        end
+    end
+
+    %% ================= DATA & ML TIER =================
+    subgraph DATA["⑤ DATA & ML TIER — HIPAA-eligible, BAA-covered"]
+        direction TB
+
+        subgraph PG["PostgreSQL — Application State (private subnet, encrypted)"]
+            direction TB
+            PG1["users · sessions · token_revocation"]
+            PG2["audit_events<br/>append-only · immutable export"]
+            PG3["claim_validation_cache"]
+            PG4["pgcrypto column encryption<br/>90-day key rotation"]
+        end
+
+        subgraph DBX["Databricks Workspace — single-tenant, private-link"]
+            direction TB
+            UC["Unity Catalog<br/>governance · lineage · row/column ACLs · grants"]
+
+            subgraph MED["Medallion — Lakeflow Spark Declarative Pipelines (SDP)"]
+                direction LR
+                BR["Bronze<br/>raw · append-only · Delta + CDF"]
+                SI["Silver<br/>cleaned · validated · Delta MERGE"]
+                GO["Gold<br/>ML feature store · Delta"]
+                BR --> SI --> GO
+            end
+
+            subgraph MLP["ML Platform"]
+                direction TB
+                MLF["MLflow Registry<br/>versions · stages · signatures"]
+                MLE["Model Serving Endpoint<br/>XGBoost + SHAP · auth token"]
+                MLF --> MLE
+            end
+
+            subgraph RAGP["RAG Platform"]
+                direction TB
+                VS["Vector Search Index<br/>policy chunks · embeddings"]
+                FM["Foundation Model Endpoint<br/>Databricks-hosted LLM"]
+            end
+
+            UC -.governs.-> MED
+            UC -.governs.-> MLP
+            UC -.governs.-> RAGP
+            GO -.feature lookup.-> MLE
+            GO -.embedding source.-> VS
+        end
+
+        subgraph STORE["Cloud Object Storage — S3 / GCS / ADLS Gen2"]
+            direction TB
+            OS1["Delta Lake files<br/>AES-256 at rest · bucket policies"]
+            OS2["Policy PDFs (raw corpus)"]
+            OS3["Bronze landing zone"]
+        end
+
+        MED --- STORE
+    end
+
+    %% ================= CROSS-CUTTING =================
+    subgraph XC["⑥ CROSS-CUTTING SERVICES"]
+        direction TB
+        SM["Secrets Manager<br/>JWT keys · DB creds · DBX PAT · API keys"]
+        MON["Observability<br/>metrics · structured logs · traces · alerts"]
+        BKP["Backup & DR<br/>Delta time-travel · PG daily snapshots"]
+        CICD["CI/CD<br/>image scanning · SBOM · signed artifacts"]
+    end
+
+    %% ================= PRIMARY REQUEST FLOW =================
+    U1 -->|"HTTPS / TLS 1.3"| DNS
+    U2 -->|"HTTPS / TLS 1.3"| DNS
+    LB -->|"reverse proxy to private app tier"| UI
+
+    ST1 -->|"OIDC /authorize + PKCE challenge"| IDP1
+    IDP1 -->|"id_token + access_token + refresh token"| ST1
+    UI -->|"REST API + Bearer JWT"| MW1
+    MW5 -.->|"JWKS fetch and cache refresh"| IDP4
+
+    ORCH -->|"SQL over TLS (asyncpg)"| PG
+    ORCH -->|"feature lookup + governed metadata"| UC
+    ORCH -->|"risk scoring request + service token"| MLE
+    ORCH -->|"PHI-safe retrieval query"| VS
+    VS -->|"top-k policy chunks + citations"| ORCH
+    ORCH -->|"grounded prompt with retrieved policy only"| FM
+    FM -->|"explanation + remediation text"| ORCH
+
+    API -->|"JSON response<br/>risk_score · reasons · citations · remediation_steps"| UI
+    UI -->|"rendered scorecard + checklist"| U1
+    ROUTES -.->|"append-only audit event"| PG2
+
+    %% ================= CROSS-CUTTING WIRING =================
+    SM -.secret injection.-> UI
+    SM -.secret injection.-> API
+    SM -.secret injection.-> DBX
+    MON -.metrics · logs · traces.-> UI
+    MON -.metrics · logs · traces.-> API
+    MON -.audit + query logs.-> DBX
+    MON -.slow-query + error rate.-> PG
+    BKP -.snapshot.-> PG
+    BKP -.time-travel / snapshot.-> STORE
+    CICD -.deploy signed image.-> UI
+    CICD -.deploy signed image.-> API
+
+    %% ================= STYLING =================
+    classDef tier fill:#f6f8fa,stroke:#24292f,stroke-width:1px;
+    class CLIENT,EDGE,APP,DATA,IDP,XC tier;
 ```
 
-### 11.2 Component Responsibilities
+> **Legend.** Solid arrows `→` show the primary online request path and its major service-to-service calls. Dotted arrows `-.->` show governance, audit, observability, secret-injection, or other background relationships that are not part of the critical request path. Each subgraph with a circled number (①–⑥) is a logical tier; the `APP` and `DATA` tiers together form the HIPAA compliance boundary — PHI never crosses outside it.
 
-| Component  | Responsibility                                                                              |
-| ---------- | ------------------------------------------------------------------------------------------- |
-| Streamlit  | Analyst dashboard UI — claim form, risk display, remediation checklist, history              |
-| FastAPI    | Business logic, token validation, orchestrates Rule Engine → ML → RAG → Agent                |
-| PostgreSQL | Users, sessions, append-only audit log, application state                                    |
-| Databricks | Medallion ETL, ML training + serving, RAG (Vector Search + Foundation Model), Unity Catalog  |
+### 11.3 Corporate Runtime Architecture — Executive Flow View
+
+The runtime view below is deliberately simplified into a **single executive spine** so the full story can be understood in seconds. The main path remains linear from left to right, the OIDC redirect is shown in the correct order, the HIPAA-handling tiers are enclosed in a dedicated compliance boundary, and the data platform lineage is represented compactly so governance and storage are visible without turning the diagram back into a maze.
+
+```mermaid
+flowchart LR
+    START(["Start"]) --> USER["Billing Analyst / Billing Admin"]
+
+    subgraph ACCESS["Access and Identity"]
+        direction LR
+        EDGE["DNS + WAF + DDoS<br/>Load Balancer"]
+        AUTH["Identity Provider + MFA<br/>OIDC / OAuth 2.0 + PKCE"]
+    end
+
+    subgraph HIPAA["HIPAA Compliance Boundary"]
+        direction TB
+
+        subgraph APP["Frontend and Application Tier"]
+            direction LR
+            LOGIN["Streamlit Entry / Login"]
+            UI["Authenticated Streamlit Session"]
+            MW["FastAPI Middleware Chain<br/>TrustedHost -> HTTPS -> CORS -> Rate Limit<br/>JWT -> RBAC -> Pydantic -> Audit -> Security Headers"]
+            ORCH["Claims Orchestrator"]
+            RESULT["Result View in Streamlit<br/>Risk Score · Reasons · Citations · Remediation"]
+        end
+
+        subgraph DATA["Data and AI Services"]
+            direction TB
+
+            subgraph FOUNDATION["Databricks Data Foundation"]
+                direction LR
+                OBJ["Cloud Object Storage<br/>S3 / GCS / ADLS"]
+                BR["Bronze"]
+                SI["Silver"]
+                GO["Gold Tables"]
+                OBJ --> BR --> SI --> GO
+            end
+
+            UC["Unity Catalog"]
+
+            subgraph ONLINE["Online Services"]
+                direction LR
+                PG["PostgreSQL<br/>sessions · audit · cache"]
+                MLF["MLflow Registry"]
+                MLE["Model Serving<br/>Risk Score + SHAP"]
+                VS["Vector Search<br/>Policy Retrieval"]
+                FM["Foundation Model Endpoint"]
+            end
+        end
+    end
+
+    subgraph PLATFORM["Cross-Cutting Platform Controls"]
+        direction TB
+        SEC["Secrets Manager"]
+        OBS["Observability + Alerts"]
+    end
+
+    END(["End"])
+
+    USER -->|"Open application"| EDGE
+    EDGE -->|"Reach Streamlit"| LOGIN
+    LOGIN -->|"Redirect for sign-in"| AUTH
+    AUTH -->|"Return code + tokens"| UI
+    UI -->|"Submit claim"| MW
+    MW -->|"Authorized + validated request"| ORCH
+    ORCH -->|"JSON response"| RESULT
+    RESULT -->|"Rendered to user"| END
+
+    ORCH -->|"Read / write state"| PG
+    ORCH -->|"Lookup governed features"| GO
+    ORCH -->|"Score claim"| MLE
+    ORCH -->|"Retrieve policy evidence"| VS
+    VS -->|"Retrieved chunks"| FM
+    FM -->|"Grounded explanation"| ORCH
+
+    UC -.->|"Governance + access control"| GO
+    UC -.->|"Governance + access control"| VS
+    MLF -.->|"Registered model"| MLE
+
+    SEC -.->|"Inject runtime secrets"| LOGIN
+    SEC -.->|"Inject service credentials"| ORCH
+    OBS -.->|"UI telemetry"| UI
+    OBS -.->|"API traces + alerts"| ORCH
+    OBS -.->|"Model / service monitoring"| MLE
+
+    classDef startend fill:#0f172a,color:#ffffff,stroke:#0f172a,stroke-width:2px;
+    classDef access fill:#dbeafe,color:#0c4a6e,stroke:#0284c7,stroke-width:2px;
+    classDef app fill:#dcfce7,color:#14532d,stroke:#16a34a,stroke-width:2px;
+    classDef data fill:#fef3c7,color:#78350f,stroke:#d97706,stroke-width:2px;
+    classDef platform fill:#ede9fe,color:#4c1d95,stroke:#7c3aed,stroke-width:2px;
+    classDef medallion fill:#fff7ed,color:#9a3412,stroke:#f97316,stroke-width:2px;
+
+    class START,END startend;
+    class USER,EDGE,AUTH access;
+    class LOGIN,UI,MW,ORCH,RESULT app;
+    class UC,PG,MLF,MLE,VS,FM data;
+    class OBJ,BR,SI,GO medallion;
+    class SEC,OBS platform;
+
+    style HIPAA fill:#fff7f7,stroke:#dc2626,stroke-width:2px,stroke-dasharray: 8 4;
+```
+
+> **Critical runtime controls.** The diagram intentionally favors clarity over protocol-level loop detail, but it now preserves the missing governance and compliance elements. Authentication begins in Streamlit and then redirects to the identity provider, the HIPAA-handling tiers are enclosed in the compliance boundary, the Medallion data path is visible from object storage through Bronze / Silver / Gold, and the orchestrator remains the only component that talks to PostgreSQL and Databricks online services. The RAG path remains PHI-safe because retrieval is based on policy evidence rather than raw patient data.
+
+### 11.4 End-to-End Request Flow Summary
+
+| Phase                                | Actor → Target                                             | What Happens                                                                                                                                                                                          | Interface                                       | Key Control                                                |
+| ------------------------------------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------- |
+| 1. User access                       | Browser → Edge                                             | User reaches the public hostname and enters through DNS, WAF, DDoS protection, and the load balancer                                                                                                  | HTTPS / TLS 1.3                                 | TLS, WAF rules, edge health checks                         |
+| 2. Authentication                    | Streamlit → IdP                                            | Streamlit initiates OIDC Authorization Code + PKCE; the user completes login and MFA with the identity provider                                                                                       | OIDC / OAuth 2.0                                | PKCE, MFA, anti-CSRF `state`                               |
+| 3. Session bootstrap                 | IdP → Streamlit                                            | Streamlit exchanges the authorization code for short-lived access tokens and refresh tokens                                                                                                           | OIDC token exchange                             | RS256 signing, expiry, refresh lifecycle                   |
+| 4. Claim submission                  | Browser / Streamlit → FastAPI                              | Analyst submits a single claim or batch file to `/api/v1/claims/validate` or `/api/v1/claims/batch`                                                                                                   | REST / JSON over HTTPS                          | Bearer JWT on every protected API call                     |
+| 5. API enforcement                   | FastAPI Middleware → Claims Router                         | Trusted host checks, HTTPS redirect, CORS, rate limiting, JWT verification, revocation checks, RBAC, Pydantic validation, audit logging, and security headers are enforced before business logic runs | ASGI middleware + router dispatch               | Defense in depth at the API boundary                       |
+| 6. Decisioning orchestration         | Claims Orchestrator → PostgreSQL / Rules                   | The backend records request start, checks cache or session state, and runs deterministic denial-prevention rules                                                                                      | asyncpg + in-process services                   | Least-privilege DB access, append-only audit pattern       |
+| 7. Databricks feature and model path | Claims Orchestrator → Unity Catalog / Gold / Model Serving | The backend retrieves governed lookup data, constructs the feature context, and calls the XGBoost + SHAP serving endpoint                                                                             | HTTPS + service token over private connectivity | Unity Catalog governance, secrets injection, service auth  |
+| 8. Databricks RAG path               | Claims Orchestrator → Vector Search → FM endpoint          | The backend submits a PHI-safe query, retrieves policy chunks, and generates a grounded explanation and remediation plan                                                                              | HTTPS + managed Databricks endpoints            | PHI firewall, grounded prompts, retrieval-scoped context   |
+| 9. Response and audit closeout       | Claims Orchestrator → PostgreSQL → Streamlit → Browser     | The final validation result is persisted, then returned as JSON and rendered as a scorecard, policy citations, and a remediation checklist                                                            | HTTPS / JSON                                    | Audit completion, RFC 7807 error model, PHI-safe telemetry |
+
+### 11.5 Component Responsibilities (detailed)
+
+| Tier            | Component                 | Responsibility                                                                                              |
+| --------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| ① Client        | Browser                   | Runs Streamlit UI; stores no PHI; only holds short-lived tokens in memory                                   |
+| ② Identity      | OIDC Authorization Server | Authenticates users, issues / refreshes / revokes tokens, exposes JWKS                                      |
+| ② Identity      | MFA Service               | Enforces TOTP or WebAuthn as second factor                                                                  |
+| ② Identity      | User Directory            | Source of truth for identity, role, `org_id`, group membership                                              |
+| ③ Edge          | DNS + TLS termination     | Publishes the app hostname; terminates TLS 1.3 with auto-renewed certs                                      |
+| ③ Edge          | WAF                       | Blocks OWASP Top-10 patterns, bad bots, known-malicious IPs                                                 |
+| ③ Edge          | DDoS Protection           | Network-layer volumetric + protocol-layer mitigation                                                        |
+| ③ Edge          | Load Balancer             | Health-checked routing, horizontal fan-out, connection draining                                             |
+| ④ App           | Streamlit Frontend        | OIDC client, claim form, batch upload, dashboards, admin pages, 15-min inactivity timeout                   |
+| ④ App           | FastAPI Backend           | Stateless REST API; every request passes through the full middleware pipeline before hitting a router       |
+| ④ App           | Middleware Pipeline       | TrustedHost → HTTPSRedirect → CORS → RateLimit → JWT Auth → RBAC → Pydantic → Audit → Security Headers      |
+| ④ App           | API Routers               | Grouped under `/auth`, `/claims`, `/analytics`, `/admin`; OpenAPI-documented; versioned under `/api/v1`     |
+| ④ App           | Orchestration Layer       | Rule Engine, ML Client, RAG Client, Agent Orchestrator, Response Assembler                                  |
+| ⑤ Data          | PostgreSQL                | Users, sessions, token revocation list, append-only audit log, validation cache; pgcrypto column encryption |
+| ⑤ Data          | Unity Catalog             | Single governance plane — catalogs, schemas, tables, grants, row / column-level ACLs, lineage               |
+| ⑤ Data          | Bronze layer              | Raw Delta ingestion via Lakeflow SDP `read_files()`; append-only; full lineage to source file               |
+| ⑤ Data          | Silver layer              | Cleaned, validated, deduplicated; null-flag columns; Delta `MERGE` upserts on `claim_id`                    |
+| ⑤ Data          | Gold layer                | Joined feature store with the eight engineered risk features (see §9.3); ML-ready                           |
+| ⑤ Data          | MLflow Registry           | Versioned models + stages (Staging / Production) + signatures + metrics                                     |
+| ⑤ Data          | Model Serving Endpoint    | Low-latency XGBoost + SHAP inference behind an authenticated HTTPS endpoint                                 |
+| ⑤ Data          | Vector Search Index       | Embedded policy chunks; metadata filters (`doc_id`, `section`) enforced server-side                         |
+| ⑤ Data          | Foundation Model Endpoint | Databricks-hosted LLM used only with policy context (no PHI in prompt)                                      |
+| ⑤ Data          | Object Storage            | S3 / GCS / ADLS Gen2; AES-256 at rest; Delta files + raw policy PDFs + Bronze landing zone                  |
+| ⑥ Cross-cutting | Secrets Manager           | Injects JWT signing keys, DB credentials, Databricks service tokens at runtime; 90-day rotation             |
+| ⑥ Cross-cutting | Observability             | Metrics (p50/p95/p99), structured logs, traces, alerts on auth failures, error rate, latency SLOs           |
+| ⑥ Cross-cutting | Backup & DR               | Delta time-travel + daily PostgreSQL snapshots; RTO < 1 h, RPO < 15 min                                     |
+| ⑥ Cross-cutting | CI/CD                     | Builds, scans, SBOM-signs, and deploys container images for Streamlit / FastAPI                             |
+
+### 11.6 Trust Boundaries
+
+1. **HIPAA Compliance Boundary** — encloses tiers ④ and ⑤. PHI is only permitted inside this boundary; the PHI firewall in the RAG client and log-masking in the audit middleware enforce egress controls.
+2. **VPC / Private-Subnet Boundary** — the Application tier and PostgreSQL sit in private subnets; only the Edge tier is internet-facing. Databricks is reached over private link.
+3. **BAA Boundary** — the Identity Provider and the Databricks workspace are both external services that operate under executed Business Associate Agreements; any other external service is, by policy, non-BAA and therefore cannot receive PHI.
+4. **Data-Plane vs Control-Plane** — Unity Catalog and MLflow form the control plane (governance, lineage, versioning); the Medallion tables, Model Serving, Vector Search, and FM endpoints form the data plane. Control-plane changes are auditable and reviewable independently of data-plane traffic.
 
 ---
 
@@ -889,41 +1219,41 @@ This section maps the proposed controls to HIPAA-oriented design responsibilitie
 
 ### 19.1 HIPAA Technical Safeguards (45 CFR § 164.312) — Control Mapping
 
-| HIPAA Standard | Citation | Our Implementation | Notes | Status |
-| -------------- | -------- | ------------------ | ----- | ------ |
-| Access control | § 164.312(a)(1) | Unique user identity via identity-provider subject, RBAC, and scoped JWTs | Least privilege enforced at UI, API, and data layers | ✅ |
-| Emergency access procedure | § 164.312(a)(2)(ii) Required | Break-glass admin account with extra audit and approval | Operational runbook control | ✅ |
-| Automatic logoff | § 164.312(a)(2)(iii) Addressable | 15-minute inactivity timeout policy in the UI plus short-lived API tokens | Implemented as a security policy, not a fixed statutory timer | ✅ |
-| Audit controls | § 164.312(b) | Append-only audit events in PostgreSQL, Databricks audit logs, immutable export | Long-term retention handled by enterprise policy | ✅ |
-| Integrity | § 164.312(c)(1) | Delta ACID transactions, checksums, controlled writes | Protects against unauthorized alteration | ✅ |
-| Person or entity authentication | § 164.312(d) | OIDC/OAuth 2.0-compatible identity provider plus MFA | Supports analyst and admin identity verification | ✅ |
-| Transmission security | § 164.312(e)(1) | TLS 1.3, HSTS, secure service-to-service traffic | Applies to app, Databricks, and storage integrations | ✅ |
+| HIPAA Standard                  | Citation                         | Our Implementation                                                              | Notes                                                         | Status |
+| ------------------------------- | -------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------ |
+| Access control                  | § 164.312(a)(1)                  | Unique user identity via identity-provider subject, RBAC, and scoped JWTs       | Least privilege enforced at UI, API, and data layers          | ✅     |
+| Emergency access procedure      | § 164.312(a)(2)(ii) Required     | Break-glass admin account with extra audit and approval                         | Operational runbook control                                   | ✅     |
+| Automatic logoff                | § 164.312(a)(2)(iii) Addressable | 15-minute inactivity timeout policy in the UI plus short-lived API tokens       | Implemented as a security policy, not a fixed statutory timer | ✅     |
+| Audit controls                  | § 164.312(b)                     | Append-only audit events in PostgreSQL, Databricks audit logs, immutable export | Long-term retention handled by enterprise policy              | ✅     |
+| Integrity                       | § 164.312(c)(1)                  | Delta ACID transactions, checksums, controlled writes                           | Protects against unauthorized alteration                      | ✅     |
+| Person or entity authentication | § 164.312(d)                     | OIDC/OAuth 2.0-compatible identity provider plus MFA                            | Supports analyst and admin identity verification              | ✅     |
+| Transmission security           | § 164.312(e)(1)                  | TLS 1.3, HSTS, secure service-to-service traffic                                | Applies to app, Databricks, and storage integrations          | ✅     |
 
 ### 19.2 HIPAA Administrative Safeguards — Key Controls
 
-| Control                      | Implementation                             |
-| ---------------------------- | ------------------------------------------ |
-| Security Officer             | Designated in deployment runbook           |
-| Risk Analysis                | Threat model documented in Section 18.2    |
-| Workforce Training           | Required before system access              |
+| Control                      | Implementation                                      |
+| ---------------------------- | --------------------------------------------------- |
+| Security Officer             | Designated in deployment runbook                    |
+| Risk Analysis                | Threat model documented in Section 18.2             |
+| Workforce Training           | Required before system access                       |
 | Access Management            | RBAC via IdP groups, FastAPI, and Databricks grants |
-| Incident Response            | Defined in monitoring runbook              |
-| Business Associate Agreement | Required with Databricks before production |
-| Data Backup                  | Delta Lake time-travel + daily snapshots   |
-| Disaster Recovery            | RTO < 1hr, RPO < 15min (see NFR-REL)       |
+| Incident Response            | Defined in monitoring runbook                       |
+| Business Associate Agreement | Required with Databricks before production          |
+| Data Backup                  | Delta Lake time-travel + daily snapshots            |
+| Disaster Recovery            | RTO < 1hr, RPO < 15min (see NFR-REL)                |
 
 ### 19.3 Data Classification
 
-| Data Type             | Classification | Storage             | Access                  |
-| --------------------- | -------------- | ------------------- | ----------------------- |
-| patient_id            | PHI            | Encrypted (AES-256) | billing_analyst + above |
-| claim_id              | PHI-adjacent   | Standard            | All authenticated users |
-| billed_amount         | PHI            | Encrypted           | billing_analyst + above |
-| diagnosis_code        | PHI            | Encrypted           | billing_analyst + above |
-| ML features (derived) | Sensitive derived data | Standard Delta      | ML service account      |
-| Audit logs            | Compliance     | Append-only PostgreSQL + immutable export | admin only              |
-| Model explanations    | Non-PHI        | Standard            | All authenticated       |
-| Policy documents      | Non-PHI        | Standard Delta      | RAG service account     |
+| Data Type             | Classification         | Storage                                   | Access                  |
+| --------------------- | ---------------------- | ----------------------------------------- | ----------------------- |
+| patient_id            | PHI                    | Encrypted (AES-256)                       | billing_analyst + above |
+| claim_id              | PHI-adjacent           | Standard                                  | All authenticated users |
+| billed_amount         | PHI                    | Encrypted                                 | billing_analyst + above |
+| diagnosis_code        | PHI                    | Encrypted                                 | billing_analyst + above |
+| ML features (derived) | Sensitive derived data | Standard Delta                            | ML service account      |
+| Audit logs            | Compliance             | Append-only PostgreSQL + immutable export | admin only              |
+| Model explanations    | Non-PHI                | Standard                                  | All authenticated       |
+| Policy documents      | Non-PHI                | Standard Delta                            | RAG service account     |
 
 ---
 
@@ -984,22 +1314,22 @@ PHI, audit events, and production data flows must remain inside the approved com
 
 All exceptions extend a base `ClaimGuardException` that automatically logs to the audit system on creation with PHI masked. HTTP status codes are declared on the exception class so the API layer maps them consistently.
 
-| Exception | HTTP Status | Trigger |
-|---|---|---|
-| DataValidationException | 422 | Input fails Pydantic validation |
-| MLPredictionException | 503 | ML endpoint unavailable or invalid response |
-| RAGException | 503 | Vector Search or LLM call fails |
-| DatabricksConnectionException | 503 | Databricks cluster unreachable |
-| AuthorizationException | 403 | User lacks permission for resource |
+| Exception                     | HTTP Status | Trigger                                     |
+| ----------------------------- | ----------- | ------------------------------------------- |
+| DataValidationException       | 422         | Input fails Pydantic validation             |
+| MLPredictionException         | 503         | ML endpoint unavailable or invalid response |
+| RAGException                  | 503         | Vector Search or LLM call fails             |
+| DatabricksConnectionException | 503         | Databricks cluster unreachable              |
+| AuthorizationException        | 403         | User lacks permission for resource          |
 
 ### 22.2 Fallback Strategy
 
-| Component       | Primary                     | Fallback                                                       | Behavior                                                                                 |
-| --------------- | --------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| ML Prediction   | Databricks Serving Endpoint | Rule-based engine                                              | If ML unavailable, use deterministic rules. Flag response as "rule_based=true"           |
+| Component       | Primary                                       | Fallback                                                       | Behavior                                                                                 |
+| --------------- | --------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| ML Prediction   | Databricks Serving Endpoint                   | Rule-based engine                                              | If ML unavailable, use deterministic rules. Flag response as "rule_based=true"           |
 | RAG Explanation | Vector Search + Databricks-hosted FM endpoint | Pre-cached generic explanations                                | If LLM unavailable, return generic policy reference. Flag as "explanation_source=cached" |
-| Database        | PostgreSQL primary          | Graceful degradation (read-only mode)                          | Write operations are queued and retried; read queries continue from replica              |
-| Databricks ETL  | Scheduled job               | Retry with exponential backoff (max 3 retries, 5min intervals) | Alert after 3 failures                                                                   |
+| Database        | PostgreSQL primary                            | Graceful degradation (read-only mode)                          | Write operations are queued and retried; read queries continue from replica              |
+| Databricks ETL  | Scheduled job                                 | Retry with exponential backoff (max 3 retries, 5min intervals) | Alert after 3 failures                                                                   |
 
 ### 22.3 Data Pipeline Exception Handling
 
@@ -1017,19 +1347,19 @@ All application logs are structured JSON with PHI values scrubbed (only IDs logg
 
 The `audit_log` table in PostgreSQL is append-only (UPDATE/DELETE/TRUNCATE revoked from all roles). Row-level security restricts reads to audit admins only. The table is partitioned by month for retention management.
 
-| Column | Type | Notes |
-|---|---|---|
-| audit_id | UUID | Auto-generated primary key |
-| event_time | TIMESTAMPTZ | Indexed with user_id for fast HIPAA queries |
-| user_id | UUID | References users table |
-| user_email | TEXT | Not masked in audit logs |
-| action | TEXT | e.g., `CLAIM_VALIDATED`, `PHI_ACCESSED` |
-| resource_type | TEXT | e.g., `claim`, `user`, `report` |
-| resource_id | TEXT | claim_id — kept for audit, access controlled |
-| ip_address | INET | Required |
-| request_id | UUID | Correlates to API request |
-| outcome | TEXT | `SUCCESS` \| `FAILURE` \| `DENIED` |
-| metadata | JSONB | Additional context — NO PHI values, only IDs |
+| Column        | Type        | Notes                                        |
+| ------------- | ----------- | -------------------------------------------- |
+| audit_id      | UUID        | Auto-generated primary key                   |
+| event_time    | TIMESTAMPTZ | Indexed with user_id for fast HIPAA queries  |
+| user_id       | UUID        | References users table                       |
+| user_email    | TEXT        | Not masked in audit logs                     |
+| action        | TEXT        | e.g., `CLAIM_VALIDATED`, `PHI_ACCESSED`      |
+| resource_type | TEXT        | e.g., `claim`, `user`, `report`              |
+| resource_id   | TEXT        | claim_id — kept for audit, access controlled |
+| ip_address    | INET        | Required                                     |
+| request_id    | UUID        | Correlates to API request                    |
+| outcome       | TEXT        | `SUCCESS` \| `FAILURE` \| `DENIED`           |
+| metadata      | JSONB       | Additional context — NO PHI values, only IDs |
 
 Long-term retention should be enforced by exporting completed audit partitions to immutable object storage or a SIEM/WORM target according to enterprise retention policy.
 
@@ -1037,53 +1367,43 @@ Long-term retention should be enforced by exporting completed audit partitions t
 
 ## 24. Cost Estimation
 
-### 24.1 Development Environment (Monthly)
-
-| Component         | Service                                      | Est. Cost/Month |
-| ----------------- | -------------------------------------------- | --------------- |
-| Databricks        | Databricks Free Edition or free trial        | **~$0 to $25**  |
-| Vector Search     | Small demo index / trial usage               | **~$0 to $10**  |
-| Foundation Models | Low-volume dev usage / trial credits         | **~$0 to $10**  |
-| PostgreSQL        | Local (dev machine)                          | **FREE**        |
-| **Dev Total**     | Demo / prototyping only, not HIPAA-eligible  | **~$0 to $50/month** |
-
-### 24.2 Staging Environment (Monthly)
+### 24.1 Staging Environment (Monthly)
 
 > Exact figures depend on the cloud provider selected and on whether compliance/security add-ons are enabled. These are planning ranges, not vendor quotes.
 
-| Component                  | Service / Assumption                                | Est. Cost/Month |
-| -------------------------- | --------------------------------------------------- | --------------- |
-| Databricks ETL + serving   | Small HIPAA-eligible staging footprint              | **~$700 to $1,100** |
-| Vector Search + embeddings | Limited policy corpus and low query volume          | **~$100 to $250** |
-| Foundation Model API       | Controlled staging usage                            | **~$25 to $150** |
-| PostgreSQL + backup        | Managed instance with backups                       | **~$80 to $200** |
-| Compliance / logging / networking | Private connectivity, monitoring, security controls | **~$150 to $400** |
-| **Staging Total**          |                                                     | **~$1,055 to $2,100/month** |
+| Component                         | Service / Assumption                                | Est. Cost/Month             |
+| --------------------------------- | --------------------------------------------------- | --------------------------- |
+| Databricks ETL + serving          | Small HIPAA-eligible staging footprint              | **~$700 to $1,100**         |
+| Vector Search + embeddings        | Limited policy corpus and low query volume          | **~$100 to $250**           |
+| Foundation Model API              | Controlled staging usage                            | **~$25 to $150**            |
+| PostgreSQL + backup               | Managed instance with backups                       | **~$80 to $200**            |
+| Compliance / logging / networking | Private connectivity, monitoring, security controls | **~$150 to $400**           |
+| **Staging Total**                 |                                                     | **~$1,055 to $2,100/month** |
 
-### 24.3 Production Environment (Monthly)
+### 24.2 Production Environment (Monthly)
 
-| Component                | Service / Assumption                 | Est. Cost/Month   |
-| ------------------------ | ------------------------------------ | ----------------- |
-| Databricks ETL           | Job clusters / serverless pipelines  | **~$700 to $1,200** |
-| Databricks ML Serving    | Auto-scaling risk scoring endpoint   | **~$200 to $500** |
-| Databricks Vector Search | Managed index                        | **~$150 to $400** |
-| Foundation Model API     | Databricks-hosted FM explanation calls | **~$50 to $300** |
-| App hosting              | FastAPI + Streamlit + PostgreSQL     | **~$300 to $700** |
-| Storage / backup / logging | Delta storage, backups, observability | **~$100 to $400** |
-| Compliance / networking  | Private connectivity and security controls | **~$150 to $500** |
-| **Production Total**     |                                      | **~$1,650 to $4,000/month** |
+| Component                  | Service / Assumption                       | Est. Cost/Month             |
+| -------------------------- | ------------------------------------------ | --------------------------- |
+| Databricks ETL             | Job clusters / serverless pipelines        | **~$700 to $1,200**         |
+| Databricks ML Serving      | Auto-scaling risk scoring endpoint         | **~$200 to $500**           |
+| Databricks Vector Search   | Managed index                              | **~$150 to $400**           |
+| Foundation Model API       | Databricks-hosted FM explanation calls     | **~$50 to $300**            |
+| App hosting                | FastAPI + Streamlit + PostgreSQL           | **~$300 to $700**           |
+| Storage / backup / logging | Delta storage, backups, observability      | **~$100 to $400**           |
+| Compliance / networking    | Private connectivity and security controls | **~$150 to $500**           |
+| **Production Total**       |                                            | **~$1,650 to $4,000/month** |
 
-### 24.4 Cost Optimization Strategies (Databricks-Focused)
+### 24.3 Cost Optimization Strategies (Databricks-Focused)
 
-| Strategy                                   | Savings                                      | How                                               |
-| ------------------------------------------ | -------------------------------------------- | ------------------------------------------------- |
-| Spot instances for ETL job clusters        | 60–70% on Databricks compute                 | Non-interactive jobs tolerate spot interruption   |
-| Job clusters (not all-purpose clusters)    | 30–40%                                       | Auto-terminate after job; don't pay for idle time |
-| Predictive optimization                    | Reduces wasted compute on OPTIMIZE/VACUUM    | Enable on all Unity Catalog managed tables        |
-| Liquid clustering (vs manual partitioning) | Better query performance, less storage waste | Use on `claim_features` Gold table                |
+| Strategy                                   | Savings                                      | How                                                                    |
+| ------------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------- |
+| Spot instances for ETL job clusters        | 60–70% on Databricks compute                 | Non-interactive jobs tolerate spot interruption                        |
+| Job clusters (not all-purpose clusters)    | 30–40%                                       | Auto-terminate after job; don't pay for idle time                      |
+| Predictive optimization                    | Reduces wasted compute on OPTIMIZE/VACUUM    | Enable on all Unity Catalog managed tables                             |
+| Liquid clustering (vs manual partitioning) | Better query performance, less storage waste | Use on `claim_features` Gold table                                     |
 | Model tiering                              | Reduces LLM cost                             | Use smaller FM for draft explanations, richer model only on escalation |
-| Explanation caching                        | Avoids repeated FM calls                     | Cache common denial-reason explanations with citations |
-| Triggered Vector Search sync               | Reduces idle indexing cost                   | Rebuild or sync only when policy corpus changes   |
+| Explanation caching                        | Avoids repeated FM calls                     | Cache common denial-reason explanations with citations                 |
+| Triggered Vector Search sync               | Reduces idle indexing cost                   | Rebuild or sync only when policy corpus changes                        |
 
 ---
 
@@ -1111,14 +1431,14 @@ flowchart TB
 
 ### 25.3 Integration Tests
 
-| Area                   | What to Test                                              |
-| ---------------------- | --------------------------------------------------------- |
-| Bronze → Silver → Gold | End-to-end claim flows through Medallion layers           |
-| ML Endpoint            | Databricks serving endpoint returns valid risk_score      |
-| RAG Pipeline           | Policy retrieval returns relevant chunks, no PHI in query |
-| Agent Synthesis        | Full validation flow returns expected response structure  |
+| Area                   | What to Test                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------- |
+| Bronze → Silver → Gold | End-to-end claim flows through Medallion layers                                 |
+| ML Endpoint            | Databricks serving endpoint returns valid risk_score                            |
+| RAG Pipeline           | Policy retrieval returns relevant chunks, no PHI in query                       |
+| Agent Synthesis        | Full validation flow returns expected response structure                        |
 | Auth Flow              | Full OIDC / OAuth 2.0 Authorization Code + PKCE flow, token refresh, revocation |
-| Rate Limiting          | 101st request in 1 minute returns 429                     |
+| Rate Limiting          | 101st request in 1 minute returns 429                                           |
 
 ### 25.4 Model Testing
 
@@ -1130,194 +1450,3 @@ flowchart TB
 | Prediction latency (p95)     | < 150ms                   | Every deployment   |
 | Data drift (PSI)             | < 0.2                     | Weekly             |
 | Feature importance stability | Top 3 features consistent | Weekly             |
-
----
-
-## 26. Development Roadmap — 8 Weeks
-
-### 26.1 Gantt View
-
-```mermaid
-gantt
-    title Development Roadmap - 8 Weeks
-    dateFormat  YYYY-MM-DD
-    axisFormat  Week %W
-    excludes    weekends
-
-    section Data Platform
-    Data Foundation and Bronze Layer     :w1, 2026-04-20, 5d
-    Data Visibility and Dashboard        :w2, after w1, 5d
-    Data Quality and Silver Layer        :w3, after w2, 5d
-    Feature Engineering and Gold Layer   :w4, after w3, 5d
-
-    section Intelligence
-    ML Model and SHAP                    :w5, after w4, 5d
-    RAG System and Vector Search         :w6, after w5, 5d
-    Agent System and API                 :w7, after w6, 5d
-
-    section Experience and Security
-    Frontend and Security Hardening      :w8, after w7, 5d
-    Security and Compliance Track        :active, sec, 2026-04-20, 40d
-```
-
-### 26.2 Week-by-Week Deliverables
-
-#### Week 1 — Data Foundation (Bronze Layer)
-
-**Goal:** Working data ingestion pipeline, raw data in Delta Lake
-
-**Tasks:**
-
-- Set up Databricks workspace + Unity Catalog (`healthcare` catalog) and `healthcare.bronze` schema
-- Initialise SDP project using `databricks pipelines init` — creates a Databricks Asset Bundle (DAB); pipeline logic in `.sql`/`.py` files, not notebooks
-- Define Bronze streaming table pipelines using `read_files()` for claims, providers, diagnosis, cost CSVs
-- Declare HIPAA TBLPROPERTIES inline in each pipeline definition: Change Data Feed + 6-year log retention (45 CFR § 164.316(b)(2)(i))
-- Configure audit columns: `_ingested_at`, `_source_file` (`_metadata.file_path`), `_pipeline_run_id`
-- Apply Unity Catalog RBAC to all four Bronze tables: ETL service account (INSERT only), billing analyst role (SELECT only)
-
-**Exit Criteria:** All 4 datasets ingested into `healthcare.bronze.*` Delta tables; 100% row count match with source CSVs; SDP pipeline re-run produces no duplicate rows (idempotent); TBLPROPERTIES verified via `DESCRIBE EXTENDED`; RBAC confirmed (analyst SELECT succeeds, INSERT denied)
-
----
-
-#### Week 2 — Data Visibility (Initial Dashboard)
-
-**Goal:** Basic analytics view of raw claims data
-
-**Tasks:**
-
-- Build Databricks SQL dashboard: total claims, claim status distribution, claims by provider
-- Set up Streamlit skeleton app with authentication stub
-- Implement basic FastAPI skeleton with health check endpoint
-
-**Exit Criteria:** Dashboard showing claim volume, provider distribution; Streamlit app loads with mock auth
-
----
-
-#### Week 3 — Data Quality (Silver Layer)
-
-**Goal:** Clean, validated, joined data in Silver layer
-
-**Tasks:**
-
-- Implement Silver transformation notebook (dedup, null flags, type casting)
-- MERGE into Silver tables (upsert on claim_id)
-- Add data quality rule checks + quarantine for bad records
-- Unit tests: all transformation rules
-
-**Exit Criteria:** Silver tables have 0 duplicate claim_ids; all null flags correctly set; <5% quarantine rate on test data
-
----
-
-#### Week 4 — Feature Engineering (Gold Layer)
-
-**Goal:** ML-ready feature table
-
-**Tasks:**
-
-- Implement Gold feature engineering notebook (all 8 derived features)
-- Join claims + providers + diagnosis + cost tables
-- Generate denial_label using rule-based logic (training labels)
-- Validate feature distributions with Databricks notebooks
-
-**Exit Criteria:** Gold feature table has all 8 features; amount_to_benchmark_ratio calculated correctly; specialty_diagnosis_mismatch flags correct mismatches
-
----
-
-#### Week 5 — ML Model
-
-**Goal:** Trained XGBoost risk model with SHAP serving on Databricks
-
-**Tasks:**
-
-- Train XGBoost model against proxy labels with cross-validation
-- Compute SHAP values for explainability
-- Register model in MLflow
-- Deploy to Databricks Serving Endpoint
-- Create model card documenting proxy-label limitation and v2 requirement for real adjudication outcomes
-- Unit tests: model output format, SHAP feature mapping
-
-**Exit Criteria:** Model achieves Recall@HIGH > 0.80 on proxy-labeled test set; Databricks endpoint returns `{risk_score, risk_level, explanations}` in <150ms p95
-
----
-
-#### Week 6 — RAG System
-
-**Goal:** Policy-backed explanations via Databricks Vector Search + Foundation Model
-
-**Tasks:**
-
-- Create sample policy documents (mock CMS billing guidelines)
-- Chunk and embed policy documents → Databricks Vector Search index
-- Implement PHI firewall in query builder
-- Integrate currently supported Databricks-hosted Foundation Model endpoint
-- Enforce payer and policy metadata filters in retrieval
-- Test: policy retrieval relevance, PHI-free queries
-
-**Exit Criteria:** Top-5 retrieved chunks are relevant to denial reason (manual eval); NO PHI in any LLM prompt (automated test TC-16 variant); explanation includes policy reference
-
----
-
-#### Week 7 — Agent System + API
-
-**Goal:** Full agent orchestration via production FastAPI
-
-**Tasks:**
-
-- Implement ClaimValidationAgent: Rule Engine → ML → RAG → Synthesis
-- Build all FastAPI routes (validate, batch, history, auth, admin)
-- Implement OIDC / OAuth 2.0 Authorization Code + PKCE with JWT-based API authorization
-- Add middleware stack (CORS, rate limit, audit log, security headers)
-- Integration tests: full validation flow
-
-**Exit Criteria:** POST /api/v1/claims/validate risk path returns in <2 seconds p95; explanation path returns in <5 seconds p95; auth flow works end-to-end; rate limit tested (429 on 101st request)
-
----
-
-#### Week 8 — Frontend + Security Hardening
-
-**Goal:** Complete Streamlit dashboard and verify all HIPAA security controls
-
-**Tasks:**
-
-- Build Streamlit frontend (validation form, risk display, remediation checklist, history dashboard)
-- Implement 15-minute session timeout as application security policy
-- Security testing: all TC-16 to TC-22
-- HIPAA compliance checklist walkthrough
-- Performance testing: verify NFR-PERF targets
-- Cost estimation finalization
-
-**Exit Criteria:** Full E2E test passes (user logs in → submits claim → sees risk score → applies fix → re-validates → reduced risk score); all security test cases pass; architecture control checklist reviewed with noted assumptions and limitations
-
----
-
-## Verification & Acceptance Criteria
-
-### System-Level Acceptance Tests
-
-1. **HIPAA Compliance Verification**
-   - [ ] PHI firewall test: inspect all LLM requests — confirm no patient_id/patient_name in prompts
-   - [ ] Audit log test: perform claim validation as analyst, confirm event appears in audit_log table
-   - [ ] Session timeout test: login, wait 16 minutes, confirm auto-logout
-   - [ ] Encryption test: confirm Delta Lake files encrypted at rest (verify storage encryption flag)
-
-2. **Performance Verification**
-   - [ ] Load test: 50 concurrent claim validations on risk path — p95 latency < 2 seconds
-   - [ ] Batch test: upload 100-claim CSV — completes in < 30 seconds
-   - [ ] Explanation path: single-claim explanation response — p95 < 5 seconds
-   - [ ] ML latency: 1000 isolated predictions — p95 < 150ms
-
-3. **ML Quality Verification**
-   - [ ] Recall@HIGH on held-out proxy-labeled test set > 0.80
-   - [ ] Run TC-01, TC-02, TC-03 (high-risk claims) — all return risk_level=HIGH
-   - [ ] Run TC-04 (clean claim) — returns risk_level=LOW
-   - [ ] Model card explicitly states proxy-label limitation and v2 requirement for real adjudication outcomes
-
-4. **Security Verification**
-   - [ ] TC-16 through TC-22 all pass
-   - [ ] Trivy scan on all Docker images — zero critical CVEs
-   - [ ] Bandit static analysis — zero high-severity findings
-
-5. **Architecture Verification**
-   - [ ] Delta Lake time-travel: restore Bronze table to version 0, confirm original raw data retrievable
-   - [ ] MLflow: confirm model version promotion chain (Development → Staging → Production)
-   - [ ] Unity Catalog lineage: confirm claims lineage visible from Bronze to Gold
