@@ -17,6 +17,13 @@ HIPAA compliance controls
 --------------------------
 Same three TBLPROPERTIES as all Bronze tables — see bronze_claims.py for rationale.
 
+PHI classification: this table contains NO PHI columns.
+Per 45 CFR § 164.501, PHI is "individually identifiable health information" of PATIENTS.
+Provider identity (doctor_name, specialty) and provider business location are operational
+data — they describe the care provider, not the patient. HIPAA's Privacy Rule protects
+patient health information, not provider credentials or business addresses. No column-level
+encryption is required for this table.
+
 Known data quality issues (from dataset analysis — Section 9.2 of product spec)
 ----------------------------------------------------------------------------------
 location (nullable)   Some providers have no location on record. Silver imputes 'Unknown'.
@@ -94,9 +101,16 @@ def bronze_providers():
 
         Original columns (from CSV):
             provider_id  str   Primary key (e.g. PR100). Foreign key in claims table.
+                               Operational — not PHI.
             doctor_name  str   Provider full name (e.g. Dr Patel).
+                               NOT PHI — 45 CFR § 164.501 defines PHI as health information
+                               of PATIENTS. Provider names are business/operational identity.
             specialty    str   Medical specialty (e.g. Neurology, Cardiology, General).
-            location     str?  City (e.g. Bangalore, Mumbai). Nullable — known data issue.
+                               NOT PHI — describes the provider's credential, not a patient.
+            location     str?  Provider business city (e.g. Bangalore, Mumbai). Nullable.
+                               NOT PHI — provider business address, not a patient's address.
+                               § 164.514(b)(2)(iii) restricts patient geographic subdivisions;
+                               this is provider location used for regional cost benchmarking.
 
         Audit columns (added by this pipeline):
             _ingested_at     timestamp  When this row entered the Bronze layer (HIPAA audit).
