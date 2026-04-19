@@ -15,8 +15,15 @@ FR-DATA-08  Support incremental processing — Auto Loader checkpoint prevents r
 
 HIPAA compliance controls
 --------------------------
-diagnosis_code is PHI — encrypt at rest in production via Databricks column-level encryption.
+diagnosis_code is NOT PHI in this reference table — see classification note below.
 Same three TBLPROPERTIES as all Bronze tables — see bronze_claims.py for rationale.
+
+PHI classification: diagnosis_code in this table is medical terminology, NOT PHI.
+Per 45 CFR § 164.501, PHI must be "individually identifiable health information" —
+it must be linkable to a specific patient. A standalone lookup table (D10=Heart, High)
+contains no patient linkage and cannot identify any individual. diagnosis_code becomes
+PHI only when it appears alongside patient_id in the claims table. This reference table
+requires standard access control but NOT column-level encryption.
 
 Role in the denial prevention system
 --------------------------------------
@@ -75,7 +82,9 @@ VOLUME_PATH = "/Volumes/healthcare/bronze/raw_landing/diagnosis/"
     comment=(
         "Raw diagnosis code reference data ingested from landing volume. Append-only. "
         "Do NOT apply transforms or deletes — Bronze is the source-of-truth for HIPAA audit. "
-        "PHI column (encrypt at rest in production): diagnosis_code. "
+        "PHI classification: diagnosis_code here is medical terminology, NOT PHI (45 CFR § 164.501). "
+        "This is a lookup table with no patient linkage — it cannot identify any individual. "
+        "diagnosis_code becomes PHI only when combined with patient_id in healthcare.bronze.claims. "
         "Maps diagnosis_code to category and severity for downstream ML feature engineering. "
         "Used to detect: (1) specialty-diagnosis mismatch, (2) high-severity + low-cost procedure. "
         "Downstream: healthcare.silver.diagnosis reads this table via Change Data Feed."
@@ -99,8 +108,11 @@ def bronze_diagnosis():
         Streaming DataFrame with all source columns plus audit columns:
 
         Original columns (from CSV):
-            diagnosis_code  str  Primary key (e.g. D10). PHI — encrypt at rest in production.
-                                 Foreign key in claims table.
+            diagnosis_code  str  Primary key (e.g. D10). Medical terminology reference code.
+                                 NOT PHI in this standalone reference table (45 CFR § 164.501) —
+                                 no patient linkage exists here. Becomes PHI only when joined
+                                 to patient_id in healthcare.bronze.claims. Standard access
+                                 control applies; column-level encryption is NOT required here.
             category        str  Diagnosis category (e.g. Heart, Bone, Fever, Skin, Diabetes, Cold).
                                  Used for specialty-diagnosis mismatch detection in Gold layer.
             severity        str  Risk level: 'High' or 'Low'.

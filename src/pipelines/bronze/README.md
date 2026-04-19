@@ -77,22 +77,61 @@ Silver imputes `'Unknown'` for missing locations.
 
 ## HIPAA Controls
 
-All four tables are created with identical HIPAA-required properties:
+All four tables are created with these HIPAA-required properties:
 
 ```python
 "delta.enableChangeDataFeed"         : "true"          # incremental CDC to Silver
-"delta.logRetentionDuration"         : "interval 6 years"  # 45 CFR § 164.316(b)(2)(i)
-"delta.deletedFileRetentionDuration" : "interval 6 years"  # time-travel for audit
+"delta.logRetentionDuration"         : "interval 6 years"  # § 164.316(b)(2)(i) — 6-year retention
+"delta.deletedFileRetentionDuration" : "interval 6 years"  # § 164.316(b)(2)(i) — time-travel audit
 ```
 
-**PHI columns** (encrypt at rest in production):
+The claims table additionally carries PHI metadata properties (§ 164.312(a)(2)(iv)):
 
-| Table | PHI Columns |
-|---|---|
-| claims | `patient_id`, `billed_amount`, `diagnosis_code` |
-| diagnosis | `diagnosis_code` |
-| providers | none (doctor_name is operational, not PHI) |
-| cost | none |
+```python
+"hipaa.phi_columns"     : "patient_id,billed_amount,diagnosis_code,date"
+"hipaa.data_sensitivity": "PHI"
+```
+
+**Audit columns** satisfy § 164.312(b) — hardware/software mechanisms to record
+and examine activity in systems that contain ePHI:
+
+| Column | CFR Citation | What it captures |
+|---|---|---|
+| `_ingested_at` | § 164.312(b) audit controls | When the row entered Bronze |
+| `_source_file` | § 164.312(b) audit controls | Which source file the row came from |
+| `_pipeline_run_id` | § 164.312(b) audit controls | Which pipeline execution created the row |
+| `_rescued_data` | § 164.312(c)(1) data integrity | Rows that could not be parsed |
+
+> **Unity Catalog Audit Logging (required for production):** The audit columns above capture
+> WHAT was ingested and WHEN/FROM WHERE. To capture WHO accessed ePHI (required by
+> § 164.312(b)), the Databricks workspace `system.access.audit` table must be enabled.
+> This is a workspace-level configuration, not a pipeline setting.
+
+**PHI columns** — encrypt at rest in production via Databricks column masking (§ 164.312(a)(2)(iv)):
+
+| Table | PHI Columns | Not PHI |
+|---|---|---|
+| claims | `patient_id`, `billed_amount`, `diagnosis_code`, `date` | `claim_id` (PHI-adjacent), `provider_id`, `procedure_code` |
+| diagnosis | none — reference table without patient linkage (§ 164.501) | all columns |
+| providers | none — provider identity is operational data (§ 164.501) | all columns |
+| cost | none — benchmark reference data | all columns |
+
+> **`date` is PHI:** 45 CFR § 164.514(b)(2)(iv) explicitly lists "all elements of dates
+> (except year) for dates directly related to an individual" as PHI identifiers. The claim
+> submission date is a date directly related to a patient's health event.
+
+> **`diagnosis_code` in the diagnosis table is NOT PHI:** The reference table has no patient
+> linkage. A standalone code (D10=Heart) is medical terminology, not individually identifiable
+> health information (§ 164.501). It becomes PHI only when combined with patient_id in claims.
+
+**Minimum Necessary (§ 164.502(b)):** Bronze ingests all CSV columns because the Bronze
+layer IS the source-of-truth archive required for audit reconstruction under § 164.316(b)(2)(i).
+This is the minimum necessary for compliance. PHI restriction and column masking occur at
+Silver and Gold layers where only the minimum PHI needed for each purpose is exposed.
+
+**Breach Notification (§ 164.410):** Any breach of unsecured PHI in the claims table must
+be reported to the Covered Entity without unreasonable delay and no later than 60 days after
+discovery. See `datasets/DATA_CLASSIFICATION.md` for the full breach notification procedure.
 
 ---
 

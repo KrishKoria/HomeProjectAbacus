@@ -20,16 +20,37 @@ delta.logRetentionDuration         6 years — HIPAA 45 CFR § 164.316(b)(2)(i) 
                                    security documentation retained minimum 6 years.
 delta.deletedFileRetentionDuration 6 years — retains physical files after logical deletion
                                    for time-travel audit reconstruction.
-_ingested_at                       Records exactly when data entered the system (HIPAA audit).
+_ingested_at                       Records exactly when data entered the system.
+                                   Audit control per § 164.312(b) — hardware/software
+                                   mechanisms that record activity in ePHI systems.
 _source_file                       Records which file the row came from (data lineage).
+                                   Audit control per § 164.312(b).
 _pipeline_run_id                   Groups rows by pipeline execution for audit correlation.
+                                   Audit control per § 164.312(b).
 _rescued_data                      Preserves malformed rows instead of silently dropping them.
+                                   Data integrity per § 164.312(c)(1).
 
-PHI columns (encrypt at rest in production)
---------------------------------------------
-patient_id      — direct patient identifier
-billed_amount   — financial PHI
-diagnosis_code  — medical condition PHI
+Minimum Necessary justification (§ 164.502(b))
+-----------------------------------------------
+Bronze ingests ALL columns from the source CSV. This satisfies the Minimum Necessary
+standard because the Bronze layer IS the source-of-truth archive required by
+§ 164.316(b)(2)(i) — it must be complete and unaltered for audit reconstruction.
+Transformations, column masking, and PHI redaction occur at Silver and Gold layers
+where only the minimum PHI necessary for each downstream purpose is exposed.
+
+PHI columns — encrypt at rest in production (§ 164.312(a)(2)(iv))
+-------------------------------------------------------------------
+Encryption is an addressable implementation spec under the Security Rule. In production,
+implement AES-256 via Databricks column masking before ingesting real PHI. Any breach
+of unencrypted PHI in these columns must be reported to the Covered Entity within
+60 days per § 164.410(b).
+
+patient_id      — § 164.514(b)(2)(ii)  direct patient identifier (unique identifying code)
+billed_amount   — § 164.514(b)(2)      financial health information
+diagnosis_code  — § 164.514(b)(2)(xvi) medical condition linked to patient_id
+date            — § 164.514(b)(2)(iv)  claim submission date is a date directly related
+                                        to an individual's health event; all date elements
+                                        except year are PHI identifiers under HIPAA
 
 Source
 ------
@@ -96,6 +117,13 @@ VOLUME_PATH = "/Volumes/healthcare/bronze/raw_landing/claims/"
         "delta.logRetentionDuration": "interval 6 years",
         # Retain physical files after logical deletion for full time-travel audit reconstruction.
         "delta.deletedFileRetentionDuration": "interval 6 years",
+        # PHI column manifest per § 164.312(a)(2)(iv) — lists columns requiring AES-256
+        # encryption in production via Databricks column masking. Used by Unity Catalog
+        # to enforce column-level access policies. date included per § 164.514(b)(2)(iv).
+        "hipaa.phi_columns": "patient_id,billed_amount,diagnosis_code,date",
+        # BA compliance marker: identifies this table as containing ePHI subject to
+        # the HIPAA Security Rule (§ 164.308–316) and Breach Notification Rule (§ 164.410).
+        "hipaa.data_sensitivity": "PHI",
     },
 )
 def bronze_claims():
@@ -112,13 +140,23 @@ def bronze_claims():
 
         Original columns (from CSV):
             claim_id        str     Unique claim identifier (e.g. C0001). PHI-adjacent.
-            patient_id      str     Patient reference (e.g. P206). PHI — encrypt at rest.
+            patient_id      str     Patient reference (e.g. P206).
+                                    PHI — § 164.514(b)(2)(ii) unique identifying code.
+                                    Encrypt at rest in production (§ 164.312(a)(2)(iv)).
             provider_id     str     Foreign key → healthcare.bronze.providers.provider_id.
-            diagnosis_code  str     ICD code reference (e.g. D10). PHI — encrypt at rest.
+                                    Operational — not PHI.
+            diagnosis_code  str     ICD code reference (e.g. D10).
+                                    PHI — § 164.514(b)(2)(xvi) health condition linked to patient.
+                                    Encrypt at rest in production (§ 164.312(a)(2)(iv)).
             procedure_code  str?    CPT code reference (nullable — known data quality issue).
+                                    PHI-adjacent — linked to a patient's health event.
             billed_amount   float?  Amount billed in INR (nullable — known data quality issue).
-                                    PHI — encrypt at rest.
+                                    PHI — § 164.514(b)(2) financial health information.
+                                    Encrypt at rest in production (§ 164.312(a)(2)(iv)).
             date            date    Claim submission date.
+                                    PHI — § 164.514(b)(2)(iv) all date elements except year
+                                    for dates directly related to a health event are PHI.
+                                    Encrypt at rest in production (§ 164.312(a)(2)(iv)).
 
         Audit columns (added by this pipeline):
             _ingested_at    timestamp  When this row entered the Bronze layer (HIPAA audit).
