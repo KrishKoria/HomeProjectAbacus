@@ -95,7 +95,7 @@ VOLUME_PATH = "/Volumes/healthcare/bronze/raw_landing/cost/"
     table_properties={
         # Change Data Feed: enables Silver to read only new rows incrementally (FR-DATA-08).
         "delta.enableChangeDataFeed": "true",
-        # HIPAA 45 CFR § 164.316(b)(2)(i) — 6-year security documentation retention.
+        # 6-year retention: organization policy for audit reconstruction — see bronze_claims.py.
         "delta.logRetentionDuration": "interval 6 years",
         # Retain physical files after logical deletion for full time-travel audit reconstruction.
         "delta.deletedFileRetentionDuration": "interval 6 years",

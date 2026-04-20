@@ -82,7 +82,7 @@ Silver imputes `'Unknown'` for missing locations.
 
 ## HIPAA Controls
 
-All four tables are created with these HIPAA-required properties:
+All five tables are created with these properties (6-year retention is an organization policy for audit reconstruction, consistent with §164.316(b)(2)(i) compliance documentation standards — see bronze_claims.py for full rationale):
 
 ```python
 "delta.enableChangeDataFeed"         : "true"          # incremental CDC to Silver

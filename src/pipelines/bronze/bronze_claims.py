@@ -16,8 +16,11 @@ HIPAA compliance controls
 --------------------------
 delta.enableChangeDataFeed         Enables incremental reads downstream so Silver only
                                    processes new records — required for efficient CDC.
-delta.logRetentionDuration         6 years — HIPAA 45 CFR § 164.316(b)(2)(i) requires
-                                   security documentation retained minimum 6 years.
+delta.logRetentionDuration         6 years — organization retention policy for audit
+                                   reconstruction. §164.316(b)(2)(i) mandates 6-year
+                                   retention for compliance documentation; Bronze data
+                                   supports that trail. Raw PHI table retention is also
+                                   governed by applicable state medical records law.
 delta.deletedFileRetentionDuration 6 years — retains physical files after logical deletion
                                    for time-travel audit reconstruction.
 _ingested_at                       Records exactly when data entered the system.
@@ -113,7 +116,9 @@ VOLUME_PATH = "/Volumes/healthcare/bronze/raw_landing/claims/"
     table_properties={
         # Change Data Feed: enables Silver to read only new rows incrementally (FR-DATA-08).
         "delta.enableChangeDataFeed": "true",
-        # HIPAA 45 CFR § 164.316(b)(2)(i) — 6-year security documentation retention.
+        # 6-year retention: organization policy for audit reconstruction. §164.316(b)(2)(i)
+        # mandates 6-year retention for HIPAA compliance documentation; this preserves the
+        # technical audit trail. Raw PHI retention also governed by state medical records law.
         "delta.logRetentionDuration": "interval 6 years",
         # Retain physical files after logical deletion for full time-travel audit reconstruction.
         "delta.deletedFileRetentionDuration": "interval 6 years",
