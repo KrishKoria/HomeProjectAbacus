@@ -525,218 +525,15 @@ Every technology choice is justified against alternatives.
 
 ## 11. System Architecture (High-Level)
 
-### 11.1 Architecture Overview
-
-The top-level architecture is intentionally presented in **two complementary corporate views**:
-
-1. The **landscape view** shows where every major component lives: users, identity provider, internet-facing edge controls, Streamlit, FastAPI, middleware, API routers, orchestration services, PostgreSQL, Databricks, object storage, and cross-cutting platform services.
-2. The **runtime view** shows what one real validation request does end-to-end: login, token issuance, middleware enforcement, API execution, Databricks calls, audit persistence, and the response path back to the browser.
-
-Together, these views show the complete round-trip from the user, through authentication and security controls, into the application and Databricks workspace, and back to the user with a rendered risk score, policy citations, and remediation guidance.
-
-### 11.2 Enterprise Reference Architecture — Landscape View
-
-```mermaid
-flowchart TB
-    %% ================= CLIENT TIER =================
-    subgraph CLIENT["① CLIENT TIER — End-User Devices"]
-        direction LR
-        U1["Billing Analyst<br/>Browser (TLS 1.3)"]
-        U2["Billing Admin<br/>Browser (TLS 1.3)"]
-    end
-
-    %% ================= IDENTITY =================
-    subgraph IDP["② IDENTITY PROVIDER — External, BAA-covered"]
-        direction TB
-        IDP1["OIDC Authorization Server<br/>/authorize · /token · /jwks · /userinfo"]
-        IDP2["MFA Service<br/>TOTP · WebAuthn"]
-        IDP3["User Directory<br/>roles · groups · org_id"]
-        IDP4["JWKS Public Keys<br/>RS256 signature verification"]
-        IDP1 --- IDP2
-        IDP1 --- IDP3
-        IDP1 --- IDP4
-    end
-
-    %% ================= EDGE / PERIMETER =================
-    subgraph EDGE["③ EDGE / PERIMETER — Internet-Facing"]
-        direction TB
-        DNS["DNS + ACME TLS 1.3<br/>auto-renew certificates"]
-        WAF["Web Application Firewall<br/>OWASP Top-10 · bot rules"]
-        DDOS["DDoS Protection<br/>network-level rate limiting"]
-        LB["Load Balancer<br/>health checks · TLS termination"]
-        DNS --> WAF --> DDOS --> LB
-    end
-
-    %% ================= APPLICATION TIER =================
-    subgraph APP["④ APPLICATION TIER — Private Subnet (VPC / VNet, egress-controlled)"]
-        direction TB
-
-        subgraph UI["Streamlit Frontend — Container (stateless, horizontally scalable)"]
-            direction TB
-            ST1["OIDC Client<br/>PKCE code_verifier · code_challenge"]
-            ST2["Login Page + MFA prompt"]
-            ST3["Claim Form · CSV Batch Upload"]
-            ST4["Dashboard · History · Analytics"]
-            ST5["Admin Pages (role-gated)"]
-            ST6["Session Manager<br/>15-min inactivity timeout · token refresh"]
-        end
-
-        subgraph API["FastAPI Backend — Container (stateless, horizontally scalable)"]
-            direction TB
-
-            subgraph MW["Middleware Pipeline — executed in order on every request"]
-                direction TB
-                MW1["1 · TrustedHost<br/>host-header allowlist"]
-                MW2["2 · HTTPSRedirect<br/>force TLS"]
-                MW3["3 · CORS<br/>strict origin allowlist"]
-                MW4["4 · RateLimit (slowapi)<br/>100 req/min user · 1000 req/min org"]
-                MW5["5 · JWT Auth<br/>RS256 verify · jti revocation list"]
-                MW6["6 · RBAC Policy<br/>billing_analyst · billing_admin · read_only"]
-                MW7["7 · Pydantic Validation<br/>regex · range · extra=forbid"]
-                MW8["8 · Audit Middleware<br/>PHI-scrubbed request logging"]
-                MW9["9 · Security Headers<br/>HSTS · CSP · X-Frame-Options · XCTO"]
-                MW1 --> MW2 --> MW3 --> MW4 --> MW5 --> MW6 --> MW7 --> MW8 --> MW9
-            end
-
-            subgraph ROUTES["API Routers (v1) — OpenAPI documented"]
-                direction TB
-                R1["/auth<br/>/token · /refresh · /logout"]
-                R2["/claims<br/>/validate · /batch · /{id} · /history"]
-                R3["/analytics<br/>/denial-rates · /top-reasons"]
-                R4["/admin<br/>/audit-logs · /users · /health"]
-            end
-
-            subgraph ORCH["Orchestration Layer — business logic"]
-                direction TB
-                O1["Rule Engine<br/>20+ deterministic validators"]
-                O2["ML Client<br/>HTTPS + service token"]
-                O3["RAG Client<br/>PHI firewall · query builder"]
-                O4["Agent Orchestrator<br/>merges rules + ML + RAG + SHAP"]
-                O5["Response Assembler<br/>RFC 7807 error envelope"]
-                O1 --> O4
-                O2 --> O4
-                O3 --> O4
-                O4 --> O5
-            end
-
-            MW9 --> ROUTES --> ORCH
-        end
-    end
-
-    %% ================= DATA & ML TIER =================
-    subgraph DATA["⑤ DATA & ML TIER — HIPAA-eligible, BAA-covered"]
-        direction TB
-
-        subgraph PG["PostgreSQL — Application State (private subnet, encrypted)"]
-            direction TB
-            PG1["users · sessions · token_revocation"]
-            PG2["audit_events<br/>append-only · immutable export"]
-            PG3["claim_validation_cache"]
-            PG4["pgcrypto column encryption<br/>90-day key rotation"]
-        end
-
-        subgraph DBX["Databricks Workspace — single-tenant, private-link"]
-            direction TB
-            UC["Unity Catalog<br/>governance · lineage · row/column ACLs · grants"]
-
-            subgraph MED["Medallion — Lakeflow Spark Declarative Pipelines (SDP)"]
-                direction LR
-                BR["Bronze<br/>raw · append-only · Delta + CDF"]
-                SI["Silver<br/>cleaned · validated · Delta MERGE"]
-                GO["Gold<br/>ML feature store · Delta"]
-                BR --> SI --> GO
-            end
-
-            subgraph MLP["ML Platform"]
-                direction TB
-                MLF["MLflow Registry<br/>versions · stages · signatures"]
-                MLE["Model Serving Endpoint<br/>XGBoost + SHAP · auth token"]
-                MLF --> MLE
-            end
-
-            subgraph RAGP["RAG Platform"]
-                direction TB
-                VS["Vector Search Index<br/>policy chunks · embeddings"]
-                FM["Foundation Model Endpoint<br/>Databricks-hosted LLM"]
-            end
-
-            UC -.governs.-> MED
-            UC -.governs.-> MLP
-            UC -.governs.-> RAGP
-            GO -.feature lookup.-> MLE
-            GO -.embedding source.-> VS
-        end
-
-        subgraph STORE["Cloud Object Storage — S3 / GCS / ADLS Gen2"]
-            direction TB
-            OS1["Delta Lake files<br/>AES-256 at rest · bucket policies"]
-            OS2["Policy PDFs (raw corpus)"]
-            OS3["Bronze landing zone"]
-        end
-
-        MED --- STORE
-    end
-
-    %% ================= CROSS-CUTTING =================
-    subgraph XC["⑥ CROSS-CUTTING SERVICES"]
-        direction TB
-        SM["Secrets Manager<br/>JWT keys · DB creds · DBX PAT · API keys"]
-        MON["Observability<br/>metrics · structured logs · traces · alerts"]
-        BKP["Backup & DR<br/>Delta time-travel · PG daily snapshots"]
-        CICD["CI/CD<br/>image scanning · SBOM · signed artifacts"]
-    end
-
-    %% ================= PRIMARY REQUEST FLOW =================
-    U1 -->|"HTTPS / TLS 1.3"| DNS
-    U2 -->|"HTTPS / TLS 1.3"| DNS
-    LB -->|"reverse proxy to private app tier"| UI
-
-    ST1 -->|"OIDC /authorize + PKCE challenge"| IDP1
-    IDP1 -->|"id_token + access_token + refresh token"| ST1
-    UI -->|"REST API + Bearer JWT"| MW1
-    MW5 -.->|"JWKS fetch and cache refresh"| IDP4
-
-    ORCH -->|"SQL over TLS (asyncpg)"| PG
-    ORCH -->|"feature lookup + governed metadata"| UC
-    ORCH -->|"risk scoring request + service token"| MLE
-    ORCH -->|"PHI-safe retrieval query"| VS
-    VS -->|"top-k policy chunks + citations"| ORCH
-    ORCH -->|"grounded prompt with retrieved policy only"| FM
-    FM -->|"explanation + remediation text"| ORCH
-
-    API -->|"JSON response<br/>risk_score · reasons · citations · remediation_steps"| UI
-    UI -->|"rendered scorecard + checklist"| U1
-    ROUTES -.->|"append-only audit event"| PG2
-
-    %% ================= CROSS-CUTTING WIRING =================
-    SM -.secret injection.-> UI
-    SM -.secret injection.-> API
-    SM -.secret injection.-> DBX
-    MON -.metrics · logs · traces.-> UI
-    MON -.metrics · logs · traces.-> API
-    MON -.audit + query logs.-> DBX
-    MON -.slow-query + error rate.-> PG
-    BKP -.snapshot.-> PG
-    BKP -.time-travel / snapshot.-> STORE
-    CICD -.deploy signed image.-> UI
-    CICD -.deploy signed image.-> API
-
-    %% ================= STYLING =================
-    classDef tier fill:#f6f8fa,stroke:#24292f,stroke-width:1px;
-    class CLIENT,EDGE,APP,DATA,IDP,XC tier;
-```
-
-> **Legend.** Solid arrows `→` show the primary online request path and its major service-to-service calls. Dotted arrows `-.->` show governance, audit, observability, secret-injection, or other background relationships that are not part of the critical request path. Each subgraph with a circled number (①–⑥) is a logical tier; the `APP` and `DATA` tiers together form the HIPAA compliance boundary — PHI never crosses outside it.
-
-### 11.3 Corporate Runtime Architecture — Executive Flow View
+### 11.1 Corporate Runtime Architecture — Executive Flow View
 
 The runtime view below is deliberately simplified into a **single executive spine** so the full story can be understood in seconds. The main path remains linear from left to right, the OIDC redirect is shown in the correct order, the HIPAA-handling tiers are enclosed in a dedicated compliance boundary, and the data platform lineage is represented compactly so governance and storage are visible without turning the diagram back into a maze.
 
-![Corporate runtime architecture](architecture.png)
+![Corporate runtime architecture](Architecture_latest.png)
 
 > **Critical runtime controls.** The diagram intentionally favors clarity over protocol-level loop detail, but it now preserves the missing governance and compliance elements. Authentication begins in Streamlit and then redirects to the identity provider, the HIPAA-handling tiers are enclosed in the compliance boundary, the Medallion data path is visible from object storage through Bronze / Silver / Gold, and the orchestrator remains the only component that talks to PostgreSQL and Databricks online services. The RAG path remains PHI-safe because retrieval is based on policy evidence rather than raw patient data.
 
-### 11.4 End-to-End Request Flow Summary
+### 11.2 End-to-End Request Flow Summary
 
 | Phase                                | Actor → Target                                             | What Happens                                                                                                                                                                                          | Interface                                       | Key Control                                                |
 | ------------------------------------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------- |
@@ -750,7 +547,7 @@ The runtime view below is deliberately simplified into a **single executive spin
 | 8. Databricks RAG path               | Claims Orchestrator → Vector Search → FM endpoint          | The backend submits a PHI-safe query, retrieves policy chunks, and generates a grounded explanation and remediation plan                                                                              | HTTPS + managed Databricks endpoints            | PHI firewall, grounded prompts, retrieval-scoped context   |
 | 9. Response and audit closeout       | Claims Orchestrator → PostgreSQL → Streamlit → Browser     | The final validation result is persisted, then returned as JSON and rendered as a scorecard, policy citations, and a remediation checklist                                                            | HTTPS / JSON                                    | Audit completion, RFC 7807 error model, PHI-safe telemetry |
 
-### 11.5 Component Responsibilities (detailed)
+### 11.3 Component Responsibilities (detailed)
 
 | Tier            | Component                 | Responsibility                                                                                              |
 | --------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -782,7 +579,7 @@ The runtime view below is deliberately simplified into a **single executive spin
 | ⑥ Cross-cutting | Backup & DR               | Delta time-travel + daily PostgreSQL snapshots; RTO < 1 h, RPO < 15 min                                     |
 | ⑥ Cross-cutting | CI/CD                     | Builds, scans, SBOM-signs, and deploys container images for Streamlit / FastAPI                             |
 
-### 11.6 Trust Boundaries
+### 11.4 Trust Boundaries
 
 1. **HIPAA Compliance Boundary** — encloses tiers ④ and ⑤. PHI is only permitted inside this boundary; the PHI firewall in the RAG client and log-masking in the audit middleware enforce egress controls.
 2. **VPC / Private-Subnet Boundary** — the Application tier and PostgreSQL sit in private subnets; only the Edge tier is internet-facing. Databricks is reached over private link.
