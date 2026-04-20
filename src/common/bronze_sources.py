@@ -32,6 +32,27 @@ class BronzeSource:
         return bool(self.phi_columns)
 
 
+@dataclass(frozen=True, slots=True)
+class PolicySource:
+    """Landing zone metadata for insurance policy PDF documents.
+
+    Policy documents differ from the four CSV datasets: they are binary files
+    (PDFs), have no fixed row count, and contain no PHI. The Bronze pipeline
+    (bronze_policies.py) ingests them with cloudFiles binaryFile format.
+    Text extraction and chunking happen in Silver via pdfplumber.
+
+    No PHI — per architecture Assumption A-04 and HIPAA § 164.501, policy
+    documents are insurance billing policy text, not patient health information.
+    """
+
+    volume_subdirectory: str
+
+    @property
+    def has_phi(self) -> bool:
+        """Policy documents never contain PHI."""
+        return False
+
+
 BRONZE_SOURCES: Final[dict[str, BronzeSource]] = {
     "claims": BronzeSource(
         local_filename="claims_1000.csv",
@@ -72,4 +93,9 @@ BRONZE_SOURCES: Final[dict[str, BronzeSource]] = {
 
 DATASET_KEYS: Final[tuple[str, ...]] = tuple(BRONZE_SOURCES)
 
-__all__ = ["BronzeSource", "BRONZE_SOURCES", "DATASET_KEYS"]
+# Policy PDF landing zone — separate from BRONZE_SOURCES because PDFs are binary files
+# with no row count and no PHI, unlike the four CSV datasets above.
+# Used by the bootstrap notebook to create the policies/ volume folder.
+POLICY_SOURCE: Final[PolicySource] = PolicySource(volume_subdirectory="policies")
+
+__all__ = ["BronzeSource", "BRONZE_SOURCES", "DATASET_KEYS", "PolicySource", "POLICY_SOURCE"]

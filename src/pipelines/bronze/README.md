@@ -7,12 +7,13 @@ Lakeflow Spark Declarative Pipelines (SDP) with Auto Loader.
 
 ## Files
 
-| File | Output Table | Source CSV |
-|---|---|---|
-| `bronze_claims.py` | `healthcare.bronze.claims` | `claims_1000.csv` |
-| `bronze_providers.py` | `healthcare.bronze.providers` | `providers_1000.csv` |
-| `bronze_diagnosis.py` | `healthcare.bronze.diagnosis` | `diagnosis.csv` |
-| `bronze_cost.py` | `healthcare.bronze.cost` | `cost.csv` |
+| File | Output Table | Source | Format |
+|---|---|---|---|
+| `bronze_claims.py` | `healthcare.bronze.claims` | `claims_1000.csv` | CSV |
+| `bronze_providers.py` | `healthcare.bronze.providers` | `providers_1000.csv` | CSV |
+| `bronze_diagnosis.py` | `healthcare.bronze.diagnosis` | `diagnosis.csv` | CSV |
+| `bronze_cost.py` | `healthcare.bronze.cost` | `cost.csv` | CSV |
+| `bronze_policies.py` | `healthcare.bronze.policies` | `policies/*.pdf` | binaryFile |
 
 ---
 
@@ -24,10 +25,13 @@ Lakeflow Spark Declarative Pipelines (SDP) with Auto Loader.
    Catalog  : healthcare
    Schema   : bronze
    Volume   : raw_landing
-   Folders  : /Volumes/healthcare/bronze/raw_landing/{claims,providers,diagnosis,cost}/
+   Folders  : /Volumes/healthcare/bronze/raw_landing/{claims,providers,diagnosis,cost,policies}/
    ```
 
 2. **Upload CSVs** — copy the four files from `datasets/` into their volume folders.
+
+3. **Upload PDFs** — copy insurance policy PDF documents into the `policies/` folder.
+   Only `*.pdf` files are ingested — other file types are ignored by `pathGlobFilter`.
 
 ---
 
@@ -68,6 +72,7 @@ violations are logged to the pipeline event log (visible in the Pipeline UI → 
 | providers | provider_id not null, doctor_name not null, location not null (known nullable), no parse errors |
 | diagnosis | diagnosis_code not null, category not null, severity not null, no parse errors |
 | cost | procedure_code not null, average_cost > 0, expected_cost > 0, region not null, no parse errors |
+| policies | path not null, content not null, length > 0 |
 
 The `location_present` expectation on providers **will fire** for rows with a null location —
 this is an expected, known data quality issue documented in product spec §9.2.
@@ -107,6 +112,11 @@ and examine activity in systems that contain ePHI:
 > § 164.312(b)), the Databricks workspace `system.access.audit` table must be enabled.
 > This is a workspace-level configuration, not a pipeline setting.
 
+**binaryFile vs CSV:** `bronze_policies.py` uses `cloudFiles.format=binaryFile` instead of CSV.
+The schema is fixed (`path`, `modificationTime`, `length`, `content`) — no `inferColumnTypes`,
+`schemaEvolutionMode`, or `rescuedDataColumn` options apply. The `path` column is the source
+file reference; `content` holds raw PDF bytes. Text extraction happens in Silver.
+
 **PHI columns** — encrypt at rest in production via Databricks column masking (§ 164.312(a)(2)(iv)):
 
 | Table | PHI Columns | Not PHI |
@@ -115,6 +125,7 @@ and examine activity in systems that contain ePHI:
 | diagnosis | none — reference table without patient linkage (§ 164.501) | all columns |
 | providers | none — provider identity is operational data (§ 164.501) | all columns |
 | cost | none — benchmark reference data | all columns |
+| policies | none — insurance policy text, no patient data (Assumption A-04) | all columns |
 
 > **`date` is PHI:** 45 CFR § 164.514(b)(2)(iv) explicitly lists "all elements of dates
 > (except year) for dates directly related to an individual" as PHI identifiers. The claim
