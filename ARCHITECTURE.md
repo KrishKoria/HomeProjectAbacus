@@ -1243,7 +1243,7 @@ Bad records are quarantined to a separate location rather than failing the pipel
 
 ## 23. HIPAA Audit Logging
 
-HIPAA requires retention of required security documentation for 6 years under 45 CFR § 164.316(b)(2)(i). This architecture applies the same long-term retention posture to audit events so access and security activity can be reconstructed during investigations, reviews, and compliance reporting.
+45 CFR § 164.316(b)(2)(i) requires covered entities to retain HIPAA compliance documentation — policies, procedures, and records of actions and assessments — for a minimum of 6 years. The PostgreSQL `audit_events` table falls directly within this requirement. Bronze Delta table retention is set to the same 6-year period as an organization retention policy to preserve the full technical audit trail for compliance investigations; raw data table retention is also governed by applicable state medical records law, not §164.316 directly.
 
 All application logs are structured JSON with PHI values scrubbed (only IDs logged, never names, dates of birth, or amounts).
 
