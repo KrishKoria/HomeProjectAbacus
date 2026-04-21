@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Final, Iterable
 
+from src.common.diagnostics import CLAIMOPS_DOMAINS, format_claimops_diagnostic_id
+
 
 AUDIT_COLUMNS: Final[tuple[str, str, str]] = (
     "_ingested_at",
@@ -17,19 +19,6 @@ COMMON_DELTA_TABLE_PROPERTIES: Final[dict[str, str]] = {
     "delta.logRetentionDuration": "interval 6 years",
     "delta.deletedFileRetentionDuration": "interval 6 years",
 }
-
-CLAIMOPS_DOMAINS: Final[frozenset[str]] = frozenset({"BRZ", "ANL", "HIPAA", "OBS"})
-
-
-def format_claimops_diagnostic_id(domain: str, number: int) -> str:
-    """Return a stable diagnostic identifier for logs and dashboards."""
-    normalized_domain = domain.upper()
-    if normalized_domain not in CLAIMOPS_DOMAINS:
-        raise ValueError(f"Unsupported diagnostic domain: {domain}")
-    if number < 0 or number > 999:
-        raise ValueError("Diagnostic number must be between 0 and 999.")
-    return f"CLAIMOPS-{normalized_domain}-{number:03d}"
-
 
 def bronze_volume_path(dataset_key: str) -> str:
     """Return the canonical Bronze volume path for a dataset folder."""
