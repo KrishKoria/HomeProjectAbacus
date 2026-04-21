@@ -1,0 +1,130 @@
+{
+  "display_name": "Week 2 Claims Exploration Dashboard",
+  "warehouse_requirement": "Serverless or Pro SQL warehouse",
+  "datasets": [
+    {
+      "name": "claims_trend",
+      "table": "healthcare.analytics.week2_dashboard_summary",
+      "purpose": "Daily totals, billed amount trend, and high-cost claim counts"
+    },
+    {
+      "name": "claims_by_specialty",
+      "table": "healthcare.analytics.claims_by_specialty_summary",
+      "purpose": "Provider activity and billing concentration by specialty"
+    },
+    {
+      "name": "claims_by_region",
+      "table": "healthcare.analytics.claims_by_region_summary",
+      "purpose": "Regional claim activity and spend"
+    },
+    {
+      "name": "high_cost_claims",
+      "table": "healthcare.analytics.high_cost_claims_summary",
+      "purpose": "Analyst-only drilldown for overbilling risk"
+    },
+    {
+      "name": "pipeline_updates",
+      "table": "healthcare.analytics.ops_pipeline_updates",
+      "purpose": "Operational pipeline status"
+    },
+    {
+      "name": "expectation_metrics",
+      "table": "healthcare.analytics.ops_expectation_metrics",
+      "purpose": "Expectation pass/fail counts by dataset"
+    },
+    {
+      "name": "latest_failures",
+      "table": "healthcare.analytics.ops_latest_failures",
+      "purpose": "Latest failures with stable diagnostic IDs"
+    }
+  ],
+  "widgets": [
+    {
+      "title": "Total Claims",
+      "dataset": "claims_trend",
+      "type": "counter",
+      "metric": "sum(total_claims)"
+    },
+    {
+      "title": "Cost Trend",
+      "dataset": "claims_trend",
+      "type": "line",
+      "x": "claim_date",
+      "y": "total_billed_amount"
+    },
+    {
+      "title": "Provider Activity by Specialty",
+      "dataset": "claims_by_specialty",
+      "type": "bar",
+      "x": "specialty",
+      "y": "claim_count"
+    },
+    {
+      "title": "Claims by Region",
+      "dataset": "claims_by_region",
+      "type": "bar",
+      "x": "region",
+      "y": "claim_count"
+    },
+    {
+      "title": "High-Cost Claims",
+      "dataset": "high_cost_claims",
+      "type": "table",
+      "fields": [
+        "claim_id",
+        "doctor_name",
+        "specialty",
+        "region",
+        "procedure_code",
+        "billed_amount",
+        "expected_cost",
+        "amount_to_benchmark_ratio"
+      ]
+    },
+    {
+      "title": "Pipeline Health",
+      "dataset": "pipeline_updates",
+      "type": "table",
+      "fields": [
+        "timestamp",
+        "update_id",
+        "update_state",
+        "actor"
+      ]
+    },
+    {
+      "title": "Expectation Metrics",
+      "dataset": "expectation_metrics",
+      "type": "table",
+      "fields": [
+        "timestamp",
+        "dataset",
+        "expectation",
+        "passed_records",
+        "failed_records"
+      ]
+    },
+    {
+      "title": "Latest Failures",
+      "dataset": "latest_failures",
+      "type": "table",
+      "fields": [
+        "timestamp",
+        "dataset",
+        "diagnostic_id",
+        "platform_error_code",
+        "error_message"
+      ]
+    }
+  ],
+  "filters": [
+    "claim_date",
+    "specialty",
+    "region"
+  ],
+  "notes": [
+    "Keep dashboard SQL limited to thin SELECT queries over these managed analytics tables.",
+    "Do not expose patient_id in dashboard datasets.",
+    "Validate all dataset queries on the target warehouse before deploying the dashboard."
+  ]
+}
