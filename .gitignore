@@ -3,5 +3,6 @@
 .firecrawl/
 .remember/
 .serena/
+.worktrees/
 __pycache__/
 *.pyc
