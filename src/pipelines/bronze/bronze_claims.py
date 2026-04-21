@@ -69,7 +69,15 @@ Cluster by  : claim_id (point lookups), date (time-range scans)
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
-VOLUME_PATH = "/Volumes/healthcare/bronze/raw_landing/claims/"
+from src.common.bronze_pipeline_config import (
+    PIPELINE_RUN_ID_FORMAT,
+    bronze_volume_path,
+    csv_autoloader_options,
+    table_properties_for_sensitivity,
+)
+from src.common.observability import MESSAGE_BRONZE_APPEND_ONLY
+
+VOLUME_PATH = bronze_volume_path("claims")
 
 # ---------------------------------------------------------------------------
 # Data quality expectations — ALL are warn-only at Bronze.
@@ -108,28 +116,15 @@ VOLUME_PATH = "/Volumes/healthcare/bronze/raw_landing/claims/"
     cluster_by=["claim_id", "date"],
     comment=(
         "Raw healthcare claims ingested from landing volume. Append-only. "
-        "Do NOT apply transforms or deletes — Bronze is the source-of-truth for HIPAA audit. "
+        f"{MESSAGE_BRONZE_APPEND_ONLY} "
         "PHI columns (encrypt at rest in production): patient_id, billed_amount, diagnosis_code. "
         "Known data quality issues: procedure_code and billed_amount are nullable. "
         "Downstream: healthcare.silver.claims reads this table via Change Data Feed."
     ),
-    table_properties={
-        # Change Data Feed: enables Silver to read only new rows incrementally (FR-DATA-08).
-        "delta.enableChangeDataFeed": "true",
-        # 6-year retention: organization policy for audit reconstruction. §164.316(b)(2)(i)
-        # mandates 6-year retention for HIPAA compliance documentation; this preserves the
-        # technical audit trail. Raw PHI retention also governed by state medical records law.
-        "delta.logRetentionDuration": "interval 6 years",
-        # Retain physical files after logical deletion for full time-travel audit reconstruction.
-        "delta.deletedFileRetentionDuration": "interval 6 years",
-        # PHI column manifest per § 164.312(a)(2)(iv) — lists columns requiring AES-256
-        # encryption in production via Databricks column masking. Used by Unity Catalog
-        # to enforce column-level access policies. date included per § 164.514(b)(2)(iv).
-        "hipaa.phi_columns": "patient_id,billed_amount,diagnosis_code,date",
-        # BA compliance marker: identifies this table as containing ePHI subject to
-        # the HIPAA Security Rule (§ 164.308–316) and Breach Notification Rule (§ 164.410).
-        "hipaa.data_sensitivity": "PHI",
-    },
+    table_properties=table_properties_for_sensitivity(
+        "PHI",
+        ("patient_id", "billed_amount", "diagnosis_code", "date"),
+    ),
 )
 def bronze_claims():
     """
@@ -173,19 +168,7 @@ def bronze_claims():
     return (
         spark.readStream
         .format("cloudFiles")
-        .option("cloudFiles.format", "csv")
-        # header=true: CSV files have a header row. Without this, the header is ingested
-        # as a data record and every column is misnamed — data is silently corrupted.
-        .option("header", "true")
-        # cloudFiles.inferColumnTypes: infers exact Spark types (IntegerType, DateType, etc.)
-        # instead of leaving every column as StringType. Use this, NOT the generic inferSchema.
-        .option("cloudFiles.inferColumnTypes", "true")
-        # addNewColumns: if the source CSV gains a new column, add it to the table schema
-        # instead of failing the pipeline. Prevents outages on upstream schema changes.
-        .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
-        # rescuedDataColumn: rows that cannot be parsed are placed into _rescued_data
-        # rather than being silently dropped. Critical for Bronze integrity (FR-DATA-02).
-        .option("cloudFiles.rescuedDataColumn", "_rescued_data")
+        .options(**csv_autoloader_options())
         .load(VOLUME_PATH)
         .withColumn("_ingested_at", F.current_timestamp())
         .withColumn("_source_file", F.col("_metadata.file_path"))
@@ -193,7 +176,7 @@ def bronze_claims():
             "_pipeline_run_id",
             # Timestamp-based run ID groups rows from the same pipeline execution.
             # Format: yyyyMMdd_HHmmss — sortable, human-readable, no external dependency.
-            F.date_format(F.current_timestamp(), "yyyyMMdd_HHmmss"),
+            F.date_format(F.current_timestamp(), PIPELINE_RUN_ID_FORMAT),
         )
         # Drop the internal _metadata struct after extracting file_path into _source_file.
         # The struct itself is an Auto Loader implementation detail, not a business column.

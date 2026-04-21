@@ -70,7 +70,15 @@ Cluster by  : path (document-level lookups by file path)
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
-VOLUME_PATH = "/Volumes/healthcare/bronze/raw_landing/policies/"
+from src.common.bronze_pipeline_config import (
+    PIPELINE_RUN_ID_FORMAT,
+    binary_file_autoloader_options,
+    bronze_volume_path,
+    table_properties_for_sensitivity,
+)
+from src.common.observability import MESSAGE_BRONZE_APPEND_ONLY
+
+VOLUME_PATH = bronze_volume_path("policies")
 
 # ---------------------------------------------------------------------------
 # Data quality expectations — ALL are warn-only at Bronze.
@@ -98,25 +106,13 @@ VOLUME_PATH = "/Volumes/healthcare/bronze/raw_landing/policies/"
     cluster_by=["path"],
     comment=(
         "Raw insurance policy PDF documents ingested from landing volume. Append-only. "
-        "Binary content (raw PDF bytes) preserved as-is — DO NOT transform or delete. "
+        f"Binary content (raw PDF bytes) preserved as-is. {MESSAGE_BRONZE_APPEND_ONLY} "
         "No PHI — policy documents are insurance billing policy text (Assumption A-04). "
         "pathGlobFilter=*.pdf: only PDF files are ingested; other file types are ignored. "
         "Downstream: healthcare.silver.policy_chunks reads this table via Change Data Feed "
         "and applies pdfplumber text extraction + 512-token chunking for RAG indexing."
     ),
-    table_properties={
-        # Change Data Feed: enables Silver to read only newly ingested PDFs (FR-DATA-08).
-        "delta.enableChangeDataFeed": "true",
-        # 6-year retention: organization policy for audit reconstruction — see bronze_claims.py.
-        "delta.logRetentionDuration": "interval 6 years",
-        # Retain physical files after logical deletion for full time-travel audit.
-        "delta.deletedFileRetentionDuration": "interval 6 years",
-        # No PHI columns — policy documents contain no patient-identifiable information.
-        "hipaa.phi_columns": "",
-        # Data sensitivity marker: NON-PHI distinguishes this table from the claims,
-        # providers, and cost tables in Unity Catalog governance queries.
-        "hipaa.data_sensitivity": "NON-PHI",
-    },
+    table_properties=table_properties_for_sensitivity("NON-PHI"),
 )
 def bronze_policies():
     """
@@ -155,11 +151,7 @@ def bronze_policies():
     return (
         spark.readStream
         .format("cloudFiles")
-        .option("cloudFiles.format", "binaryFile")
-        # pathGlobFilter: only ingest files with .pdf extension.
-        # Rejects .txt, .docx, or other accidental uploads to the policies folder.
-        # Note: case-sensitive on Linux-based cloud storage — upload files as lowercase .pdf.
-        .option("pathGlobFilter", "*.pdf")
+        .options(**binary_file_autoloader_options())
         .load(VOLUME_PATH)
         .withColumn("_ingested_at", F.current_timestamp())
         # For binaryFile format, `path` is a top-level schema column that contains
@@ -169,7 +161,7 @@ def bronze_policies():
             "_pipeline_run_id",
             # Timestamp-based run ID groups documents from the same pipeline execution.
             # Format: yyyyMMdd_HHmmss — sortable, human-readable, no external dependency.
-            F.date_format(F.current_timestamp(), "yyyyMMdd_HHmmss"),
+            F.date_format(F.current_timestamp(), PIPELINE_RUN_ID_FORMAT),
         )
         # Drop the internal _metadata struct — file_path is already captured in `path`.
         .drop("_metadata")

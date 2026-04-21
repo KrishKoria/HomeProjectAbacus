@@ -42,7 +42,15 @@ Cluster by  : provider_id (join key — claims join on provider_id)
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
-VOLUME_PATH = "/Volumes/healthcare/bronze/raw_landing/providers/"
+from src.common.bronze_pipeline_config import (
+    COMMON_DELTA_TABLE_PROPERTIES,
+    PIPELINE_RUN_ID_FORMAT,
+    bronze_volume_path,
+    csv_autoloader_options,
+)
+from src.common.observability import MESSAGE_BRONZE_APPEND_ONLY
+
+VOLUME_PATH = bronze_volume_path("providers")
 
 # ---------------------------------------------------------------------------
 # Data quality expectations — ALL are warn-only at Bronze.
@@ -75,20 +83,13 @@ VOLUME_PATH = "/Volumes/healthcare/bronze/raw_landing/providers/"
     cluster_by=["provider_id"],
     comment=(
         "Raw provider reference data ingested from landing volume. Append-only. "
-        "Do NOT apply transforms or deletes — Bronze is the source-of-truth for HIPAA audit. "
+        f"{MESSAGE_BRONZE_APPEND_ONLY} "
         "Known data quality issue: location is nullable. "
         "Missing location causes administrative rejection of associated claims. "
         "Silver layer (healthcare.silver.providers) imputes location='Unknown' for nulls. "
         "Downstream: healthcare.silver.providers reads this table via Change Data Feed."
     ),
-    table_properties={
-        # Change Data Feed: enables Silver to read only new rows incrementally (FR-DATA-08).
-        "delta.enableChangeDataFeed": "true",
-        # 6-year retention: organization policy for audit reconstruction — see bronze_claims.py.
-        "delta.logRetentionDuration": "interval 6 years",
-        # Retain physical files after logical deletion for full time-travel audit reconstruction.
-        "delta.deletedFileRetentionDuration": "interval 6 years",
-    },
+    table_properties=COMMON_DELTA_TABLE_PROPERTIES,
 )
 def bronze_providers():
     """
@@ -121,17 +122,13 @@ def bronze_providers():
     return (
         spark.readStream
         .format("cloudFiles")
-        .option("cloudFiles.format", "csv")
-        .option("header", "true")
-        .option("cloudFiles.inferColumnTypes", "true")
-        .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
-        .option("cloudFiles.rescuedDataColumn", "_rescued_data")
+        .options(**csv_autoloader_options())
         .load(VOLUME_PATH)
         .withColumn("_ingested_at", F.current_timestamp())
         .withColumn("_source_file", F.col("_metadata.file_path"))
         .withColumn(
             "_pipeline_run_id",
-            F.date_format(F.current_timestamp(), "yyyyMMdd_HHmmss"),
+            F.date_format(F.current_timestamp(), PIPELINE_RUN_ID_FORMAT),
         )
         .drop("_metadata")
     )
