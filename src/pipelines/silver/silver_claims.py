@@ -1,7 +1,7 @@
 """Silver claims pipeline with PHI-safe quarantine diagnostics.
 
 This module keeps the trusted claims surface readable by isolating the non-obvious
-bits: normalization, critical-row quarantine, and duplicate resolution. Week 3
+bits: normalization, critical-row quarantine, and duplicate resolution.
 quality signals are emitted as flags and PHI-safe status strings, never as raw
 patient values in logs.
 """
@@ -60,7 +60,8 @@ def _normalized_provider_lookup():
     return (
         spark.table(BRONZE_PROVIDERS_TABLE)
         .select(
-            spark_normalize_code(F.col("provider_id")).alias("provider_id_lookup"),
+            spark_normalize_code(F.col("provider_id")).alias(
+                "provider_id_lookup"),
             F.lit(True).alias("provider_exists"),
         )
         .dropna()
@@ -73,7 +74,8 @@ def _normalized_diagnosis_lookup():
     return (
         spark.table(BRONZE_DIAGNOSIS_TABLE)
         .select(
-            spark_normalize_code(F.col("diagnosis_code")).alias("diagnosis_code_lookup"),
+            spark_normalize_code(F.col("diagnosis_code")).alias(
+                "diagnosis_code_lookup"),
             F.lit(True).alias("diagnosis_exists"),
         )
         .dropna()
@@ -96,7 +98,8 @@ def _claims_stream():
         .withColumn("procedure_code", spark_normalize_code(F.col("procedure_code")))
         .withColumn(
             "billed_amount",
-            spark_decimal_or_null(F.col("billed_amount"), MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE),
+            spark_decimal_or_null(F.col("billed_amount"),
+                                  MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE),
         )
         .withColumn("date", spark_date_or_null(F.col("date")))
         .join(providers, F.col("provider_id") == F.col("provider_id_lookup"), "left")
@@ -125,16 +128,19 @@ def _claims_stream():
         .withColumn("invalid_claim_date", F.col("date").isNull())
         .withColumn(
             "unknown_provider_reference",
-            F.col("provider_id").isNotNull() & F.col("provider_exists").isNull(),
+            F.col("provider_id").isNotNull() & F.col(
+                "provider_exists").isNull(),
         )
         .withColumn(
             "unknown_diagnosis_reference",
-            F.col("diagnosis_code").isNotNull() & F.col("diagnosis_exists").isNull(),
+            F.col("diagnosis_code").isNotNull() & F.col(
+                "diagnosis_exists").isNull(),
         )
     )
 
     quarantine_reason = (
-        F.when(F.col("missing_claim_id"), F.lit("claim_id is required for a trusted silver record"))
+        F.when(F.col("missing_claim_id"), F.lit(
+            "claim_id is required for a trusted silver record"))
         .when(F.col("missing_patient_id"), F.lit("patient_id is required for a trusted silver record"))
         .when(F.col("missing_provider_id"), F.lit("provider_id is required for a trusted silver record"))
         .when(F.col("missing_diagnosis_code"), F.lit("diagnosis_code is required for a trusted silver record"))
@@ -146,7 +152,8 @@ def _claims_stream():
     )
 
     diagnostic_id = (
-        F.when(F.col("missing_claim_id"), F.lit(get_silver_diagnostic_id("claims", "missing_claim_id")))
+        F.when(F.col("missing_claim_id"), F.lit(
+            get_silver_diagnostic_id("claims", "missing_claim_id")))
         .when(F.col("missing_patient_id"), F.lit(get_silver_diagnostic_id("claims", "missing_patient_id")))
         .when(F.col("missing_provider_id"), F.lit(get_silver_diagnostic_id("claims", "missing_provider_id")))
         .when(F.col("missing_diagnosis_code"), F.lit(get_silver_diagnostic_id("claims", "missing_diagnosis_code")))
@@ -189,7 +196,8 @@ def _claims_stream():
 )
 def silver_claims():
     """Emit the trusted Silver claims table."""
-    trusted = _claims_stream().where(F.col("diagnostic_id").isNull()).where(F.col("_row_priority") == 1)
+    trusted = _claims_stream().where(F.col("diagnostic_id").isNull()
+                                     ).where(F.col("_row_priority") == 1)
     return trusted.drop(
         "_row_priority",
         "missing_claim_id",
