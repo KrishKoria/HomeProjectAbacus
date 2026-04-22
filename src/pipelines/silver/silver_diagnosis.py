@@ -113,6 +113,8 @@ def quarantine_diagnosis():
             | F.col("invalid_severity")
             | (F.col("_row_priority") > 1)
         )
+        # These branches intentionally prioritize content validation over duplicate
+        # detection so the first emitted diagnostic explains the most actionable issue.
         .withColumn(
             "diagnostic_id",
             F.when(F.col("missing_diagnosis_code"), F.lit(get_silver_diagnostic_id("diagnosis", "missing_diagnosis_code")))

@@ -138,6 +138,8 @@ def _claims_stream():
         )
     )
 
+    # Keep quarantine_reason, diagnostic_id, and rule_name in the same precedence
+    # order so operators see one consistent "first failing rule" per quarantined row.
     quarantine_reason = (
         F.when(F.col("missing_claim_id"), F.lit(
             "claim_id is required for a trusted silver record"))

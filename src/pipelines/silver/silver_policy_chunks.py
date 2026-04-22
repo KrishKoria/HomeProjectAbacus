@@ -77,6 +77,8 @@ _chunk_policy_text_udf = F.udf(_chunk_policy_text, _CHUNK_SCHEMA)
 def _policy_documents_stream():
     """Build the shared document stream for trusted chunks and quarantined PDFs."""
     duplicate_window = Window.partitionBy("path").orderBy(
+        # Policies are versioned by source path; only the freshest copy should fan out
+        # into chunks, while older copies are preserved for quarantine diagnostics.
         F.coalesce(F.col("_commit_timestamp"), F.col("_ingested_at"), F.col("modificationTime")).desc(),
         F.col("_pipeline_run_id").desc(),
     )
@@ -129,6 +131,8 @@ def silver_policy_chunks():
         .withColumn("chunk_text", F.col("chunk.chunk_text"))
         .withColumn("token_count", F.col("chunk.token_count"))
         .withColumn(
+            # A deterministic hash keeps chunk IDs stable across reruns as long as the
+            # document path and chunk position do not change.
             "chunk_id",
             F.sha2(F.concat_ws("::", F.col("path"), F.col("chunk.chunk_index").cast("string")), 256),
         )
