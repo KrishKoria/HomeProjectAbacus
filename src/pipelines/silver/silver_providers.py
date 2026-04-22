@@ -49,6 +49,8 @@ def _providers_stream():
         .withColumn("missing_provider_id", F.col("provider_id").isNull())
         .withColumn("missing_doctor_name", F.col("doctor_name").isNull())
     )
+    # Missing location is survivable for provider lookups, so keep the row trusted
+    # and surface the gap through a quality flag instead of quarantining it.
     return cleaned.withColumn("location", F.coalesce(F.col("location"), F.lit("Unknown")))
 
 

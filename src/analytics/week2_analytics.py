@@ -107,6 +107,8 @@ def build_high_cost_claims_summary(
 
     return (
         claims.join(providers, on="provider_id", how="left")
+        # The benchmark table is keyed by procedure and provider region, so both sides
+        # are needed before a claim can be compared to an expected cost.
         .join(
             cost,
             on=[
@@ -128,6 +130,8 @@ def build_high_cost_claims_summary(
                 F.col("billed_amount").cast("double") / F.col("expected_cost").cast("double")
             ).alias("amount_to_benchmark_ratio"),
         )
+        # Claims without a regional benchmark stay visible in the broader EDA tables,
+        # but they cannot participate in the high-cost ratio analysis.
         .where(F.col("expected_cost").isNotNull())
         .where(F.col("amount_to_benchmark_ratio") >= F.lit(threshold_ratio))
         .orderBy(F.desc("amount_to_benchmark_ratio"), F.asc("claim_id"))
@@ -157,6 +161,7 @@ def build_week2_dashboard_summary(spark, catalog: str, bronze_schema: str):
             F.col("billed_amount").cast("double") / F.col("expected_cost").cast("double"),
         )
         .withColumn(
+            # Keep this as an integer flag so the daily rollup can sum anomalies directly.
             "is_high_cost_claim",
             F.when(F.col("amount_to_benchmark_ratio") >= F.lit(HIGH_COST_THRESHOLD_RATIO), F.lit(1)).otherwise(F.lit(0)),
         )

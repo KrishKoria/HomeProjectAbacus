@@ -37,6 +37,7 @@ QUARANTINE_COST_TABLE = f"healthcare.{QUARANTINE_SCHEMA_DEFAULT}.cost"
 def _cost_stream():
     """Normalize regional benchmark rows and attach booleans used by the split outputs."""
     duplicate_window = Window.partitionBy("procedure_code", "region").orderBy(
+        # Benchmarks are keyed by procedure + region, so later records replace earlier ones.
         F.coalesce(F.col("_commit_timestamp"), F.col("_ingested_at")).desc(),
         F.col("_pipeline_run_id").desc(),
     )
@@ -116,6 +117,8 @@ def quarantine_cost():
             | F.col("invalid_expected_cost")
             | (F.col("_row_priority") > 1)
         )
+        # The rule order here matches the human-readable reason below so the emitted
+        # diagnostic metadata always describes the same primary failure.
         .withColumn(
             "diagnostic_id",
             F.when(F.col("missing_procedure_code"), F.lit(get_silver_diagnostic_id("cost", "missing_procedure_code")))
