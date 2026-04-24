@@ -102,14 +102,18 @@ def spark_quality_flags(flag_expressions: Mapping[str, object]):
     """Return a Spark array<string> with all active quality flags."""
     from pyspark.sql import functions as F
 
-    return F.array_remove(
-        F.array(
-            *[
-                F.when(expression, F.lit(flag_name)).otherwise(F.lit(None))
-                for flag_name, expression in sorted(flag_expressions.items())
-            ]
-        ),
-        F.lit(None),
+    if not flag_expressions:
+        return F.array().cast("array<string>")
+
+    flags = F.array(
+        *[
+            F.when(expression, F.lit(flag_name)).otherwise(F.lit(None).cast("string"))
+            for flag_name, expression in sorted(flag_expressions.items())
+        ]
+    ).cast("array<string>")
+    return F.filter(
+        flags,
+        lambda flag: flag.isNotNull(),
     )
 
 

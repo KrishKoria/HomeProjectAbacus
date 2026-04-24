@@ -69,8 +69,8 @@ def silver_table_properties(
 
 
 def read_bronze_cdf(spark, table_name: str):
-    """Return a streaming DataFrame that reads Bronze changes through Delta CDF."""
-    return spark.readStream.option("readChangeFeed", "true").table(table_name)
+    """Return a batch snapshot of a Bronze table for Silver materialization."""
+    return spark.read.table(table_name)
 
 
 __all__ = [

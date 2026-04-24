@@ -90,8 +90,7 @@ def _claims_stream():
     diagnosis = _normalized_diagnosis_lookup()
 
     cleaned = (
-        claims.where(F.col("_change_type").isin("insert", "update_postimage"))
-        .withColumn("claim_id", spark_normalize_code(F.col("claim_id")))
+        claims.withColumn("claim_id", spark_normalize_code(F.col("claim_id")))
         .withColumn("patient_id", spark_normalize_code(F.col("patient_id")))
         .withColumn("provider_id", spark_normalize_code(F.col("provider_id")))
         .withColumn("diagnosis_code", spark_normalize_code(F.col("diagnosis_code")))
@@ -112,8 +111,8 @@ def _claims_stream():
     }
 
     duplicate_window = Window.partitionBy("claim_id").orderBy(
-        # Keep the latest image when the same claim_id appears multiple times.
-        F.coalesce(F.col("_commit_timestamp"), F.col("_ingested_at")).desc(),
+        # Keep the latest ingested row when the same claim_id appears multiple times.
+        F.col("_ingested_at").desc(),
         F.col("_pipeline_run_id").desc(),
     )
 
@@ -214,9 +213,6 @@ def silver_claims():
         "quarantine_reason",
         "provider_exists",
         "diagnosis_exists",
-        "_change_type",
-        "_commit_version",
-        "_commit_timestamp",
     )
 
 
@@ -247,9 +243,6 @@ def quarantine_claims():
         ),
     ).withColumn("_quarantined_at", F.current_timestamp()).drop(
         "_row_priority",
-        "_change_type",
-        "_commit_version",
-        "_commit_timestamp",
         "missing_claim_id",
         "missing_patient_id",
         "missing_provider_id",

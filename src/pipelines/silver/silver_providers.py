@@ -30,12 +30,11 @@ QUARANTINE_PROVIDERS_TABLE = f"healthcare.{QUARANTINE_SCHEMA_DEFAULT}.providers"
 def _providers_stream():
     """Normalize provider records and attach validation booleans used downstream."""
     duplicate_window = Window.partitionBy("provider_id").orderBy(
-        F.coalesce(F.col("_commit_timestamp"), F.col("_ingested_at")).desc(),
+        F.col("_ingested_at").desc(),
         F.col("_pipeline_run_id").desc(),
     )
     cleaned = (
         read_bronze_cdf(spark, BRONZE_PROVIDERS_TABLE)
-        .where(F.col("_change_type").isin("insert", "update_postimage"))
         .withColumn("provider_id", spark_normalize_code(F.col("provider_id")))
         .withColumn("doctor_name", spark_normalize_title(F.col("doctor_name")))
         .withColumn("specialty", spark_normalize_title(F.col("specialty")))
@@ -78,9 +77,6 @@ def silver_providers():
         "_row_priority",
         "missing_provider_id",
         "missing_doctor_name",
-        "_change_type",
-        "_commit_version",
-        "_commit_timestamp",
     )
 
 
@@ -133,4 +129,4 @@ def quarantine_providers():
         )
         .withColumn("_quarantined_at", F.current_timestamp())
     )
-    return diagnostics.drop("_change_type", "_commit_version", "_commit_timestamp", "_row_priority")
+    return diagnostics.drop("_row_priority")

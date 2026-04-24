@@ -35,12 +35,11 @@ QUARANTINE_DIAGNOSIS_TABLE = f"healthcare.{QUARANTINE_SCHEMA_DEFAULT}.diagnosis"
 def _diagnosis_stream():
     """Normalize diagnosis rows and attach validation flags for trusted/quarantine splits."""
     duplicate_window = Window.partitionBy("diagnosis_code").orderBy(
-        F.coalesce(F.col("_commit_timestamp"), F.col("_ingested_at")).desc(),
+        F.col("_ingested_at").desc(),
         F.col("_pipeline_run_id").desc(),
     )
     return (
         read_bronze_cdf(spark, BRONZE_DIAGNOSIS_TABLE)
-        .where(F.col("_change_type").isin("insert", "update_postimage"))
         .withColumn("diagnosis_code", spark_normalize_code(F.col("diagnosis_code")))
         .withColumn("category", spark_normalize_title(F.col("category")))
         .withColumn("severity", spark_normalize_severity(F.col("severity")))
@@ -82,9 +81,6 @@ def silver_diagnosis():
         "missing_category",
         "missing_severity",
         "invalid_severity",
-        "_change_type",
-        "_commit_version",
-        "_commit_timestamp",
     )
 
 
@@ -151,4 +147,4 @@ def quarantine_diagnosis():
         )
         .withColumn("_quarantined_at", F.current_timestamp())
     )
-    return quarantined.drop("_change_type", "_commit_version", "_commit_timestamp", "_row_priority")
+    return quarantined.drop("_row_priority")

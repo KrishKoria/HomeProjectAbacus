@@ -79,12 +79,11 @@ def _policy_documents_stream():
     duplicate_window = Window.partitionBy("path").orderBy(
         # Policies are versioned by source path; only the freshest copy should fan out
         # into chunks, while older copies are preserved for quarantine diagnostics.
-        F.coalesce(F.col("_commit_timestamp"), F.col("_ingested_at"), F.col("modificationTime")).desc(),
+        F.coalesce(F.col("_ingested_at"), F.col("modificationTime")).desc(),
         F.col("_pipeline_run_id").desc(),
     )
     extracted = (
         read_bronze_cdf(spark, BRONZE_POLICIES_TABLE)
-        .where(F.col("_change_type").isin("insert", "update_postimage"))
         .withColumn("_silver_processed_at", F.current_timestamp())
         .withColumn("_row_priority", F.row_number().over(duplicate_window))
         .withColumn("extract_result", _extract_policy_text_udf(F.col("content")))
@@ -204,4 +203,4 @@ def quarantine_policy_chunks():
         )
         .withColumn("_quarantined_at", F.current_timestamp())
     )
-    return quarantined.drop("_change_type", "_commit_version", "_commit_timestamp", "_row_priority")
+    return quarantined.drop("_row_priority")

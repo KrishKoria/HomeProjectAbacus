@@ -16,9 +16,10 @@ BRONZE_VOLUME_ROOT: Final[str] = "/Volumes/healthcare/bronze/raw_landing"
 
 COMMON_DELTA_TABLE_PROPERTIES: Final[dict[str, str]] = {
     "delta.enableChangeDataFeed": "true",
-    "delta.logRetentionDuration": "interval 6 years",
-    "delta.deletedFileRetentionDuration": "interval 6 years",
+    "delta.logRetentionDuration": "interval 2190 days",
+    "delta.deletedFileRetentionDuration": "interval 2190 days",
 }
+
 
 def bronze_volume_path(dataset_key: str) -> str:
     """Return the canonical Bronze volume path for a dataset folder."""

@@ -44,6 +44,7 @@ from src.common.silver_pipeline_config import (  # noqa: E402
     QUARANTINE_AUDIT_COLUMNS,
     SILVER_AUDIT_COLUMNS,
     quarantine_table_name,
+    read_bronze_cdf,
     silver_table_name,
 )
 
@@ -90,6 +91,22 @@ class SilverCleaningTests(unittest.TestCase):
             ["missing_billed_amount", "provider_location_unknown"],
         )
 
+    def test_spark_quality_flags_empty_map_is_array_string(self) -> None:
+        try:
+            from pyspark.sql import SparkSession, functions as F
+        except ModuleNotFoundError:
+            self.skipTest("pyspark is not installed in the local test environment")
+
+        from src.common.silver_cleaning import spark_quality_flags
+
+        spark = SparkSession.builder.master("local[1]").appName("silver-quality-flags-test").getOrCreate()
+        try:
+            frame = spark.range(1).select(spark_quality_flags({}).alias("_data_quality_flags"))
+            self.assertEqual(frame.schema["_data_quality_flags"].dataType.simpleString(), "array<string>")
+            self.assertEqual(frame.select(F.size("_data_quality_flags")).first()[0], 0)
+        finally:
+            spark.stop()
+
 
 class PolicyChunkingTests(unittest.TestCase):
     def test_policy_text_is_normalized_before_chunking(self) -> None:
@@ -123,6 +140,28 @@ class SilverContractTests(unittest.TestCase):
             quarantine_table_name("healthcare", "policy_chunks"),
             "healthcare.quarantine.policy_chunks",
         )
+
+    def test_bronze_reader_uses_batch_snapshot_for_silver_windows(self) -> None:
+        class FakeReader:
+            def __init__(self) -> None:
+                self.table_name: str | None = None
+
+            def table(self, table_name: str):
+                self.table_name = table_name
+                return "frame"
+
+        class FakeSpark:
+            def __init__(self) -> None:
+                self.read = FakeReader()
+
+            @property
+            def readStream(self):  # pragma: no cover - should never be touched
+                raise AssertionError("Silver CDF reader must not use streaming mode with analytic windows")
+
+        spark = FakeSpark()
+
+        self.assertEqual(read_bronze_cdf(spark, "healthcare.bronze.claims"), "frame")
+        self.assertEqual(spark.read.table_name, "healthcare.bronze.claims")
 
     def test_new_log_categories_and_messages_are_phi_safe_templates(self) -> None:
         self.assertEqual(LOG_CATEGORY_SILVER_PIPELINE, "silver_pipeline")
