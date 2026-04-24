@@ -21,11 +21,6 @@ identifies, or could be used to identify, an individual. This requires linkage
 to a specific person. Reference/lookup tables without patient linkage do NOT
 contain PHI, even if they store medical codes (see diagnosis table note below).
 
-Business Associate context
---------------------------
-Abacus Insights is a Business Associate (BA) under 45 CFR § 164.314. Since the
-HIPAA Omnibus Rule (2013), BAs are DIRECTLY liable to OCR enforcement. This
-registry is a required artifact of the BA's Security Management Process.
 """
 
 from __future__ import annotations
@@ -48,11 +43,15 @@ PHI_COLUMNS: Final[dict[str, frozenset[str]]] = {
     # Claims table: contains patient-linked health information.
     # Every PHI column here is linked to a specific patient via patient_id.
     "healthcare.bronze.claims": frozenset({
-        "patient_id",      # § 164.514(b)(2)(ii) — unique identifying code for the patient
-        "diagnosis_code",  # § 164.514(b)(2)(xvi) — medical condition linked to patient_id
-        "billed_amount",   # § 164.514(b)(2)(xvii) — financial health information
-        "date",            # § 164.514(b)(2)(iv) — claim submission date is a date directly
-                           # related to an individual's health event (except year = PHI)
+        # § 164.514(b)(2)(ii) — unique identifying code for the patient
+        "patient_id",
+        # § 164.514(b)(2)(xvi) — medical condition linked to patient_id
+        "diagnosis_code",
+        # § 164.514(b)(2)(xvii) — financial health information
+        "billed_amount",
+        # § 164.514(b)(2)(iv) — claim submission date is a date directly
+        "date",
+        # related to an individual's health event (except year = PHI)
     }),
 
     # Diagnosis reference table: maps codes to categories (D10=Heart, High).
@@ -80,7 +79,7 @@ SENSITIVE_COLUMNS: Final[dict[str, frozenset[str]]] = {
     "healthcare.bronze.claims": frozenset({
         "claim_id",       # PHI-adjacent: unique claim identifier — can link to patient record
         "provider_id",    # PHI-adjacent: links claim to provider — operational but access-controlled
-        "procedure_code", # PHI-adjacent: treatment type linked to patient health event
+        "procedure_code",  # PHI-adjacent: treatment type linked to patient health event
     }),
     "healthcare.bronze.diagnosis": frozenset(),
     "healthcare.bronze.providers": frozenset(),
