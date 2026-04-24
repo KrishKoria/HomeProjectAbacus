@@ -38,12 +38,11 @@ def _cost_stream():
     """Normalize regional benchmark rows and attach booleans used by the split outputs."""
     duplicate_window = Window.partitionBy("procedure_code", "region").orderBy(
         # Benchmarks are keyed by procedure + region, so later records replace earlier ones.
-        F.coalesce(F.col("_commit_timestamp"), F.col("_ingested_at")).desc(),
+        F.col("_ingested_at").desc(),
         F.col("_pipeline_run_id").desc(),
     )
     return (
         read_bronze_cdf(spark, BRONZE_COST_TABLE)
-        .where(F.col("_change_type").isin("insert", "update_postimage"))
         .withColumn("procedure_code", spark_normalize_code(F.col("procedure_code")))
         .withColumn("average_cost", spark_decimal_or_null(F.col("average_cost"), MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE))
         .withColumn("expected_cost", spark_decimal_or_null(F.col("expected_cost"), MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE))
@@ -86,9 +85,6 @@ def silver_cost():
         "missing_region",
         "invalid_average_cost",
         "invalid_expected_cost",
-        "_change_type",
-        "_commit_version",
-        "_commit_timestamp",
     )
 
 
@@ -155,4 +151,4 @@ def quarantine_cost():
         )
         .withColumn("_quarantined_at", F.current_timestamp())
     )
-    return quarantined.drop("_change_type", "_commit_version", "_commit_timestamp", "_row_priority")
+    return quarantined.drop("_row_priority")
