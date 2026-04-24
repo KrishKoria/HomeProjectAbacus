@@ -11,7 +11,7 @@ from streamlit_app.lib.data_access import (
     filter_frame_by_date,
 )
 from streamlit_app.lib.formatting import format_currency, format_integer
-from streamlit_app.lib.ui import render_missing_artifact, render_page_header
+from streamlit_app.lib.ui import render_metric_card, render_missing_artifact, render_page_header
 
 
 render_page_header(
@@ -42,9 +42,12 @@ if selected_severities:
     filtered_diagnosis_df = filtered_diagnosis_df[filtered_diagnosis_df["severity"].isin(selected_severities)]
 
 summary_columns = st.columns(3)
-summary_columns[0].metric("Claim Days", format_integer(len(filtered_trend_df)))
-summary_columns[1].metric("Claims in Window", format_integer(filtered_trend_df["total_claims"].sum()))
-summary_columns[2].metric("Window Spend", format_currency(filtered_trend_df["total_billed_amount"].sum()))
+with summary_columns[0]:
+    render_metric_card("Claim Days", format_integer(len(filtered_trend_df)))
+with summary_columns[1]:
+    render_metric_card("Claims in Window", format_integer(filtered_trend_df["total_claims"].sum()))
+with summary_columns[2]:
+    render_metric_card("Window Spend", format_currency(filtered_trend_df["total_billed_amount"].sum()))
 
 line_columns = st.columns(2)
 with line_columns[0]:

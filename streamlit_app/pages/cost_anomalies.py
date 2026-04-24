@@ -10,7 +10,7 @@ from streamlit_app.lib.data_access import (
     filter_frame_by_date,
 )
 from streamlit_app.lib.formatting import format_currency, format_integer, format_ratio
-from streamlit_app.lib.ui import render_missing_artifact, render_page_header
+from streamlit_app.lib.ui import render_metric_card, render_missing_artifact, render_page_header
 
 
 render_page_header(
@@ -45,10 +45,14 @@ if selected_specialties:
     filtered = filtered[filtered["specialty"].isin(selected_specialties)]
 
 metric_columns = st.columns(4)
-metric_columns[0].metric("Flagged Claims", format_integer(len(filtered)))
-metric_columns[1].metric("Flagged Spend", format_currency(filtered["billed_amount"].sum()))
-metric_columns[2].metric("Average Ratio", format_ratio(filtered["amount_to_benchmark_ratio"].mean()))
-metric_columns[3].metric("Peak Ratio", format_ratio(filtered["amount_to_benchmark_ratio"].max()))
+with metric_columns[0]:
+    render_metric_card("Flagged Claims", format_integer(len(filtered)))
+with metric_columns[1]:
+    render_metric_card("Flagged Spend", format_currency(filtered["billed_amount"].sum()))
+with metric_columns[2]:
+    render_metric_card("Average Ratio", format_ratio(filtered["amount_to_benchmark_ratio"].mean()))
+with metric_columns[3]:
+    render_metric_card("Peak Ratio", format_ratio(filtered["amount_to_benchmark_ratio"].max()))
 
 doctor_summary = (
     filtered.groupby("doctor_name", dropna=False)

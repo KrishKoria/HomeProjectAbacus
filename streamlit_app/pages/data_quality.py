@@ -4,7 +4,7 @@ import streamlit as st
 
 from streamlit_app.lib.charts import bar_chart
 from streamlit_app.lib.data_access import cached_load_optional_ops_artifact
-from streamlit_app.lib.ui import render_page_header
+from streamlit_app.lib.ui import render_metric_card, render_page_header
 
 
 render_page_header(
@@ -28,9 +28,12 @@ if selected_datasets:
     warnings = warnings[warnings["dataset"].isin(selected_datasets)]
 
 metric_columns = st.columns(3)
-metric_columns[0].metric("Quality Metrics", f"{len(quality_metrics):,}")
-metric_columns[1].metric("Row Count Records", f"{len(row_counts):,}")
-metric_columns[2].metric("Warnings", f"{len(warnings):,}")
+with metric_columns[0]:
+    render_metric_card("Quality Metrics", f"{len(quality_metrics):,}")
+with metric_columns[1]:
+    render_metric_card("Row Count Records", f"{len(row_counts):,}")
+with metric_columns[2]:
+    render_metric_card("Warnings", f"{len(warnings):,}")
 
 top_metrics = quality_metrics.sort_values("metric_value", ascending=False, kind="stable").head(12)
 st.altair_chart(bar_chart(top_metrics, "metric_name", "metric_value", "Largest Recorded Quality Metrics", horizontal=True), width="stretch")

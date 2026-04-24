@@ -11,7 +11,7 @@ from streamlit_app.lib.data_access import (
     latest_record,
 )
 from streamlit_app.lib.formatting import format_currency, format_integer, format_timestamp
-from streamlit_app.lib.ui import render_missing_artifact, render_page_header, render_status_banner
+from streamlit_app.lib.ui import render_metric_card, render_missing_artifact, render_page_header, render_status_banner
 
 
 render_page_header(
@@ -52,10 +52,14 @@ render_status_banner(
 )
 
 metric_columns = st.columns(4)
-metric_columns[0].metric("Total Claims", format_integer(filtered["total_claims"].sum()))
-metric_columns[1].metric("Total Billed", format_currency(filtered["total_billed_amount"].sum()))
-metric_columns[2].metric("Active Providers", format_integer(filtered["active_provider_count"].max()))
-metric_columns[3].metric("High-Cost Claims", format_integer(filtered["high_cost_claim_count"].sum()))
+with metric_columns[0]:
+    render_metric_card("Total Claims", format_integer(filtered["total_claims"].sum()))
+with metric_columns[1]:
+    render_metric_card("Total Billed", format_currency(filtered["total_billed_amount"].sum()))
+with metric_columns[2]:
+    render_metric_card("Active Providers", format_integer(filtered["active_provider_count"].max()))
+with metric_columns[3]:
+    render_metric_card("High-Cost Claims", format_integer(filtered["high_cost_claim_count"].sum()))
 
 chart_columns = st.columns([1.8, 1.2])
 with chart_columns[0]:

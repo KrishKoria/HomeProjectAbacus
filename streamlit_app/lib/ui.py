@@ -86,23 +86,41 @@ def inject_base_styles() -> None:
           color: var(--ink);
         }
 
-        div[data-testid="stMetric"] {
+        .atlas-metric-card {
           background: var(--panel);
           border: 1px solid var(--line);
           border-radius: 20px;
-          padding: 0.8rem 0.9rem;
+          padding: 0.95rem 1.05rem 0.9rem;
           box-shadow: 0 18px 40px rgba(24, 51, 58, 0.06);
+          min-height: 8.5rem;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
         }
 
-        div[data-testid="stMetricLabel"] {
-          color: var(--muted) !important;
+        .atlas-metric-label {
+          color: var(--muted);
           text-transform: uppercase;
           letter-spacing: 0.08em;
+          font-weight: 700;
+          font-size: 0.82rem;
+          line-height: 1.2;
+          margin-bottom: 0.75rem;
         }
 
-        div[data-testid="stMetricValue"] {
-          color: var(--ink) !important;
+        .atlas-metric-value {
+          color: var(--ink);
           font-family: 'Fraunces', serif;
+          font-size: clamp(2.1rem, 4vw, 2.8rem);
+          line-height: 1;
+          letter-spacing: -0.03em;
+        }
+
+        .atlas-metric-delta {
+          color: var(--teal);
+          font-size: 0.9rem;
+          font-weight: 700;
+          margin-top: 0.65rem;
         }
 
         .atlas-status {
@@ -160,12 +178,29 @@ def render_status_banner(label: str, tone: str = "good") -> None:
     )
 
 
+def render_metric_card(label: str, value: str, delta: str | None = None) -> None:
+    delta_markup = f'<div class="atlas-metric-delta">{delta}</div>' if delta else ""
+    st.markdown(
+        f"""
+        <section class="atlas-metric-card">
+          <div class="atlas-metric-label">{label}</div>
+          <div>
+            <div class="atlas-metric-value">{value}</div>
+            {delta_markup}
+          </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_missing_artifact(message: str) -> None:
     st.markdown(f'<div class="atlas-note">{message}</div>', unsafe_allow_html=True)
 
 
 __all__ = [
     "inject_base_styles",
+    "render_metric_card",
     "render_missing_artifact",
     "render_page_header",
     "render_status_banner",

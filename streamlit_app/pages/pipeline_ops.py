@@ -4,7 +4,7 @@ import streamlit as st
 
 from streamlit_app.lib.data_access import cached_load_optional_ops_artifact, latest_record
 from streamlit_app.lib.formatting import format_timestamp
-from streamlit_app.lib.ui import render_page_header, render_status_banner
+from streamlit_app.lib.ui import render_metric_card, render_page_header, render_status_banner
 
 
 render_page_header(
@@ -29,10 +29,14 @@ if latest_ingest is None and latest_analytics is None:
     render_status_banner("No local pipeline runs recorded yet.", tone="warn")
 
 metric_columns = st.columns(4)
-metric_columns[0].metric("Bronze Runs", f"{len(ingest_runs):,}")
-metric_columns[1].metric("Analytics Runs", f"{len(analytics_runs):,}")
-metric_columns[2].metric("Tracked Artifacts", f"{len(artifact_inventory):,}")
-metric_columns[3].metric("Failures", f"{len(failures):,}")
+with metric_columns[0]:
+    render_metric_card("Bronze Runs", f"{len(ingest_runs):,}")
+with metric_columns[1]:
+    render_metric_card("Analytics Runs", f"{len(analytics_runs):,}")
+with metric_columns[2]:
+    render_metric_card("Tracked Artifacts", f"{len(artifact_inventory):,}")
+with metric_columns[3]:
+    render_metric_card("Failures", f"{len(failures):,}")
 
 table_columns = st.columns(2)
 with table_columns[0]:

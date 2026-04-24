@@ -10,7 +10,7 @@ from streamlit_app.lib.data_access import (
     filter_frame_by_date,
 )
 from streamlit_app.lib.formatting import format_currency, format_integer
-from streamlit_app.lib.ui import render_missing_artifact, render_page_header
+from streamlit_app.lib.ui import render_metric_card, render_missing_artifact, render_page_header
 
 
 render_page_header(
@@ -62,9 +62,12 @@ doctor_summary = (
 )
 
 metric_columns = st.columns(3)
-metric_columns[0].metric("Visible Claims", format_integer(len(filtered)))
-metric_columns[1].metric("Visible Spend", format_currency(filtered["billed_amount"].sum()))
-metric_columns[2].metric("Doctors", format_integer(filtered["doctor_name"].nunique()))
+with metric_columns[0]:
+    render_metric_card("Visible Claims", format_integer(len(filtered)))
+with metric_columns[1]:
+    render_metric_card("Visible Spend", format_currency(filtered["billed_amount"].sum()))
+with metric_columns[2]:
+    render_metric_card("Doctors", format_integer(filtered["doctor_name"].nunique()))
 
 chart_columns = st.columns(2)
 with chart_columns[0]:
