@@ -45,17 +45,50 @@ def ensure_analytics_schema(spark, catalog: str, analytics_schema: str) -> None:
 
 
 def build_claims_provider_joined(spark, catalog: str, bronze_schema: str):
-    """Join claims to providers without cleaning nulls or deduplicating records."""
+    """Join claims to providers with a persistable, non-duplicated schema."""
     claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims")).alias("claims")
     providers = spark.table(bronze_table_name(catalog, bronze_schema, "providers")).alias("providers")
-    return claims.join(providers, on="provider_id", how="left")
+    return claims.join(providers, on="provider_id", how="left").select(
+        claims["claim_id"],
+        claims["patient_id"],
+        claims["provider_id"],
+        claims["diagnosis_code"],
+        claims["procedure_code"],
+        claims["billed_amount"],
+        claims["date"],
+        providers["doctor_name"],
+        providers["specialty"],
+        providers["location"],
+        claims["_ingested_at"].alias("claim_ingested_at"),
+        claims["_source_file"].alias("claim_source_file"),
+        claims["_pipeline_run_id"].alias("claim_pipeline_run_id"),
+        providers["_ingested_at"].alias("provider_ingested_at"),
+        providers["_source_file"].alias("provider_source_file"),
+        providers["_pipeline_run_id"].alias("provider_pipeline_run_id"),
+    )
 
 
 def build_claims_diagnosis_joined(spark, catalog: str, bronze_schema: str):
-    """Join claims to diagnosis reference data without altering Bronze values."""
+    """Join claims to diagnosis reference data with a persistable schema."""
     claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims")).alias("claims")
     diagnosis = spark.table(bronze_table_name(catalog, bronze_schema, "diagnosis")).alias("diagnosis")
-    return claims.join(diagnosis, on="diagnosis_code", how="left")
+    return claims.join(diagnosis, on="diagnosis_code", how="left").select(
+        claims["claim_id"],
+        claims["patient_id"],
+        claims["provider_id"],
+        claims["diagnosis_code"],
+        claims["procedure_code"],
+        claims["billed_amount"],
+        claims["date"],
+        diagnosis["category"],
+        diagnosis["severity"],
+        claims["_ingested_at"].alias("claim_ingested_at"),
+        claims["_source_file"].alias("claim_source_file"),
+        claims["_pipeline_run_id"].alias("claim_pipeline_run_id"),
+        diagnosis["_ingested_at"].alias("diagnosis_ingested_at"),
+        diagnosis["_source_file"].alias("diagnosis_source_file"),
+        diagnosis["_pipeline_run_id"].alias("diagnosis_pipeline_run_id"),
+    )
 
 
 def build_claims_by_specialty_summary(spark, catalog: str, bronze_schema: str):
