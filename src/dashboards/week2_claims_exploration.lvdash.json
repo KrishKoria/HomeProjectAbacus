@@ -1,0 +1,697 @@
+{
+  "datasets": [
+    {
+      "name": "a1b2c3d4",
+      "displayName": "Total Claims",
+      "queryLines": [
+        "SELECT SUM(total_claims) AS total_claims\n",
+        "FROM healthcare.analytics.week2_dashboard_summary"
+      ]
+    },
+    {
+      "name": "b2c3d4e5",
+      "displayName": "Claims Trend",
+      "queryLines": [
+        "SELECT\n",
+        "  claim_date,\n",
+        "  total_claims,\n",
+        "  active_provider_count,\n",
+        "  total_billed_amount,\n",
+        "  avg_billed_amount,\n",
+        "  high_cost_claim_count\n",
+        "FROM healthcare.analytics.week2_dashboard_summary\n",
+        "ORDER BY claim_date"
+      ]
+    },
+    {
+      "name": "c3d4e5f6",
+      "displayName": "Claims By Specialty",
+      "queryLines": [
+        "SELECT\n",
+        "  specialty,\n",
+        "  claim_count,\n",
+        "  provider_count,\n",
+        "  avg_billed_amount,\n",
+        "  total_billed_amount\n",
+        "FROM healthcare.analytics.claims_by_specialty_summary\n",
+        "ORDER BY claim_count DESC, specialty ASC"
+      ]
+    },
+    {
+      "name": "d4e5f6a7",
+      "displayName": "Claims By Region",
+      "queryLines": [
+        "SELECT\n",
+        "  region,\n",
+        "  claim_count,\n",
+        "  provider_count,\n",
+        "  avg_billed_amount,\n",
+        "  total_billed_amount\n",
+        "FROM healthcare.analytics.claims_by_region_summary\n",
+        "ORDER BY claim_count DESC, region ASC"
+      ]
+    },
+    {
+      "name": "e5f6a7b8",
+      "displayName": "High Cost Claims",
+      "queryLines": [
+        "SELECT\n",
+        "  claim_id,\n",
+        "  provider_id,\n",
+        "  doctor_name,\n",
+        "  specialty,\n",
+        "  region,\n",
+        "  procedure_code,\n",
+        "  billed_amount,\n",
+        "  expected_cost,\n",
+        "  amount_to_benchmark_ratio\n",
+        "FROM healthcare.analytics.high_cost_claims_summary\n",
+        "ORDER BY amount_to_benchmark_ratio DESC, claim_id ASC"
+      ]
+    },
+    {
+      "name": "f6a7b8c9",
+      "displayName": "Pipeline Updates",
+      "queryLines": [
+        "SELECT\n",
+        "  timestamp,\n",
+        "  update_id,\n",
+        "  pipeline_id,\n",
+        "  update_state,\n",
+        "  actor\n",
+        "FROM healthcare.analytics.ops_pipeline_updates\n",
+        "ORDER BY timestamp DESC"
+      ]
+    },
+    {
+      "name": "a7b8c9d0",
+      "displayName": "Expectation Metrics",
+      "queryLines": [
+        "SELECT\n",
+        "  timestamp,\n",
+        "  update_id,\n",
+        "  dataset,\n",
+        "  expectation,\n",
+        "  passed_records,\n",
+        "  failed_records\n",
+        "FROM healthcare.analytics.ops_expectation_metrics\n",
+        "ORDER BY timestamp DESC"
+      ]
+    },
+    {
+      "name": "b8c9d0e1",
+      "displayName": "Latest Failures",
+      "queryLines": [
+        "SELECT\n",
+        "  timestamp,\n",
+        "  dataset,\n",
+        "  update_id,\n",
+        "  platform_error_code,\n",
+        "  diagnostic_id,\n",
+        "  error_message\n",
+        "FROM healthcare.analytics.ops_latest_failures\n",
+        "ORDER BY timestamp DESC"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "c9d0e1f2",
+      "displayName": "Claims Overview",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "d0e1f2a3",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Week 2 Claims Exploration"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "e1f2a3b4",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "a1b2c3d4",
+                  "fields": [
+                    {
+                      "name": "total_claims",
+                      "expression": "`total_claims`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_claims",
+                  "displayName": "Total Claims"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Claims"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "f2a3b4c5",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "b2c3d4e5",
+                  "fields": [
+                    {
+                      "name": "claim_date",
+                      "expression": "`claim_date`"
+                    },
+                    {
+                      "name": "total_billed_amount",
+                      "expression": "`total_billed_amount`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "claim_date",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Claim Date"
+                },
+                "y": {
+                  "fieldName": "total_billed_amount",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total Billed Amount"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Cost Trend"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 1,
+            "width": 9,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "a3b4c5d6",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c3d4e5f6",
+                  "fields": [
+                    {
+                      "name": "specialty",
+                      "expression": "`specialty`"
+                    },
+                    {
+                      "name": "claim_count",
+                      "expression": "`claim_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "specialty",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Specialty"
+                },
+                "y": {
+                  "fieldName": "claim_count",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Claim Count"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Provider Activity By Specialty"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "b4c5d6e7",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d4e5f6a7",
+                  "fields": [
+                    {
+                      "name": "region",
+                      "expression": "`region`"
+                    },
+                    {
+                      "name": "claim_count",
+                      "expression": "`claim_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "region",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Region"
+                },
+                "y": {
+                  "fieldName": "claim_count",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Claim Count"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Claims By Region"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "c5d6e7f8",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "e5f6a7b8",
+                  "fields": [
+                    {
+                      "name": "claim_id",
+                      "expression": "`claim_id`"
+                    },
+                    {
+                      "name": "doctor_name",
+                      "expression": "`doctor_name`"
+                    },
+                    {
+                      "name": "specialty",
+                      "expression": "`specialty`"
+                    },
+                    {
+                      "name": "region",
+                      "expression": "`region`"
+                    },
+                    {
+                      "name": "procedure_code",
+                      "expression": "`procedure_code`"
+                    },
+                    {
+                      "name": "billed_amount",
+                      "expression": "`billed_amount`"
+                    },
+                    {
+                      "name": "expected_cost",
+                      "expression": "`expected_cost`"
+                    },
+                    {
+                      "name": "amount_to_benchmark_ratio",
+                      "expression": "`amount_to_benchmark_ratio`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "claim_id",
+                    "displayName": "Claim ID"
+                  },
+                  {
+                    "fieldName": "doctor_name",
+                    "displayName": "Doctor"
+                  },
+                  {
+                    "fieldName": "specialty",
+                    "displayName": "Specialty"
+                  },
+                  {
+                    "fieldName": "region",
+                    "displayName": "Region"
+                  },
+                  {
+                    "fieldName": "procedure_code",
+                    "displayName": "Procedure"
+                  },
+                  {
+                    "fieldName": "billed_amount",
+                    "displayName": "Billed Amount"
+                  },
+                  {
+                    "fieldName": "expected_cost",
+                    "displayName": "Expected Cost"
+                  },
+                  {
+                    "fieldName": "amount_to_benchmark_ratio",
+                    "displayName": "Benchmark Ratio"
+                  }
+                ]
+              },
+              "itemsPerPage": 25,
+              "frame": {
+                "showTitle": true,
+                "title": "High-Cost Claims"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 12,
+            "height": 5
+          }
+        }
+      ]
+    },
+    {
+      "name": "d6e7f8a9",
+      "displayName": "Pipeline Ops",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "e7f8a9b0",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Pipeline Operations"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "f8a9b0c1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f6a7b8c9",
+                  "fields": [
+                    {
+                      "name": "timestamp",
+                      "expression": "`timestamp`"
+                    },
+                    {
+                      "name": "update_id",
+                      "expression": "`update_id`"
+                    },
+                    {
+                      "name": "pipeline_id",
+                      "expression": "`pipeline_id`"
+                    },
+                    {
+                      "name": "update_state",
+                      "expression": "`update_state`"
+                    },
+                    {
+                      "name": "actor",
+                      "expression": "`actor`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "timestamp",
+                    "displayName": "Timestamp"
+                  },
+                  {
+                    "fieldName": "update_id",
+                    "displayName": "Update ID"
+                  },
+                  {
+                    "fieldName": "pipeline_id",
+                    "displayName": "Pipeline ID"
+                  },
+                  {
+                    "fieldName": "update_state",
+                    "displayName": "State"
+                  },
+                  {
+                    "fieldName": "actor",
+                    "displayName": "Actor"
+                  }
+                ]
+              },
+              "itemsPerPage": 20,
+              "frame": {
+                "showTitle": true,
+                "title": "Pipeline Health"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "a9b0c1d2",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "a7b8c9d0",
+                  "fields": [
+                    {
+                      "name": "timestamp",
+                      "expression": "`timestamp`"
+                    },
+                    {
+                      "name": "dataset",
+                      "expression": "`dataset`"
+                    },
+                    {
+                      "name": "expectation",
+                      "expression": "`expectation`"
+                    },
+                    {
+                      "name": "passed_records",
+                      "expression": "`passed_records`"
+                    },
+                    {
+                      "name": "failed_records",
+                      "expression": "`failed_records`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "timestamp",
+                    "displayName": "Timestamp"
+                  },
+                  {
+                    "fieldName": "dataset",
+                    "displayName": "Dataset"
+                  },
+                  {
+                    "fieldName": "expectation",
+                    "displayName": "Expectation"
+                  },
+                  {
+                    "fieldName": "passed_records",
+                    "displayName": "Passed"
+                  },
+                  {
+                    "fieldName": "failed_records",
+                    "displayName": "Failed"
+                  }
+                ]
+              },
+              "itemsPerPage": 20,
+              "frame": {
+                "showTitle": true,
+                "title": "Expectation Metrics"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "b0c1d2e3",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "b8c9d0e1",
+                  "fields": [
+                    {
+                      "name": "timestamp",
+                      "expression": "`timestamp`"
+                    },
+                    {
+                      "name": "dataset",
+                      "expression": "`dataset`"
+                    },
+                    {
+                      "name": "diagnostic_id",
+                      "expression": "`diagnostic_id`"
+                    },
+                    {
+                      "name": "platform_error_code",
+                      "expression": "`platform_error_code`"
+                    },
+                    {
+                      "name": "error_message",
+                      "expression": "`error_message`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "timestamp",
+                    "displayName": "Timestamp"
+                  },
+                  {
+                    "fieldName": "dataset",
+                    "displayName": "Dataset"
+                  },
+                  {
+                    "fieldName": "diagnostic_id",
+                    "displayName": "Diagnostic ID"
+                  },
+                  {
+                    "fieldName": "platform_error_code",
+                    "displayName": "Platform Code"
+                  },
+                  {
+                    "fieldName": "error_message",
+                    "displayName": "Error"
+                  }
+                ]
+              },
+              "itemsPerPage": 20,
+              "frame": {
+                "showTitle": true,
+                "title": "Latest Failures"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "genieSpace": {
+      "isEnabled": true,
+      "enablementMode": "ENABLED"
+    }
+  }
+}
