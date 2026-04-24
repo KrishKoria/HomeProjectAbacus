@@ -3,6 +3,11 @@
 .firecrawl/
 .remember/
 .serena/
+.superpowers/
 .worktrees/
+.pytest_cache/
+.streamlit/
+.venv/
+data/
 __pycache__/
 *.pyc
