@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-
 from src.local_pipeline.analytics_builders import run_local_analytics_build
 from src.local_pipeline.bronze_ingest import run_local_bronze_ingest
 from streamlit_app.lib.data_access import ArtifactMissingError, load_analytics_artifact, load_optional_ops_artifact
@@ -34,3 +33,14 @@ def test_streamlit_data_access_loads_generated_artifacts(tmp_path) -> None:
         "diagnostic_id",
         "error_message",
     ]
+
+
+def test_streamlit_home_loads_from_app_directory(monkeypatch) -> None:
+    monkeypatch.chdir(PROJECT_ROOT / "streamlit_app")
+
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_file("Home.py")
+    app.run(timeout=60)
+
+    assert len(app.exception) == 0
