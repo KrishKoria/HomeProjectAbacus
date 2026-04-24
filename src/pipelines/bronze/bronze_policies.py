@@ -19,10 +19,10 @@ HIPAA compliance controls
 --------------------------
 delta.enableChangeDataFeed         Enables incremental reads downstream so Silver only
                                    processes new policy documents — required for efficient CDC.
-delta.logRetentionDuration         6 years — organization retention policy for audit
+delta.logRetentionDuration         interval 2190 days — organization retention policy for audit
                                    reconstruction, consistent with §164.316(b)(2)(i)
                                    compliance documentation standards.
-delta.deletedFileRetentionDuration 6 years — retains physical files after logical deletion
+delta.deletedFileRetentionDuration interval 2190 days — retains physical files after logical deletion
                                    for time-travel audit reconstruction.
 _ingested_at                       Records exactly when data entered the system.
                                    Audit control per § 164.312(b).

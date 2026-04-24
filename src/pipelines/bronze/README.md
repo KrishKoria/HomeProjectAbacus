@@ -82,12 +82,12 @@ Silver imputes `'Unknown'` for missing locations.
 
 ## HIPAA Controls
 
-All five tables are created with these properties (6-year retention is an organization policy for audit reconstruction, consistent with §164.316(b)(2)(i) compliance documentation standards — see bronze_claims.py for full rationale):
+All five tables are created with these properties (`interval 2190 days` is the canonical Delta literal for the six-year organization retention policy used for audit reconstruction, consistent with §164.316(b)(2)(i) compliance documentation standards — see bronze_claims.py for full rationale):
 
 ```python
 "delta.enableChangeDataFeed"         : "true"          # incremental CDC to Silver
-"delta.logRetentionDuration"         : "interval 6 years"  # § 164.316(b)(2)(i) — 6-year retention
-"delta.deletedFileRetentionDuration" : "interval 6 years"  # § 164.316(b)(2)(i) — time-travel audit
+"delta.logRetentionDuration"         : "interval 2190 days"  # § 164.316(b)(2)(i) — six-year retention
+"delta.deletedFileRetentionDuration" : "interval 2190 days"  # § 164.316(b)(2)(i) — time-travel audit
 ```
 
 The claims table additionally carries PHI metadata properties (§ 164.312(a)(2)(iv)):
