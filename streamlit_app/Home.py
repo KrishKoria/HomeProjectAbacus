@@ -2,6 +2,13 @@ from __future__ import annotations
 
 import streamlit as st
 
+try:
+    from streamlit_app.bootstrap import ensure_project_root_on_path
+except ModuleNotFoundError:
+    from bootstrap import ensure_project_root_on_path
+
+ensure_project_root_on_path()
+
 from streamlit_app.lib.ui import inject_base_styles
 
 
