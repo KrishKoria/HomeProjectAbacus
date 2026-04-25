@@ -109,6 +109,12 @@ class BronzePipelineConfigTests(unittest.TestCase):
                 "procedure_code",
                 "billed_amount",
                 "date",
+                "claim_status",
+                "denial_reason_code",
+                "allowed_amount",
+                "paid_amount",
+                "is_denied",
+                "follow_up_required",
             ),
         )
         self.assertEqual(BRONZE_SOURCES["claims"].source_profile, "current_fixture")
@@ -122,11 +128,37 @@ class BronzePipelineConfigTests(unittest.TestCase):
         custom_registry = build_phi_columns_registry(catalog="staging_healthcare", schema="raw_bronze")
         self.assertEqual(
             custom_registry["staging_healthcare.raw_bronze.claims"],
-            frozenset({"patient_id", "diagnosis_code", "billed_amount", "date"}),
+            frozenset(
+                {
+                    "patient_id",
+                    "diagnosis_code",
+                    "billed_amount",
+                    "date",
+                    "claim_status",
+                    "denial_reason_code",
+                    "allowed_amount",
+                    "paid_amount",
+                    "is_denied",
+                    "follow_up_required",
+                }
+            ),
         )
         self.assertEqual(
             get_phi_columns("healthcare.bronze.claims"),
-            frozenset({"patient_id", "diagnosis_code", "billed_amount", "date"}),
+            frozenset(
+                {
+                    "patient_id",
+                    "diagnosis_code",
+                    "billed_amount",
+                    "date",
+                    "claim_status",
+                    "denial_reason_code",
+                    "allowed_amount",
+                    "paid_amount",
+                    "is_denied",
+                    "follow_up_required",
+                }
+            ),
         )
 
     def test_csv_autoloader_options_cover_bronze_defaults(self) -> None:

@@ -13,6 +13,7 @@ from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 from src.common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
+from src.common.bronze_sources import BRONZE_SOURCES
 from src.common.diagnostics import get_silver_diagnostic_id
 from src.common.observability import (
     LOG_CATEGORY_QUARANTINE_AUDIT,
@@ -22,6 +23,7 @@ from src.common.observability import (
 )
 from src.common.silver_cleaning import (
     spark_date_or_null,
+    spark_bool_or_null,
     spark_decimal_or_null,
     spark_normalize_code,
     spark_quality_flags,
@@ -44,6 +46,7 @@ BRONZE_DIAGNOSIS_TABLE = bronze_table_name("diagnosis")
 
 SILVER_CLAIMS_TABLE = silver_table_name(CATALOG_DEFAULT, "claims", SILVER_SCHEMA_DEFAULT)
 QUARANTINE_CLAIMS_TABLE = quarantine_table_name(CATALOG_DEFAULT, "claims", QUARANTINE_SCHEMA_DEFAULT)
+CLAIMS_PHI_COLUMNS = tuple(sorted(BRONZE_SOURCES["claims"].phi_columns))
 
 _TRUSTED_COMMENT = MESSAGE_TEMPLATE_SILVER_TABLE_READY.format(
     table_name=SILVER_CLAIMS_TABLE,
@@ -104,6 +107,18 @@ def _claims_stream():
                                   MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE),
         )
         .withColumn("date", spark_date_or_null(F.col("date")))
+        .withColumn("claim_status", spark_normalize_code(F.col("claim_status")))
+        .withColumn("denial_reason_code", spark_normalize_code(F.col("denial_reason_code")))
+        .withColumn(
+            "allowed_amount",
+            spark_decimal_or_null(F.col("allowed_amount"), MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE),
+        )
+        .withColumn(
+            "paid_amount",
+            spark_decimal_or_null(F.col("paid_amount"), MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE),
+        )
+        .withColumn("is_denied", spark_bool_or_null(F.col("is_denied")))
+        .withColumn("follow_up_required", spark_bool_or_null(F.col("follow_up_required")))
         .join(providers, F.col("provider_id") == F.col("provider_id_lookup"), "left")
         .join(diagnosis, F.col("diagnosis_code") == F.col("diagnosis_code_lookup"), "left")
     )
@@ -195,7 +210,7 @@ def _claims_stream():
     ),
     table_properties=silver_table_properties(
         "PHI",
-        ("patient_id", "diagnosis_code", "billed_amount", "date"),
+        CLAIMS_PHI_COLUMNS,
     ),
 )
 def silver_claims():
@@ -229,7 +244,7 @@ def silver_claims():
     ),
     table_properties=silver_table_properties(
         "PHI",
-        ("patient_id", "diagnosis_code", "billed_amount", "date"),
+        CLAIMS_PHI_COLUMNS,
     ),
 )
 def quarantine_claims():

@@ -60,7 +60,8 @@ Source
 Volume path : /Volumes/healthcare/bronze/raw_landing/claims/
 File        : claims_1000.csv
 Schema      : claim_id, patient_id, provider_id, diagnosis_code,
-              procedure_code (nullable), billed_amount (nullable), date
+              procedure_code (nullable), billed_amount (nullable), date,
+              synthetic adjudication/payment labels
 
 Output table: healthcare.bronze.claims
 Cluster by  : claim_id (point lookups), date (time-range scans)
@@ -76,10 +77,12 @@ from src.common.bronze_pipeline_config import (
     csv_autoloader_options,
     table_properties_for_sensitivity,
 )
+from src.common.bronze_sources import BRONZE_SOURCES
 from src.common.observability import MESSAGE_BRONZE_APPEND_ONLY
 
 TABLE_NAME = bronze_table_name("claims")
 VOLUME_PATH = bronze_volume_path("claims")
+CLAIMS_PHI_COLUMNS = tuple(sorted(BRONZE_SOURCES["claims"].phi_columns))
 
 # ---------------------------------------------------------------------------
 # Data quality expectations — ALL are warn-only at Bronze.
@@ -119,14 +122,11 @@ VOLUME_PATH = bronze_volume_path("claims")
     comment=(
         "Raw healthcare claims ingested from landing volume. Append-only. "
         f"{MESSAGE_BRONZE_APPEND_ONLY} "
-        "PHI columns (encrypt at rest in production): patient_id, billed_amount, diagnosis_code. "
+        "PHI columns (encrypt at rest in production): patient_id, billed_amount, diagnosis_code, claim status, denial/payment labels. "
         "Known data quality issues: procedure_code and billed_amount are nullable. "
         "Downstream: healthcare.silver.claims reads this table via Change Data Feed."
     ),
-    table_properties=table_properties_for_sensitivity(
-        "PHI",
-        ("patient_id", "billed_amount", "diagnosis_code", "date"),
-    ),
+    table_properties=table_properties_for_sensitivity("PHI", CLAIMS_PHI_COLUMNS),
 )
 def bronze_claims():
     """
@@ -159,6 +159,12 @@ def bronze_claims():
                                     PHI — § 164.514(b)(2)(iv) all date elements except year
                                     for dates directly related to a health event are PHI.
                                     Encrypt at rest in production (§ 164.312(a)(2)(iv)).
+            claim_status    str     Synthetic APPROVED/DENIED label for demo ML workflows.
+            denial_reason_code str  Synthetic denial reason or NONE for approved rows.
+            allowed_amount  decimal Synthetic allowed amount.
+            paid_amount     decimal Synthetic paid amount.
+            is_denied       bool    Synthetic binary ML label.
+            follow_up_required bool Synthetic workflow label.
 
         Audit columns (added by this pipeline):
             _ingested_at    timestamp  When this row entered the Bronze layer (HIPAA audit).

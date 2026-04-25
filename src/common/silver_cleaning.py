@@ -54,6 +54,16 @@ def parse_date_value(value: object) -> date | None:
         return None
 
 
+def parse_bool_value(value: object) -> bool | None:
+    """Parse common boolean label values or return None."""
+    normalized = normalize_code_value(value)
+    if normalized in {"1", "TRUE", "YES", "Y"}:
+        return True
+    if normalized in {"0", "FALSE", "NO", "N"}:
+        return False
+    return None
+
+
 def build_quality_flags(flag_map: Mapping[str, bool]) -> list[str]:
     """Return stable quality-flag names for all truthy entries."""
     return [flag_name for flag_name, enabled in sorted(flag_map.items()) if enabled]
@@ -98,6 +108,18 @@ def spark_date_or_null(column, fmt: str = "yyyy-MM-dd"):
     return F.to_date(spark_trim_to_null(column), fmt)
 
 
+def spark_bool_or_null(column):
+    """Return a Spark expression that parses common boolean label values."""
+    from pyspark.sql import functions as F
+
+    normalized = F.upper(spark_trim_to_null(column))
+    return (
+        F.when(normalized.isin("1", "TRUE", "YES", "Y"), F.lit(True))
+        .when(normalized.isin("0", "FALSE", "NO", "N"), F.lit(False))
+        .otherwise(F.lit(None).cast("boolean"))
+    )
+
+
 def spark_quality_flags(flag_expressions: Mapping[str, object]):
     """Return a Spark array<string> with all active quality flags."""
     from pyspark.sql import functions as F
@@ -123,8 +145,10 @@ __all__ = [
     "normalize_nullable_string",
     "normalize_severity_value",
     "normalize_title_value",
+    "parse_bool_value",
     "parse_date_value",
     "parse_decimal_value",
+    "spark_bool_or_null",
     "spark_date_or_null",
     "spark_decimal_or_null",
     "spark_normalize_code",
