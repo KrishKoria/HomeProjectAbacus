@@ -48,14 +48,14 @@ Cluster by  : diagnosis_code (join key — claims join on diagnosis_code)
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
-from src.common.bronze_pipeline_config import (
+from ETL.common.bronze_pipeline_config import (
     COMMON_DELTA_TABLE_PROPERTIES,
     PIPELINE_RUN_ID_FORMAT,
     bronze_table_name,
     bronze_volume_path,
     csv_autoloader_options,
 )
-from src.common.observability import MESSAGE_BRONZE_APPEND_ONLY
+from ETL.common.observability import MESSAGE_BRONZE_APPEND_ONLY
 
 TABLE_NAME = bronze_table_name("diagnosis")
 VOLUME_PATH = bronze_volume_path("diagnosis")
