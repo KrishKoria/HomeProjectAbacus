@@ -103,7 +103,7 @@ def build_quarantine_summary(
     ).withColumn("category", F.lit(LOG_CATEGORY_QUARANTINE_AUDIT))
 
 
-def write_week3_quality_assets(
+def write_quality_assets(
     spark,
     catalog: str = "healthcare",
     silver_schema: str = SILVER_SCHEMA_DEFAULT,
@@ -146,5 +146,5 @@ __all__ = [
     "WEEK3_DATASETS",
     "build_quarantine_summary",
     "build_silver_table_status",
-    "write_week3_quality_assets",
+    "write_quality_assets",
 ]
