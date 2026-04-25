@@ -6,21 +6,21 @@ from pyspark import pipelines as dp
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
-from ETL.common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
-from ETL.common.diagnostics import get_silver_diagnostic_id
-from ETL.common.observability import (
+from common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
+from common.diagnostics import get_silver_diagnostic_id
+from common.observability import (
     LOG_CATEGORY_QUARANTINE_AUDIT,
     LOG_CATEGORY_SILVER_PIPELINE,
     MESSAGE_TEMPLATE_QUARANTINE_SUMMARY,
     MESSAGE_TEMPLATE_SILVER_TABLE_READY,
 )
-from ETL.common.silver_cleaning import (
+from common.silver_cleaning import (
     spark_normalize_code,
     spark_normalize_severity,
     spark_normalize_title,
     spark_quality_flags,
 )
-from ETL.common.silver_pipeline_config import (
+from common.silver_pipeline_config import (
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
     quarantine_table_name,

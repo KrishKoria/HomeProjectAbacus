@@ -8,20 +8,23 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+ETL_ROOT = PROJECT_ROOT / "ETL"
+if str(ETL_ROOT) not in sys.path:
+    sys.path.insert(0, str(ETL_ROOT))
 
 
-from ETL.common.diagnostics import (  # noqa: E402
+from common.diagnostics import (  # noqa: E402
     CLAIMOPS_DOMAINS,
     SILVER_DIAGNOSTIC_IDS,
     format_claimops_diagnostic_id,
     get_silver_diagnostic_id,
 )
-from ETL.common.log_categories import (  # noqa: E402
+from common.log_categories import (  # noqa: E402
     LOG_CATEGORY_POLICY_CHUNKING,
     LOG_CATEGORY_QUARANTINE_AUDIT,
     LOG_CATEGORY_SILVER_PIPELINE,
 )
-from ETL.common.log_messages import (  # noqa: E402
+from common.log_messages import (  # noqa: E402
     MESSAGE_TEMPLATE_POLICY_CHUNK_SUMMARY,
     MESSAGE_TEMPLATE_QUARANTINE_SUMMARY,
     MESSAGE_TEMPLATE_SILVER_TABLE_READY,
@@ -29,8 +32,8 @@ from ETL.common.log_messages import (  # noqa: E402
     render_quarantine_summary,
     render_silver_table_ready,
 )
-from ETL.common.policy_chunks import chunk_policy_text, normalize_policy_text  # noqa: E402
-from ETL.common.silver_cleaning import (  # noqa: E402
+from common.policy_chunks import chunk_policy_text, normalize_policy_text  # noqa: E402
+from common.silver_cleaning import (  # noqa: E402
     build_quality_flags,
     normalize_code_value,
     normalize_nullable_string,
@@ -39,7 +42,7 @@ from ETL.common.silver_cleaning import (  # noqa: E402
     parse_date_value,
     parse_decimal_value,
 )
-from ETL.common.silver_pipeline_config import (  # noqa: E402
+from common.silver_pipeline_config import (  # noqa: E402
     POLICY_CHUNK_OVERLAP_TOKENS,
     POLICY_CHUNK_SIZE_TOKENS,
     QUARANTINE_AUDIT_COLUMNS,
@@ -105,7 +108,7 @@ class SilverCleaningTests(unittest.TestCase):
         except ModuleNotFoundError:
             self.skipTest("pyspark is not installed in the local test environment")
 
-        from ETL.common.silver_cleaning import spark_quality_flags
+        from common.silver_cleaning import spark_quality_flags
 
         spark = SparkSession.builder.master("local[1]").appName("silver-quality-flags-test").getOrCreate()
         try:

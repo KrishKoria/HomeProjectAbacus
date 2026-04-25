@@ -8,9 +8,12 @@ from unittest.mock import patch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+ETL_ROOT = PROJECT_ROOT / "ETL"
+if str(ETL_ROOT) not in sys.path:
+    sys.path.insert(0, str(ETL_ROOT))
 
 
-from ETL.common.bronze_pipeline_config import (  # noqa: E402
+from common.bronze_pipeline_config import (  # noqa: E402
     AUDIT_COLUMNS,
     BRONZE_SCHEMA_DEFAULT,
     BRONZE_VOLUME_DEFAULT,
@@ -25,8 +28,8 @@ from ETL.common.bronze_pipeline_config import (  # noqa: E402
     table_name,
     table_properties_for_sensitivity,
 )
-from ETL.common.bronze_sources import BRONZE_SOURCES  # noqa: E402
-from ETL.common.observability import (  # noqa: E402
+from common.bronze_sources import BRONZE_SOURCES  # noqa: E402
+from common.observability import (  # noqa: E402
     LOG_CATEGORY_ANALYTICS_BUILD,
     LOG_CATEGORY_DATA_QUALITY,
     LOG_CATEGORY_GOVERNANCE_AUDIT,
@@ -35,7 +38,7 @@ from ETL.common.observability import (  # noqa: E402
     MESSAGE_EVENT_LOG_SQL_BRIDGE,
     MESSAGE_TEMPLATE_EXPECTATION_METRIC,
 )
-from ETL.common.phi_registry import build_phi_columns_registry, get_phi_columns  # noqa: E402
+from common.phi_registry import build_phi_columns_registry, get_phi_columns  # noqa: E402
 from src.analytics.observability_assets import (  # noqa: E402
     ANALYTICS_OBSERVABILITY_TABLES,
     event_log_bridge_sql,

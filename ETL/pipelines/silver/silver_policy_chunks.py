@@ -7,17 +7,17 @@ from pyspark.sql import Window
 from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, IntegerType, StringType, StructField, StructType
 
-from ETL.common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
-from ETL.common.diagnostics import get_silver_diagnostic_id
-from ETL.common.observability import (
+from common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
+from common.diagnostics import get_silver_diagnostic_id
+from common.observability import (
     LOG_CATEGORY_POLICY_CHUNKING,
     LOG_CATEGORY_QUARANTINE_AUDIT,
     MESSAGE_TEMPLATE_POLICY_CHUNK_SUMMARY,
     MESSAGE_TEMPLATE_QUARANTINE_SUMMARY,
     MESSAGE_TEMPLATE_SILVER_TABLE_READY,
 )
-from ETL.common.policy_chunks import chunk_policy_text, extract_pdf_text
-from ETL.common.silver_pipeline_config import (
+from common.policy_chunks import chunk_policy_text, extract_pdf_text
+from common.silver_pipeline_config import (
     NON_PHI_TABLE_PROPERTIES,
     POLICY_CHUNK_OVERLAP_TOKENS,
     POLICY_CHUNK_SIZE_TOKENS,

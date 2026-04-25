@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Final, Iterable
 
-from ETL.common.diagnostics import CLAIMOPS_DOMAINS, format_claimops_diagnostic_id
+from common.diagnostics import CLAIMOPS_DOMAINS, format_claimops_diagnostic_id
 
 
 AUDIT_COLUMNS: Final[tuple[str, str, str]] = (
