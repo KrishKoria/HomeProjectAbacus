@@ -10,18 +10,18 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-from src.common.diagnostics import (  # noqa: E402
+from ETL.common.diagnostics import (  # noqa: E402
     CLAIMOPS_DOMAINS,
     SILVER_DIAGNOSTIC_IDS,
     format_claimops_diagnostic_id,
     get_silver_diagnostic_id,
 )
-from src.common.log_categories import (  # noqa: E402
+from ETL.common.log_categories import (  # noqa: E402
     LOG_CATEGORY_POLICY_CHUNKING,
     LOG_CATEGORY_QUARANTINE_AUDIT,
     LOG_CATEGORY_SILVER_PIPELINE,
 )
-from src.common.log_messages import (  # noqa: E402
+from ETL.common.log_messages import (  # noqa: E402
     MESSAGE_TEMPLATE_POLICY_CHUNK_SUMMARY,
     MESSAGE_TEMPLATE_QUARANTINE_SUMMARY,
     MESSAGE_TEMPLATE_SILVER_TABLE_READY,
@@ -29,8 +29,8 @@ from src.common.log_messages import (  # noqa: E402
     render_quarantine_summary,
     render_silver_table_ready,
 )
-from src.common.policy_chunks import chunk_policy_text, normalize_policy_text  # noqa: E402
-from src.common.silver_cleaning import (  # noqa: E402
+from ETL.common.policy_chunks import chunk_policy_text, normalize_policy_text  # noqa: E402
+from ETL.common.silver_cleaning import (  # noqa: E402
     build_quality_flags,
     normalize_code_value,
     normalize_nullable_string,
@@ -39,7 +39,7 @@ from src.common.silver_cleaning import (  # noqa: E402
     parse_date_value,
     parse_decimal_value,
 )
-from src.common.silver_pipeline_config import (  # noqa: E402
+from ETL.common.silver_pipeline_config import (  # noqa: E402
     POLICY_CHUNK_OVERLAP_TOKENS,
     POLICY_CHUNK_SIZE_TOKENS,
     QUARANTINE_AUDIT_COLUMNS,
@@ -105,7 +105,7 @@ class SilverCleaningTests(unittest.TestCase):
         except ModuleNotFoundError:
             self.skipTest("pyspark is not installed in the local test environment")
 
-        from src.common.silver_cleaning import spark_quality_flags
+        from ETL.common.silver_cleaning import spark_quality_flags
 
         spark = SparkSession.builder.master("local[1]").appName("silver-quality-flags-test").getOrCreate()
         try:
