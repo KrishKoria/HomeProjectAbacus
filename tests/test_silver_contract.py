@@ -1,3 +1,4 @@
+import ast
 import sys
 import unittest
 from datetime import date
@@ -120,6 +121,37 @@ class SilverCleaningTests(unittest.TestCase):
 
 
 class PolicyChunkingTests(unittest.TestCase):
+    def test_policy_chunk_pipeline_udfs_do_not_capture_common_modules(self) -> None:
+        source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_policy_chunks.py"
+        module = ast.parse(source_path.read_text(encoding="utf-8"))
+        imported_modules = {
+            node.module
+            for node in ast.walk(module)
+            if isinstance(node, ast.ImportFrom)
+        }
+        self.assertNotIn("common.policy_chunks", imported_modules)
+
+        forbidden_globals = {
+            "chunk_policy_text",
+            "extract_pdf_text",
+            "POLICY_CHUNK_OVERLAP_TOKENS",
+            "POLICY_CHUNK_SIZE_TOKENS",
+        }
+        udf_helper_names = {"_extract_policy_text", "_chunk_policy_text"}
+        udf_helpers = [
+            node
+            for node in ast.walk(module)
+            if isinstance(node, ast.FunctionDef) and node.name in udf_helper_names
+        ]
+        referenced_names = {
+            name.id
+            for helper in udf_helpers
+            for name in ast.walk(helper)
+            if isinstance(name, ast.Name)
+        }
+        self.assertTrue(udf_helper_names.issubset({helper.name for helper in udf_helpers}))
+        self.assertTrue(forbidden_globals.isdisjoint(referenced_names))
+
     def test_policy_text_is_normalized_before_chunking(self) -> None:
         self.assertEqual(
             normalize_policy_text("Line one\n\nLine two\tLine three"),

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from io import BytesIO
+
 from pyspark import pipelines as dp
 from pyspark.sql import Window
 from pyspark.sql import functions as F
@@ -16,11 +18,8 @@ from common.observability import (
     MESSAGE_TEMPLATE_QUARANTINE_SUMMARY,
     MESSAGE_TEMPLATE_SILVER_TABLE_READY,
 )
-from common.policy_chunks import chunk_policy_text, extract_pdf_text
 from common.silver_pipeline_config import (
     NON_PHI_TABLE_PROPERTIES,
-    POLICY_CHUNK_OVERLAP_TOKENS,
-    POLICY_CHUNK_SIZE_TOKENS,
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
     quarantine_table_name,
@@ -56,7 +55,19 @@ _TEXT_SCHEMA = StructType(
 def _extract_policy_text(pdf_bytes):
     """Wrap pdfplumber extraction so the Spark UDF returns structured status values."""
     try:
-        policy_text = extract_pdf_text(pdf_bytes)
+        if not pdf_bytes:
+            policy_text = None
+        else:
+            import pdfplumber
+
+            page_text = []
+            with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+                for page in pdf.pages:
+                    extracted = page.extract_text() or ""
+                    normalized = extracted.strip()
+                    if normalized:
+                        page_text.append(normalized)
+            policy_text = "\n".join(page_text) if page_text else None
     except Exception as exc:  # pragma: no cover - Spark UDF runtime path
         return (None, "UNREADABLE_PDF", str(exc))
     if policy_text is None:
@@ -64,13 +75,37 @@ def _extract_policy_text(pdf_bytes):
     return (policy_text, "OK", None)
 
 
-def _chunk_policy_text(policy_text):
+def _chunk_policy_text(policy_text, chunk_size_tokens: int = 512, overlap_tokens: int = 64):
     """Chunk normalized policy text into the fixed token windows used by RAG."""
-    return chunk_policy_text(
-        policy_text,
-        chunk_size_tokens=POLICY_CHUNK_SIZE_TOKENS,
-        overlap_tokens=POLICY_CHUNK_OVERLAP_TOKENS,
-    )
+    if policy_text is None:
+        return []
+
+    normalized = policy_text
+    for delimiter in ("\r", "\n", "\t"):
+        normalized = normalized.replace(delimiter, " ")
+    normalized = " ".join(normalized.split())
+    if not normalized:
+        return []
+
+    tokens = normalized.split(" ")
+    step = max(1, chunk_size_tokens - overlap_tokens)
+    chunks = []
+    chunk_index = 0
+    for start_index in range(0, len(tokens), step):
+        token_slice = tokens[start_index:start_index + chunk_size_tokens]
+        if not token_slice:
+            continue
+        chunks.append(
+            {
+                "chunk_index": chunk_index,
+                "chunk_text": " ".join(token_slice),
+                "token_count": len(token_slice),
+            }
+        )
+        chunk_index += 1
+        if start_index + chunk_size_tokens >= len(tokens):
+            break
+    return chunks
 
 
 _extract_policy_text_udf = F.udf(_extract_policy_text, _TEXT_SCHEMA)
