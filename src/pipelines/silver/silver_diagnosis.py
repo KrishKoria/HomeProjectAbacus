@@ -6,6 +6,7 @@ from pyspark import pipelines as dp
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
+from src.common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
 from src.common.diagnostics import get_silver_diagnostic_id
 from src.common.observability import (
     LOG_CATEGORY_QUARANTINE_AUDIT,
@@ -22,14 +23,16 @@ from src.common.silver_cleaning import (
 from src.common.silver_pipeline_config import (
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
+    quarantine_table_name,
     read_bronze_cdf,
+    silver_table_name,
     silver_table_properties,
 )
 
 
-BRONZE_DIAGNOSIS_TABLE = "healthcare.bronze.diagnosis"
-SILVER_DIAGNOSIS_TABLE = f"healthcare.{SILVER_SCHEMA_DEFAULT}.diagnosis"
-QUARANTINE_DIAGNOSIS_TABLE = f"healthcare.{QUARANTINE_SCHEMA_DEFAULT}.diagnosis"
+BRONZE_DIAGNOSIS_TABLE = bronze_table_name("diagnosis")
+SILVER_DIAGNOSIS_TABLE = silver_table_name(CATALOG_DEFAULT, "diagnosis", SILVER_SCHEMA_DEFAULT)
+QUARANTINE_DIAGNOSIS_TABLE = quarantine_table_name(CATALOG_DEFAULT, "diagnosis", QUARANTINE_SCHEMA_DEFAULT)
 
 
 def _diagnosis_stream():

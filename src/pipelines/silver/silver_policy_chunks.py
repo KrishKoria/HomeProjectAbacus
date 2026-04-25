@@ -7,6 +7,7 @@ from pyspark.sql import Window
 from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, IntegerType, StringType, StructField, StructType
 
+from src.common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
 from src.common.diagnostics import get_silver_diagnostic_id
 from src.common.observability import (
     LOG_CATEGORY_POLICY_CHUNKING,
@@ -22,14 +23,16 @@ from src.common.silver_pipeline_config import (
     POLICY_CHUNK_SIZE_TOKENS,
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
+    quarantine_table_name,
     read_bronze_cdf,
+    silver_table_name,
     silver_table_properties,
 )
 
 
-BRONZE_POLICIES_TABLE = "healthcare.bronze.policies"
-SILVER_POLICY_CHUNKS_TABLE = f"healthcare.{SILVER_SCHEMA_DEFAULT}.policy_chunks"
-QUARANTINE_POLICY_CHUNKS_TABLE = f"healthcare.{QUARANTINE_SCHEMA_DEFAULT}.policy_chunks"
+BRONZE_POLICIES_TABLE = bronze_table_name("policies")
+SILVER_POLICY_CHUNKS_TABLE = silver_table_name(CATALOG_DEFAULT, "policy_chunks", SILVER_SCHEMA_DEFAULT)
+QUARANTINE_POLICY_CHUNKS_TABLE = quarantine_table_name(CATALOG_DEFAULT, "policy_chunks", QUARANTINE_SCHEMA_DEFAULT)
 
 _CHUNK_SCHEMA = ArrayType(
     StructType(
