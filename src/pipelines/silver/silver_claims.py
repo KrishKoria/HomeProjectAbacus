@@ -12,6 +12,7 @@ from pyspark import pipelines as dp
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
+from src.common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
 from src.common.diagnostics import get_silver_diagnostic_id
 from src.common.observability import (
     LOG_CATEGORY_QUARANTINE_AUDIT,
@@ -30,17 +31,19 @@ from src.common.silver_pipeline_config import (
     MONEY_DECIMAL_SCALE,
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
+    quarantine_table_name,
     read_bronze_cdf,
+    silver_table_name,
     silver_table_properties,
 )
 
 
-BRONZE_CLAIMS_TABLE = "healthcare.bronze.claims"
-BRONZE_PROVIDERS_TABLE = "healthcare.bronze.providers"
-BRONZE_DIAGNOSIS_TABLE = "healthcare.bronze.diagnosis"
+BRONZE_CLAIMS_TABLE = bronze_table_name("claims")
+BRONZE_PROVIDERS_TABLE = bronze_table_name("providers")
+BRONZE_DIAGNOSIS_TABLE = bronze_table_name("diagnosis")
 
-SILVER_CLAIMS_TABLE = f"healthcare.{SILVER_SCHEMA_DEFAULT}.claims"
-QUARANTINE_CLAIMS_TABLE = f"healthcare.{QUARANTINE_SCHEMA_DEFAULT}.claims"
+SILVER_CLAIMS_TABLE = silver_table_name(CATALOG_DEFAULT, "claims", SILVER_SCHEMA_DEFAULT)
+QUARANTINE_CLAIMS_TABLE = quarantine_table_name(CATALOG_DEFAULT, "claims", QUARANTINE_SCHEMA_DEFAULT)
 
 _TRUSTED_COMMENT = MESSAGE_TEMPLATE_SILVER_TABLE_READY.format(
     table_name=SILVER_CLAIMS_TABLE,
@@ -188,7 +191,7 @@ def _claims_stream():
     comment=(
         f"{_TRUSTED_COMMENT} "
         "Trusted Silver claims retain nullable procedure_code and billed_amount as quality flags, "
-        "while critical identity/date defects are redirected into healthcare.quarantine.claims."
+        f"while critical identity/date defects are redirected into {QUARANTINE_CLAIMS_TABLE}."
     ),
     table_properties=silver_table_properties(
         "PHI",
