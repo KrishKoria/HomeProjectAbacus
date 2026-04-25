@@ -17,7 +17,7 @@ DASHBOARD_SOURCE_TABLES: Final[tuple[str, ...]] = (
     "claims_by_specialty_summary",
     "claims_by_region_summary",
     "high_cost_claims_summary",
-    "week2_dashboard_summary",
+    "claims_dashboard_summary",
     "claims_adjudication_summary",
     "claims_denial_reason_summary",
     "claims_revenue_daily_summary",
@@ -194,7 +194,7 @@ def build_high_cost_claims_summary(
     )
 
 
-def build_week2_dashboard_summary(spark, catalog: str, bronze_schema: str):
+def build_claims_dashboard_summary(spark, catalog: str, bronze_schema: str):
     """Create a date-grain dashboard table for total claims, trends, and anomalies."""
     from pyspark.sql import functions as F
 
@@ -324,7 +324,7 @@ def write_managed_table(dataframe, table_name: str) -> str:
     return table_name
 
 
-def build_and_persist_week2_assets(
+def build_and_persist_claims_assets(
     spark,
     catalog: str = "healthcare",
     bronze_schema: str = "bronze",
@@ -339,7 +339,7 @@ def build_and_persist_week2_assets(
         "claims_by_specialty_summary": build_claims_by_specialty_summary(spark, catalog, bronze_schema),
         "claims_by_region_summary": build_claims_by_region_summary(spark, catalog, bronze_schema),
         "high_cost_claims_summary": build_high_cost_claims_summary(spark, catalog, bronze_schema),
-        "week2_dashboard_summary": build_week2_dashboard_summary(spark, catalog, bronze_schema),
+        "claims_dashboard_summary": build_claims_dashboard_summary(spark, catalog, bronze_schema),
         "claims_adjudication_summary": build_claims_adjudication_summary(spark, catalog, bronze_schema),
         "claims_denial_reason_summary": build_claims_denial_reason_summary(spark, catalog, bronze_schema),
         "claims_revenue_daily_summary": build_claims_revenue_daily_summary(spark, catalog, bronze_schema),
@@ -360,7 +360,7 @@ __all__ = [
     "HIGH_COST_THRESHOLD_RATIO",
     "analytics_table_name",
     "bronze_table_name",
-    "build_and_persist_week2_assets",
+    "build_and_persist_claims_assets",
     "build_claims_by_region_summary",
     "build_claims_by_specialty_summary",
     "build_claims_adjudication_summary",
@@ -369,5 +369,5 @@ __all__ = [
     "build_claims_provider_joined",
     "build_claims_revenue_daily_summary",
     "build_high_cost_claims_summary",
-    "build_week2_dashboard_summary",
+    "build_claims_dashboard_summary",
 ]

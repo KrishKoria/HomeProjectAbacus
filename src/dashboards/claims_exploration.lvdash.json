@@ -27,7 +27,7 @@
       "displayName": "Daily Billed Trend",
       "queryLines": [
         "SELECT claim_date, ROUND(total_billed_amount, 2) AS total_billed_amount\n",
-        "FROM healthcare.analytics.week2_dashboard_summary\n",
+        "FROM healthcare.analytics.claims_dashboard_summary\n",
         "ORDER BY claim_date"
       ]
     },
@@ -36,7 +36,7 @@
       "displayName": "Daily High-Cost Trend",
       "queryLines": [
         "SELECT claim_date, high_cost_claim_count\n",
-        "FROM healthcare.analytics.week2_dashboard_summary\n",
+        "FROM healthcare.analytics.claims_dashboard_summary\n",
         "ORDER BY claim_date"
       ]
     },
