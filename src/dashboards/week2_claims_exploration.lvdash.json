@@ -221,6 +221,57 @@
         "GROUP BY dataset\n",
         "ORDER BY failure_count DESC, dataset ASC"
       ]
+    },
+    {
+      "name": "adjudication_kpis",
+      "displayName": "Adjudication KPIs",
+      "queryLines": [
+        "SELECT *\n",
+        "FROM healthcare.analytics.claims_adjudication_summary"
+      ]
+    },
+    {
+      "name": "denial_reason_mix",
+      "displayName": "Denial Reason Mix",
+      "queryLines": [
+        "SELECT denial_reason_code, denied_claims\n",
+        "FROM healthcare.analytics.claims_denial_reason_summary\n",
+        "WHERE denied_claims > 0\n",
+        "ORDER BY denied_claims DESC, denial_reason_code ASC"
+      ]
+    },
+    {
+      "name": "denial_reason_impact",
+      "displayName": "Denial Reason Impact",
+      "queryLines": [
+        "SELECT denial_reason_code, ROUND(denied_billed_amount, 2) AS denied_billed_amount\n",
+        "FROM healthcare.analytics.claims_denial_reason_summary\n",
+        "WHERE denied_billed_amount > 0\n",
+        "ORDER BY denied_billed_amount DESC, denial_reason_code ASC"
+      ]
+    },
+    {
+      "name": "revenue_funnel",
+      "displayName": "Revenue Funnel",
+      "queryLines": [
+        "SELECT 'Billed' AS revenue_stage, total_billed_amount AS amount\n",
+        "FROM healthcare.analytics.claims_adjudication_summary\n",
+        "UNION ALL\n",
+        "SELECT 'Allowed' AS revenue_stage, total_allowed_amount AS amount\n",
+        "FROM healthcare.analytics.claims_adjudication_summary\n",
+        "UNION ALL\n",
+        "SELECT 'Paid' AS revenue_stage, total_paid_amount AS amount\n",
+        "FROM healthcare.analytics.claims_adjudication_summary"
+      ]
+    },
+    {
+      "name": "daily_adjudication_revenue_trend",
+      "displayName": "Daily Adjudication Revenue Trend",
+      "queryLines": [
+        "SELECT claim_date, denied_claims, ROUND(total_paid_amount, 2) AS total_paid_amount\n",
+        "FROM healthcare.analytics.claims_revenue_daily_summary\n",
+        "ORDER BY claim_date"
+      ]
     }
   ],
   "pages": [
@@ -1678,6 +1729,618 @@
           "position": {
             "x": 6,
             "y": 6,
+            "width": 6,
+            "height": 4
+          }
+        }
+      ]
+    },
+    {
+      "name": "page_adjudication_revenue",
+      "displayName": "Adjudication & Revenue",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "adjudication_revenue_title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Adjudication & Revenue"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "denied_claims_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "adjudication_kpis",
+                  "fields": [
+                    {
+                      "name": "denied_claims",
+                      "expression": "`denied_claims`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "denied_claims",
+                  "displayName": "Denied Claims"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Denied Claims",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "denial_rate_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "adjudication_kpis",
+                  "fields": [
+                    {
+                      "name": "denial_rate_pct",
+                      "expression": "`denial_rate_pct`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "denial_rate_pct",
+                  "displayName": "Denial Rate %"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Denial Rate %",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "follow_up_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "adjudication_kpis",
+                  "fields": [
+                    {
+                      "name": "follow_up_required_claims",
+                      "expression": "`follow_up_required_claims`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "follow_up_required_claims",
+                  "displayName": "Follow Up Required"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Follow Up Required",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "paid_rate_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "adjudication_kpis",
+                  "fields": [
+                    {
+                      "name": "paid_rate_pct",
+                      "expression": "`paid_rate_pct`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "paid_rate_pct",
+                  "displayName": "Paid Rate %"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Paid Rate %",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "total_billed_counter_adjudication",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "adjudication_kpis",
+                  "fields": [
+                    {
+                      "name": "total_billed_amount",
+                      "expression": "`total_billed_amount`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_billed_amount",
+                  "displayName": "Total Billed"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Billed",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "total_allowed_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "adjudication_kpis",
+                  "fields": [
+                    {
+                      "name": "total_allowed_amount",
+                      "expression": "`total_allowed_amount`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_allowed_amount",
+                  "displayName": "Total Allowed"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Allowed",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "total_paid_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "adjudication_kpis",
+                  "fields": [
+                    {
+                      "name": "total_paid_amount",
+                      "expression": "`total_paid_amount`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_paid_amount",
+                  "displayName": "Total Paid"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Paid",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "denial_reason_mix_bar",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "denial_reason_mix",
+                  "fields": [
+                    {
+                      "name": "denial_reason_code",
+                      "expression": "`denial_reason_code`"
+                    },
+                    {
+                      "name": "denied_claims",
+                      "expression": "`denied_claims`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "denial_reason_code",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Denial reason"
+                },
+                "y": {
+                  "fieldName": "denied_claims",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "axis": {
+                    "title": "Denied claims"
+                  },
+                  "displayName": "Denied claims"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Denied Claims by Reason",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "denial_reason_impact_bar",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "denial_reason_impact",
+                  "fields": [
+                    {
+                      "name": "denial_reason_code",
+                      "expression": "`denial_reason_code`"
+                    },
+                    {
+                      "name": "denied_billed_amount",
+                      "expression": "`denied_billed_amount`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "denial_reason_code",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Denial reason"
+                },
+                "y": {
+                  "fieldName": "denied_billed_amount",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "axis": {
+                    "title": "Denied billed amount"
+                  },
+                  "displayName": "Denied billed amount"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Denied Billed Amount by Reason",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "revenue_funnel_bar",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_funnel",
+                  "fields": [
+                    {
+                      "name": "revenue_stage",
+                      "expression": "`revenue_stage`"
+                    },
+                    {
+                      "name": "amount",
+                      "expression": "`amount`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "revenue_stage",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Revenue stage"
+                },
+                "y": {
+                  "fieldName": "amount",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "axis": {
+                    "title": "Amount"
+                  },
+                  "displayName": "Amount"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Billed vs Allowed vs Paid",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 12,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "daily_denied_claims_line",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daily_adjudication_revenue_trend",
+                  "fields": [
+                    {
+                      "name": "claim_date",
+                      "expression": "`claim_date`"
+                    },
+                    {
+                      "name": "denied_claims",
+                      "expression": "`denied_claims`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "claim_date",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Date"
+                },
+                "y": {
+                  "fieldName": "denied_claims",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "axis": {
+                    "title": "Denied claims"
+                  },
+                  "displayName": "Denied claims"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Daily Denied Claims",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "daily_paid_amount_line",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daily_adjudication_revenue_trend",
+                  "fields": [
+                    {
+                      "name": "claim_date",
+                      "expression": "`claim_date`"
+                    },
+                    {
+                      "name": "total_paid_amount",
+                      "expression": "`total_paid_amount`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "claim_date",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Date"
+                },
+                "y": {
+                  "fieldName": "total_paid_amount",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "axis": {
+                    "title": "Paid amount"
+                  },
+                  "displayName": "Paid amount"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Daily Paid Amount",
+                "showDescription": false,
+                "description": ""
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 13,
             "width": 6,
             "height": 4
           }
