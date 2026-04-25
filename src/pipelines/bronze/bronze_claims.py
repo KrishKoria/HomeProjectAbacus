@@ -71,12 +71,14 @@ from pyspark.sql import functions as F
 
 from src.common.bronze_pipeline_config import (
     PIPELINE_RUN_ID_FORMAT,
+    bronze_table_name,
     bronze_volume_path,
     csv_autoloader_options,
     table_properties_for_sensitivity,
 )
 from src.common.observability import MESSAGE_BRONZE_APPEND_ONLY
 
+TABLE_NAME = bronze_table_name("claims")
 VOLUME_PATH = bronze_volume_path("claims")
 
 # ---------------------------------------------------------------------------
@@ -112,7 +114,7 @@ VOLUME_PATH = bronze_volume_path("claims")
 # Action required: investigate the source file for encoding or delimiter issues.
 @dp.expect("no_parse_errors", "_rescued_data IS NULL")
 @dp.table(
-    name="healthcare.bronze.claims",
+    name=TABLE_NAME,
     cluster_by=["claim_id", "date"],
     comment=(
         "Raw healthcare claims ingested from landing volume. Append-only. "
