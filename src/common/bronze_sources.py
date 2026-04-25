@@ -18,6 +18,9 @@ class BronzeSource:
     local_filename: str
     volume_subdirectory: str
     expected_row_count: int
+    required_columns: tuple[str, ...]
+    canonical_dataset: str
+    source_profile: str = "current_fixture"
     phi_columns: frozenset[str] = field(default_factory=frozenset)
 
     @property
@@ -58,6 +61,16 @@ BRONZE_SOURCES: Final[dict[str, BronzeSource]] = {
         local_filename="claims_1000.csv",
         volume_subdirectory="claims",
         expected_row_count=1000,
+        required_columns=(
+            "claim_id",
+            "patient_id",
+            "provider_id",
+            "diagnosis_code",
+            "procedure_code",
+            "billed_amount",
+            "date",
+        ),
+        canonical_dataset="claims",
         # PHI columns per 45 CFR § 164.514(b)(2):
         #   patient_id     — § 164.514(b)(2)(ii)  unique identifying code
         #   diagnosis_code — § 164.514(b)(2)(xvi) health condition linked to patient
@@ -69,6 +82,8 @@ BRONZE_SOURCES: Final[dict[str, BronzeSource]] = {
         local_filename="providers_1000.csv",
         volume_subdirectory="providers",
         expected_row_count=21,
+        required_columns=("provider_id", "doctor_name", "specialty", "location"),
+        canonical_dataset="providers",
         # No PHI — provider identity (doctor_name, location) is operational data,
         # not individually identifiable health information per § 164.501.
         phi_columns=frozenset(),
@@ -77,6 +92,8 @@ BRONZE_SOURCES: Final[dict[str, BronzeSource]] = {
         local_filename="diagnosis.csv",
         volume_subdirectory="diagnosis",
         expected_row_count=6,
+        required_columns=("diagnosis_code", "category", "severity"),
+        canonical_dataset="diagnosis",
         # No PHI — standalone diagnosis code reference table (D10=Heart, High).
         # diagnosis_code is medical terminology without patient linkage; it becomes
         # PHI only when combined with patient_id in the claims table (§ 164.501).
@@ -86,6 +103,8 @@ BRONZE_SOURCES: Final[dict[str, BronzeSource]] = {
         local_filename="cost.csv",
         volume_subdirectory="cost",
         expected_row_count=6,
+        required_columns=("procedure_code", "average_cost", "expected_cost", "region"),
+        canonical_dataset="cost",
         # No PHI — procedure cost benchmarks are operational reference data.
         phi_columns=frozenset(),
     ),

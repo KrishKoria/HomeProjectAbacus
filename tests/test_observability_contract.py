@@ -10,12 +10,20 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.common.bronze_pipeline_config import (  # noqa: E402
     AUDIT_COLUMNS,
+    BRONZE_SCHEMA_DEFAULT,
+    BRONZE_VOLUME_DEFAULT,
+    CATALOG_DEFAULT,
     CLAIMOPS_DOMAINS,
     COMMON_DELTA_TABLE_PROPERTIES,
+    bronze_table_name,
+    bronze_volume_root,
+    bronze_volume_path,
     csv_autoloader_options,
     format_claimops_diagnostic_id,
+    table_name,
     table_properties_for_sensitivity,
 )
+from src.common.bronze_sources import BRONZE_SOURCES  # noqa: E402
 from src.common.observability import (  # noqa: E402
     LOG_CATEGORY_ANALYTICS_BUILD,
     LOG_CATEGORY_DATA_QUALITY,
@@ -25,6 +33,7 @@ from src.common.observability import (  # noqa: E402
     MESSAGE_EVENT_LOG_SQL_BRIDGE,
     MESSAGE_TEMPLATE_EXPECTATION_METRIC,
 )
+from src.common.phi_registry import build_phi_columns_registry, get_phi_columns  # noqa: E402
 from src.analytics.observability_assets import (  # noqa: E402
     ANALYTICS_OBSERVABILITY_TABLES,
     event_log_bridge_sql,
@@ -52,6 +61,72 @@ class BronzePipelineConfigTests(unittest.TestCase):
                 "delta.logRetentionDuration": "interval 2190 days",
                 "delta.deletedFileRetentionDuration": "interval 2190 days",
             },
+        )
+
+    def test_default_namespace_helpers_preserve_current_contracts(self) -> None:
+        self.assertEqual(CATALOG_DEFAULT, "healthcare")
+        self.assertEqual(BRONZE_SCHEMA_DEFAULT, "bronze")
+        self.assertEqual(BRONZE_VOLUME_DEFAULT, "raw_landing")
+        self.assertEqual(
+            table_name("healthcare", "bronze", "claims"),
+            "healthcare.bronze.claims",
+        )
+        self.assertEqual(bronze_table_name("claims"), "healthcare.bronze.claims")
+        self.assertEqual(bronze_volume_root(), "/Volumes/healthcare/bronze/raw_landing")
+        self.assertEqual(bronze_volume_path("claims"), "/Volumes/healthcare/bronze/raw_landing/claims/")
+
+    def test_namespace_helpers_support_dataset_portability(self) -> None:
+        self.assertEqual(
+            bronze_table_name("claims", catalog="staging_healthcare", schema="raw_bronze"),
+            "staging_healthcare.raw_bronze.claims",
+        )
+        self.assertEqual(
+            bronze_volume_root(
+                catalog="staging_healthcare",
+                schema="raw_bronze",
+                volume="s3_landing",
+            ),
+            "/Volumes/staging_healthcare/raw_bronze/s3_landing",
+        )
+        self.assertEqual(
+            bronze_volume_path(
+                "providers",
+                catalog="staging_healthcare",
+                schema="raw_bronze",
+                volume="s3_landing",
+            ),
+            "/Volumes/staging_healthcare/raw_bronze/s3_landing/providers/",
+        )
+
+    def test_bronze_sources_carry_required_columns_in_manifest(self) -> None:
+        self.assertEqual(
+            BRONZE_SOURCES["claims"].required_columns,
+            (
+                "claim_id",
+                "patient_id",
+                "provider_id",
+                "diagnosis_code",
+                "procedure_code",
+                "billed_amount",
+                "date",
+            ),
+        )
+        self.assertEqual(BRONZE_SOURCES["claims"].source_profile, "current_fixture")
+        self.assertEqual(BRONZE_SOURCES["claims"].canonical_dataset, "claims")
+        for dataset, source in BRONZE_SOURCES.items():
+            with self.subTest(dataset=dataset):
+                self.assertTrue(source.required_columns)
+                self.assertEqual(len(source.required_columns), len(set(source.required_columns)))
+
+    def test_phi_registry_can_be_derived_for_custom_namespace(self) -> None:
+        custom_registry = build_phi_columns_registry(catalog="staging_healthcare", schema="raw_bronze")
+        self.assertEqual(
+            custom_registry["staging_healthcare.raw_bronze.claims"],
+            frozenset({"patient_id", "diagnosis_code", "billed_amount", "date"}),
+        )
+        self.assertEqual(
+            get_phi_columns("healthcare.bronze.claims"),
+            frozenset({"patient_id", "diagnosis_code", "billed_amount", "date"}),
         )
 
     def test_csv_autoloader_options_cover_bronze_defaults(self) -> None:
