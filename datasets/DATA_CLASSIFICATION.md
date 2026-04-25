@@ -34,6 +34,16 @@ See 45 CFR § 164.504(e) and § 164.314(a) for BAA requirements.
 | `procedure_code` | PHI-adjacent | Treatment type per patient | Linked to patient health event | Access-controlled |
 | `billed_amount` | **PHI** | Financial health information | § 164.514(b)(2) — individually identifiable financial health data | AES-256 at rest; column masking |
 | `date` | **PHI** | Date of health service | § 164.514(b)(2)(iv) — dates directly related to an individual (except year) | AES-256 at rest; column masking |
+| `claim_status` | **PHI** | Synthetic adjudication outcome | Claim outcome linked to patient_id | AES-256 at rest; column masking |
+| `denial_reason_code` | **PHI** | Synthetic denial reason | Claim denial rationale linked to patient_id | AES-256 at rest; column masking |
+| `allowed_amount` | **PHI** | Synthetic allowed amount | Individually identifiable payment data | AES-256 at rest; column masking |
+| `paid_amount` | **PHI** | Synthetic paid amount | Individually identifiable payment data | AES-256 at rest; column masking |
+| `is_denied` | **PHI** | Synthetic ML label | Claim outcome linked to patient_id | AES-256 at rest; column masking |
+| `follow_up_required` | **PHI** | Synthetic workflow label | Claim action state linked to patient_id | AES-256 at rest; column masking |
+
+> **Synthetic label note:** `claim_status`, `denial_reason_code`, `allowed_amount`, `paid_amount`,
+> `is_denied`, and `follow_up_required` are generated demo labels. They are suitable for
+> pipeline and ML workflow testing, not for real-world model validation.
 
 > **Note on `date`:** HIPAA § 164.514(b)(2)(iv) explicitly lists "all elements of dates (except year)
 > for dates directly related to an individual, including admission date, discharge date" as PHI
@@ -89,7 +99,7 @@ are **mandatory** before any PHI is ingested:
 
 ### Technical Controls
 3. **Column-level encryption** — Encrypt PHI columns (`patient_id`, `billed_amount`,
-   `diagnosis_code`, `date`) at rest using AES-256 via Databricks column masking
+   `diagnosis_code`, `date`, adjudication labels, and payment amounts) at rest using AES-256 via Databricks column masking
    (§ 164.312(a)(2)(iv)).
 4. **Unity Catalog RBAC** — Apply least-privilege grants before pipeline first run
    (§ 164.312(a)(1)). See `src/notebooks/bronze_verify_and_rbac.ipynb`.

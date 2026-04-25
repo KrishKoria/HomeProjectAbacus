@@ -35,6 +35,7 @@ from src.common.silver_cleaning import (  # noqa: E402
     normalize_code_value,
     normalize_nullable_string,
     normalize_title_value,
+    parse_bool_value,
     parse_date_value,
     parse_decimal_value,
 )
@@ -78,6 +79,13 @@ class SilverCleaningTests(unittest.TestCase):
         self.assertIsNone(parse_decimal_value("abc"))
         self.assertEqual(parse_date_value("2024-02-22"), date(2024, 2, 22))
         self.assertIsNone(parse_date_value("2024/02/22"))
+
+    def test_bool_parsing_helper_accepts_label_values(self) -> None:
+        self.assertIs(parse_bool_value("1"), True)
+        self.assertIs(parse_bool_value("true"), True)
+        self.assertIs(parse_bool_value("0"), False)
+        self.assertIs(parse_bool_value("false"), False)
+        self.assertIsNone(parse_bool_value("maybe"))
 
     def test_quality_flags_are_sorted_and_truthy_only(self) -> None:
         self.assertEqual(

@@ -69,6 +69,12 @@ BRONZE_SOURCES: Final[dict[str, BronzeSource]] = {
             "procedure_code",
             "billed_amount",
             "date",
+            "claim_status",
+            "denial_reason_code",
+            "allowed_amount",
+            "paid_amount",
+            "is_denied",
+            "follow_up_required",
         ),
         canonical_dataset="claims",
         # PHI columns per 45 CFR § 164.514(b)(2):
@@ -76,7 +82,20 @@ BRONZE_SOURCES: Final[dict[str, BronzeSource]] = {
         #   diagnosis_code — § 164.514(b)(2)(xvi) health condition linked to patient
         #   billed_amount  — § 164.514(b)(2)      financial health information
         #   date           — § 164.514(b)(2)(iv)  date of health service (except year)
-        phi_columns=frozenset({"patient_id", "diagnosis_code", "billed_amount", "date"}),
+        phi_columns=frozenset(
+            {
+                "patient_id",
+                "diagnosis_code",
+                "billed_amount",
+                "date",
+                "claim_status",
+                "denial_reason_code",
+                "allowed_amount",
+                "paid_amount",
+                "is_denied",
+                "follow_up_required",
+            }
+        ),
     ),
     "providers": BronzeSource(
         local_filename="providers_1000.csv",
