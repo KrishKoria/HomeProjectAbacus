@@ -17,12 +17,12 @@ from __future__ import annotations
 
 from typing import Final
 
-from ETL.common.bronze_pipeline_config import (
+from src.common.bronze_pipeline_config import (
     BRONZE_SCHEMA_DEFAULT,
     CATALOG_DEFAULT,
     bronze_table_name,
 )
-from ETL.common.bronze_sources import BRONZE_SOURCES
+from src.common.bronze_sources import BRONZE_SOURCES
 
 
 SENSITIVE_COLUMNS_BY_DATASET: Final[dict[str, frozenset[str]]] = {

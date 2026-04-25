@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Final, Iterable
 
-from ETL.common.bronze_pipeline_config import COMMON_DELTA_TABLE_PROPERTIES, table_properties_for_sensitivity
+from common.bronze_pipeline_config import COMMON_DELTA_TABLE_PROPERTIES, table_properties_for_sensitivity
 
 
 SILVER_SCHEMA_DEFAULT: Final[str] = "silver"

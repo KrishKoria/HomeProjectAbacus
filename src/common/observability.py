@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ETL.common.log_categories import (
+from src.common.log_categories import (
     LOG_CATEGORIES,
     LOG_CATEGORY_ANALYTICS_BUILD,
     LOG_CATEGORY_DATA_QUALITY,
@@ -10,7 +10,7 @@ from ETL.common.log_categories import (
     LOG_CATEGORY_QUARANTINE_AUDIT,
     LOG_CATEGORY_SILVER_PIPELINE,
 )
-from ETL.common.log_messages import (
+from src.common.log_messages import (
     MESSAGE_BRONZE_APPEND_ONLY,
     MESSAGE_EVENT_LOG_SQL_BRIDGE,
     MESSAGE_TEMPLATE_ANALYTICS_TABLE_READY,

@@ -70,14 +70,14 @@ Cluster by  : path (document-level lookups by file path)
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
-from ETL.common.bronze_pipeline_config import (
+from common.bronze_pipeline_config import (
     PIPELINE_RUN_ID_FORMAT,
     binary_file_autoloader_options,
     bronze_table_name,
     bronze_volume_path,
     table_properties_for_sensitivity,
 )
-from ETL.common.observability import MESSAGE_BRONZE_APPEND_ONLY
+from common.observability import MESSAGE_BRONZE_APPEND_ONLY
 
 TABLE_NAME = bronze_table_name("policies")
 VOLUME_PATH = bronze_volume_path("policies")

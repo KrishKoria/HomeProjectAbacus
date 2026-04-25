@@ -42,14 +42,14 @@ Cluster by  : provider_id (join key — claims join on provider_id)
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
-from ETL.common.bronze_pipeline_config import (
+from common.bronze_pipeline_config import (
     COMMON_DELTA_TABLE_PROPERTIES,
     PIPELINE_RUN_ID_FORMAT,
     bronze_table_name,
     bronze_volume_path,
     csv_autoloader_options,
 )
-from ETL.common.observability import MESSAGE_BRONZE_APPEND_ONLY
+from common.observability import MESSAGE_BRONZE_APPEND_ONLY
 
 TABLE_NAME = bronze_table_name("providers")
 VOLUME_PATH = bronze_volume_path("providers")
