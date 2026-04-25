@@ -1,6 +1,8 @@
+import json
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +45,7 @@ from src.analytics.week2_analytics import (  # noqa: E402
     DASHBOARD_SOURCE_TABLES,
     HIGH_COST_THRESHOLD_RATIO,
     analytics_table_name,
+    build_and_persist_week2_assets,
 )
 
 
@@ -235,10 +238,55 @@ class AnalyticsContractTests(unittest.TestCase):
                 "claims_by_region_summary",
                 "high_cost_claims_summary",
                 "week2_dashboard_summary",
+                "claims_adjudication_summary",
+                "claims_denial_reason_summary",
+                "claims_revenue_daily_summary",
             ),
         )
         self.assertEqual(analytics_table_name("healthcare", "analytics", "week2_dashboard_summary"), "healthcare.analytics.week2_dashboard_summary")
         self.assertEqual(HIGH_COST_THRESHOLD_RATIO, 1.5)
+
+    def test_dashboard_json_includes_adjudication_page_and_datasets(self) -> None:
+        dashboard_path = PROJECT_ROOT / "src" / "dashboards" / "week2_claims_exploration.lvdash.json"
+        with dashboard_path.open("r", encoding="utf-8") as handle:
+            dashboard = json.load(handle)
+
+        dataset_names = {dataset["name"] for dataset in dashboard["datasets"]}
+        self.assertTrue(
+            {
+                "adjudication_kpis",
+                "denial_reason_mix",
+                "denial_reason_impact",
+                "revenue_funnel",
+                "daily_adjudication_revenue_trend",
+            }.issubset(dataset_names)
+        )
+        self.assertIn("Adjudication & Revenue", [page["displayName"] for page in dashboard["pages"]])
+
+    def test_build_and_persist_week2_assets_wires_new_analytics_tables(self) -> None:
+        fake_spark = object()
+        with (
+            patch("src.analytics.week2_analytics.ensure_analytics_schema"),
+            patch("src.analytics.week2_analytics.write_managed_table"),
+            patch("src.analytics.week2_analytics.build_claims_provider_joined", return_value="provider"),
+            patch("src.analytics.week2_analytics.build_claims_diagnosis_joined", return_value="diagnosis"),
+            patch("src.analytics.week2_analytics.build_claims_by_specialty_summary", return_value="specialty"),
+            patch("src.analytics.week2_analytics.build_claims_by_region_summary", return_value="region"),
+            patch("src.analytics.week2_analytics.build_high_cost_claims_summary", return_value="risk"),
+            patch("src.analytics.week2_analytics.build_week2_dashboard_summary", return_value="overview"),
+            patch("src.analytics.week2_analytics.build_claims_adjudication_summary", return_value="adjudication", create=True),
+            patch("src.analytics.week2_analytics.build_claims_denial_reason_summary", return_value="denial_reason", create=True),
+            patch("src.analytics.week2_analytics.build_claims_revenue_daily_summary", return_value="revenue_daily", create=True),
+        ):
+            persisted = build_and_persist_week2_assets(fake_spark)
+
+        self.assertTrue(
+            {
+                "claims_adjudication_summary",
+                "claims_denial_reason_summary",
+                "claims_revenue_daily_summary",
+            }.issubset(persisted.keys())
+        )
 
     def test_observability_helpers_keep_sql_bridge_minimal(self) -> None:
         self.assertEqual(

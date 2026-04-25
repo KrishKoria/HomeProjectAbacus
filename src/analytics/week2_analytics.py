@@ -18,6 +18,9 @@ DASHBOARD_SOURCE_TABLES: Final[tuple[str, ...]] = (
     "claims_by_region_summary",
     "high_cost_claims_summary",
     "week2_dashboard_summary",
+    "claims_adjudication_summary",
+    "claims_denial_reason_summary",
+    "claims_revenue_daily_summary",
 )
 
 
@@ -42,6 +45,26 @@ def _log_dataset_ready(table_name: str, sensitivity: str) -> str:
 def ensure_analytics_schema(spark, catalog: str, analytics_schema: str) -> None:
     """Create the analytics schema if it does not exist."""
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{analytics_schema}")
+
+
+def _binary_flag(column_name: str):
+    from pyspark.sql import functions as F
+
+    return F.when(F.col(column_name).cast("int") == F.lit(1), F.lit(1)).otherwise(F.lit(0))
+
+
+def _double_amount(column_name: str):
+    from pyspark.sql import functions as F
+
+    return F.col(column_name).cast("double")
+
+
+def _percent_or_null(numerator, denominator):
+    from pyspark.sql import functions as F
+
+    return F.when((denominator.isNull()) | (denominator == F.lit(0.0)), F.lit(None)).otherwise(
+        F.round((numerator / denominator) * F.lit(100.0), 2)
+    )
 
 
 def build_claims_provider_joined(spark, catalog: str, bronze_schema: str):
@@ -213,6 +236,88 @@ def build_week2_dashboard_summary(spark, catalog: str, bronze_schema: str):
     )
 
 
+def build_claims_adjudication_summary(spark, catalog: str, bronze_schema: str):
+    """Aggregate top-line adjudication and reimbursement KPIs from Bronze claims."""
+    from pyspark.sql import functions as F
+
+    claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims"))
+    denied_flag = _binary_flag("is_denied")
+    follow_up_flag = _binary_flag("follow_up_required")
+    billed_amount = _double_amount("billed_amount")
+    allowed_amount = _double_amount("allowed_amount")
+    paid_amount = _double_amount("paid_amount")
+
+    return (
+        claims.agg(
+            F.count("*").alias("total_claims"),
+            F.sum(F.when(denied_flag == F.lit(0), F.lit(1)).otherwise(F.lit(0))).alias("approved_claims"),
+            F.sum(denied_flag).alias("denied_claims"),
+            F.sum(follow_up_flag).alias("follow_up_required_claims"),
+            F.round(F.sum(billed_amount), 2).alias("total_billed_amount"),
+            F.round(F.sum(allowed_amount), 2).alias("total_allowed_amount"),
+            F.round(F.sum(paid_amount), 2).alias("total_paid_amount"),
+        )
+        .withColumn("denial_rate_pct", _percent_or_null(F.col("denied_claims"), F.col("total_claims")))
+        .withColumn("allowed_rate_pct", _percent_or_null(F.col("total_allowed_amount"), F.col("total_billed_amount")))
+        .withColumn("paid_rate_pct", _percent_or_null(F.col("total_paid_amount"), F.col("total_billed_amount")))
+    )
+
+
+def build_claims_denial_reason_summary(spark, catalog: str, bronze_schema: str):
+    """Aggregate denial reason counts and financial impact from Bronze claims."""
+    from pyspark.sql import functions as F
+
+    claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims"))
+    denied_flag = _binary_flag("is_denied")
+    follow_up_flag = _binary_flag("follow_up_required")
+    billed_amount = _double_amount("billed_amount")
+    allowed_amount = _double_amount("allowed_amount")
+    paid_amount = _double_amount("paid_amount")
+
+    return (
+        claims.groupBy(F.coalesce(F.col("denial_reason_code"), F.lit("UNKNOWN")).alias("denial_reason_code"))
+        .agg(
+            F.count("*").alias("claim_count"),
+            F.sum(denied_flag).alias("denied_claims"),
+            F.round(F.sum(billed_amount), 2).alias("total_billed_amount"),
+            F.round(F.sum(allowed_amount), 2).alias("total_allowed_amount"),
+            F.round(F.sum(paid_amount), 2).alias("total_paid_amount"),
+            F.round(F.sum(F.when(denied_flag == F.lit(1), billed_amount).otherwise(F.lit(0.0))), 2).alias(
+                "denied_billed_amount"
+            ),
+            F.sum(follow_up_flag).alias("follow_up_required_claims"),
+        )
+        .orderBy(F.desc("denied_claims"), F.desc("denied_billed_amount"), F.asc("denial_reason_code"))
+    )
+
+
+def build_claims_revenue_daily_summary(spark, catalog: str, bronze_schema: str):
+    """Aggregate date-grain adjudication and reimbursement metrics from Bronze claims."""
+    from pyspark.sql import functions as F
+
+    claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims"))
+    denied_flag = _binary_flag("is_denied")
+    follow_up_flag = _binary_flag("follow_up_required")
+    billed_amount = _double_amount("billed_amount")
+    allowed_amount = _double_amount("allowed_amount")
+    paid_amount = _double_amount("paid_amount")
+
+    return (
+        claims.groupBy(F.col("date").alias("claim_date"))
+        .agg(
+            F.count("*").alias("total_claims"),
+            F.sum(F.when(denied_flag == F.lit(0), F.lit(1)).otherwise(F.lit(0))).alias("approved_claims"),
+            F.sum(denied_flag).alias("denied_claims"),
+            F.sum(follow_up_flag).alias("follow_up_required_claims"),
+            F.round(F.sum(billed_amount), 2).alias("total_billed_amount"),
+            F.round(F.sum(allowed_amount), 2).alias("total_allowed_amount"),
+            F.round(F.sum(paid_amount), 2).alias("total_paid_amount"),
+        )
+        .withColumn("denial_rate_pct", _percent_or_null(F.col("denied_claims"), F.col("total_claims")))
+        .orderBy("claim_date")
+    )
+
+
 def write_managed_table(dataframe, table_name: str) -> str:
     """Persist a DataFrame as a managed Delta table with overwrite semantics."""
     dataframe.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(table_name)
@@ -235,6 +340,9 @@ def build_and_persist_week2_assets(
         "claims_by_region_summary": build_claims_by_region_summary(spark, catalog, bronze_schema),
         "high_cost_claims_summary": build_high_cost_claims_summary(spark, catalog, bronze_schema),
         "week2_dashboard_summary": build_week2_dashboard_summary(spark, catalog, bronze_schema),
+        "claims_adjudication_summary": build_claims_adjudication_summary(spark, catalog, bronze_schema),
+        "claims_denial_reason_summary": build_claims_denial_reason_summary(spark, catalog, bronze_schema),
+        "claims_revenue_daily_summary": build_claims_revenue_daily_summary(spark, catalog, bronze_schema),
     }
 
     persisted: dict[str, str] = {}
@@ -255,8 +363,11 @@ __all__ = [
     "build_and_persist_week2_assets",
     "build_claims_by_region_summary",
     "build_claims_by_specialty_summary",
+    "build_claims_adjudication_summary",
     "build_claims_diagnosis_joined",
+    "build_claims_denial_reason_summary",
     "build_claims_provider_joined",
+    "build_claims_revenue_daily_summary",
     "build_high_cost_claims_summary",
     "build_week2_dashboard_summary",
 ]
