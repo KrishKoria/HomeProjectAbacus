@@ -73,11 +73,13 @@ from pyspark.sql import functions as F
 from src.common.bronze_pipeline_config import (
     PIPELINE_RUN_ID_FORMAT,
     binary_file_autoloader_options,
+    bronze_table_name,
     bronze_volume_path,
     table_properties_for_sensitivity,
 )
 from src.common.observability import MESSAGE_BRONZE_APPEND_ONLY
 
+TABLE_NAME = bronze_table_name("policies")
 VOLUME_PATH = bronze_volume_path("policies")
 
 # ---------------------------------------------------------------------------
@@ -102,7 +104,7 @@ VOLUME_PATH = bronze_volume_path("policies")
 # RAG impact: Silver pdfplumber parsing will produce zero chunks from an empty file.
 @dp.expect("pdf_size_positive", "length > 0")
 @dp.table(
-    name="healthcare.bronze.policies",
+    name=TABLE_NAME,
     cluster_by=["path"],
     comment=(
         "Raw insurance policy PDF documents ingested from landing volume. Append-only. "
