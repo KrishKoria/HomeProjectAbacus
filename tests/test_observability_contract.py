@@ -267,11 +267,16 @@ class AnalyticsContractTests(unittest.TestCase):
         self.assertIn("Adjudication & Revenue", [page["displayName"] for page in dashboard["pages"]])
 
     def test_build_and_persist_claims_assets_wires_new_analytics_tables(self) -> None:
-        fake_spark = object()
+        class FakeSpark:
+            def table(self, table_name: str):
+                return "claims"
+
+        fake_spark = FakeSpark()
         with (
             patch("src.analytics.claims_analytics.ensure_analytics_schema"),
             patch("src.analytics.claims_analytics.write_managed_table"),
             patch("src.analytics.claims_analytics.build_claims_provider_joined", return_value="provider"),
+            patch("src.analytics.claims_analytics._build_claims_provider_cost_enriched", return_value="provider_cost"),
             patch("src.analytics.claims_analytics.build_claims_diagnosis_joined", return_value="diagnosis"),
             patch("src.analytics.claims_analytics.build_claims_by_specialty_summary", return_value="specialty"),
             patch("src.analytics.claims_analytics.build_claims_by_region_summary", return_value="region"),
