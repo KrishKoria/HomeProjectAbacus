@@ -152,6 +152,13 @@ class PolicyChunkingTests(unittest.TestCase):
         self.assertTrue(udf_helper_names.issubset({helper.name for helper in udf_helpers}))
         self.assertTrue(forbidden_globals.isdisjoint(referenced_names))
 
+    def test_policy_chunk_quality_flags_filter_null_entries(self) -> None:
+        source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_policy_chunks.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        self.assertNotIn("array_remove", source)
+        self.assertIn("F.filter", source)
+
     def test_policy_text_is_normalized_before_chunking(self) -> None:
         self.assertEqual(
             normalize_policy_text("Line one\n\nLine two\tLine three"),
@@ -205,6 +212,49 @@ class SilverContractTests(unittest.TestCase):
 
         self.assertEqual(read_bronze_cdf(spark, "healthcare.bronze.claims"), "frame")
         self.assertEqual(spark.read.table_name, "healthcare.bronze.claims")
+
+    def test_silver_claims_drops_internal_lookup_join_keys(self) -> None:
+        source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_claims.py"
+        module = ast.parse(source_path.read_text(encoding="utf-8"))
+        functions = {
+            node.name: node
+            for node in ast.walk(module)
+            if isinstance(node, ast.FunctionDef) and node.name in {"silver_claims", "quarantine_claims"}
+        }
+
+        self.assertEqual(set(functions), {"silver_claims", "quarantine_claims"})
+        for function_name, function in functions.items():
+            with self.subTest(function=function_name):
+                string_constants = {
+                    node.value
+                    for node in ast.walk(function)
+                    if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                }
+                self.assertIn("provider_id_lookup", string_constants)
+                self.assertIn("diagnosis_code_lookup", string_constants)
+
+    def test_silver_claims_quarantines_inconsistent_denial_labels(self) -> None:
+        source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_claims.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        self.assertIn("inconsistent_denial_label", source)
+        self.assertIn('denial_reason_code") != F.lit("NONE")', source)
+
+    def test_silver_dedup_windows_use_source_file_tiebreaker(self) -> None:
+        for relative_path in (
+            "silver_claims.py",
+            "silver_cost.py",
+            "silver_diagnosis.py",
+            "silver_policy_chunks.py",
+            "silver_providers.py",
+        ):
+            with self.subTest(file=relative_path):
+                source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / relative_path
+                source = source_path.read_text(encoding="utf-8")
+                window_start = source.index("Window.partitionBy")
+                with_column_start = source.index(".withColumn", window_start)
+                window_source = source[window_start:with_column_start]
+                self.assertIn('F.col("_source_file").desc()', window_source)
 
     def test_new_log_categories_and_messages_are_phi_safe_templates(self) -> None:
         self.assertEqual(LOG_CATEGORY_SILVER_PIPELINE, "silver_pipeline")

@@ -310,6 +310,14 @@ class AnalyticsContractTests(unittest.TestCase):
             "CLAIMOPS-OBS-401",
         )
 
+    def test_expectation_metrics_handles_struct_and_json_event_log_shapes(self) -> None:
+        source_path = PROJECT_ROOT / "src" / "analytics" / "observability_assets.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        self.assertIn("ArrayType", source)
+        self.assertIn("_event_log_path_type", source)
+        self.assertIn("F.explode_outer(expectations)", source)
+
 
 if __name__ == "__main__":
     unittest.main()
