@@ -8,8 +8,10 @@
 .pytest_cache/
 .streamlit/
 .venv/
+.opencode/
+graphify-out/
 data/
 __pycache__/
 *.pyc
-
+AGENTS.md
 local_dev/
