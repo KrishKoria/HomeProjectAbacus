@@ -19,7 +19,9 @@ Lakeflow Spark Declarative Pipelines (SDP) with Auto Loader.
 
 ## Prerequisites
 
-1. **Bootstrap notebook** — run `src/notebooks/bootstrap_bronze_landing.ipynb` first.
+1. If you need a clean slate, run `src/notebooks/reset_project_environment.ipynb` first.
+   This drops the full project catalog and landing volume so you can rebuild from scratch.
+2. **Bootstrap notebook** — run `src/notebooks/bootstrap_bronze_landing.ipynb` first.
    This creates the Unity Catalog namespace and volume folders:
    ```
    Catalog  : healthcare
@@ -150,9 +152,11 @@ discovery. See `datasets/DATA_CLASSIFICATION.md` for the full breach notificatio
 
 Run the two verification notebooks in order:
 
-1. `src/notebooks/bronze_verify_and_rbac.ipynb` — verifies TBLPROPERTIES, audit columns,
+1. `src/notebooks/reset_project_environment.ipynb` — drops the governed project catalog
+   and landing volume for a clean reset.
+2. `src/notebooks/bronze_verify_and_rbac.ipynb` — verifies TBLPROPERTIES, audit columns,
    row counts, and applies Unity Catalog RBAC grants.
-2. `src/notebooks/bronze_profiling.ipynb` — answers the 6 required data quality questions
+3. `src/notebooks/bronze_profiling.ipynb` — answers the 6 required data quality questions
    and detects overbilling anomalies.
 
 ---
