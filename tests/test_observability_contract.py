@@ -47,6 +47,7 @@ from src.analytics.observability_assets import (  # noqa: E402
 from src.analytics.claims_analytics import (  # noqa: E402
     DASHBOARD_SOURCE_TABLES,
     HIGH_COST_THRESHOLD_RATIO,
+    _cache_if_available,
     analytics_table_name,
     build_and_persist_claims_assets,
 )
@@ -295,6 +296,17 @@ class AnalyticsContractTests(unittest.TestCase):
                 "claims_revenue_daily_summary",
             }.issubset(persisted.keys())
         )
+
+    def test_cache_helper_skips_serverless_persist_unsupported_errors(self) -> None:
+        class ServerlessFrame:
+            def cache(self):
+                raise RuntimeError(
+                    "[NOT_SUPPORTED_WITH_SERVERLESS] PERSIST TABLE is not supported on serverless compute."
+                )
+
+        frame = ServerlessFrame()
+
+        self.assertIs(_cache_if_available(frame), frame)
 
     def test_observability_helpers_keep_sql_bridge_minimal(self) -> None:
         self.assertEqual(
