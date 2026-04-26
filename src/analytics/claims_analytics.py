@@ -48,7 +48,16 @@ def ensure_analytics_schema(spark, catalog: str, analytics_schema: str) -> None:
 
 
 def _cache_if_available(dataframe):
-    return dataframe.cache() if hasattr(dataframe, "cache") else dataframe
+    """Cache a DataFrame when the runtime supports it; keep serverless paths portable."""
+    if not hasattr(dataframe, "cache"):
+        return dataframe
+    try:
+        return dataframe.cache()
+    except Exception as exc:
+        message = str(exc)
+        if "NOT_SUPPORTED_WITH_SERVERLESS" in message or "PERSIST TABLE is not supported" in message:
+            return dataframe
+        raise
 
 
 def _binary_flag(column_name: str):
