@@ -30,7 +30,8 @@ Lakeflow Spark Declarative Pipelines (SDP) with Auto Loader.
    Folders  : /Volumes/healthcare/bronze/raw_landing/{claims,providers,diagnosis,cost,policies}/
    ```
 
-2. **Upload CSVs** — copy the four files from `datasets/` into their volume folders.
+3. **Upload CSVs** — copy the four files from `datasets/` into their volume folders.
+   You can also run `src/notebooks/load_datasets_into_bronze_landing.ipynb` to do this automatically.
 
 3. **Upload PDFs** — copy insurance policy PDF documents into the `policies/` folder.
    Only `*.pdf` files are ingested — other file types are ignored by `pathGlobFilter`.
