@@ -63,7 +63,7 @@ _QUARANTINE_COMMENT = MESSAGE_TEMPLATE_QUARANTINE_SUMMARY.format(
 
 def _normalized_provider_lookup():
     """Return the provider lookup used to validate claims without pulling PHI into logs."""
-    return (
+    return F.broadcast(
         spark.table(BRONZE_PROVIDERS_TABLE)
         .select(
             spark_normalize_code(F.col("provider_id")).alias(
@@ -77,7 +77,7 @@ def _normalized_provider_lookup():
 
 def _normalized_diagnosis_lookup():
     """Return the diagnosis lookup used to validate claims without logging row values."""
-    return (
+    return F.broadcast(
         spark.table(BRONZE_DIAGNOSIS_TABLE)
         .select(
             spark_normalize_code(F.col("diagnosis_code")).alias(
@@ -132,6 +132,7 @@ def _claims_stream():
         # Keep the latest ingested row when the same claim_id appears multiple times.
         F.col("_ingested_at").desc(),
         F.col("_pipeline_run_id").desc(),
+        F.col("_source_file").desc(),
     )
 
     with_flags = (
@@ -153,6 +154,13 @@ def _claims_stream():
             F.col("diagnosis_code").isNotNull() & F.col(
                 "diagnosis_exists").isNull(),
         )
+        .withColumn(
+            "inconsistent_denial_label",
+            F.col("is_denied").isNull()
+            | F.col("denial_reason_code").isNull()
+            | (F.col("is_denied") & (F.col("denial_reason_code") == F.lit("NONE")))
+            | ((~F.col("is_denied")) & (F.col("denial_reason_code") != F.lit("NONE"))),
+        )
     )
 
     # Keep quarantine_reason, diagnostic_id, and rule_name in the same precedence
@@ -166,6 +174,7 @@ def _claims_stream():
         .when(F.col("invalid_claim_date"), F.lit("claim date could not be parsed into yyyy-MM-dd"))
         .when(F.col("unknown_provider_reference"), F.lit("provider_id does not match a known provider reference row"))
         .when(F.col("unknown_diagnosis_reference"), F.lit("diagnosis_code does not match a known diagnosis reference row"))
+        .when(F.col("inconsistent_denial_label"), F.lit("is_denied must agree with denial_reason_code != NONE"))
         .when(F.col("_row_priority") > 1, F.lit("duplicate claim_id observed in the silver stream"))
         .otherwise(F.lit(None))
     )
@@ -179,6 +188,7 @@ def _claims_stream():
         .when(F.col("invalid_claim_date"), F.lit(get_silver_diagnostic_id("claims", "invalid_claim_date")))
         .when(F.col("unknown_provider_reference"), F.lit(get_silver_diagnostic_id("claims", "unknown_provider_reference")))
         .when(F.col("unknown_diagnosis_reference"), F.lit(get_silver_diagnostic_id("claims", "unknown_diagnosis_reference")))
+        .when(F.col("inconsistent_denial_label"), F.lit(get_silver_diagnostic_id("claims", "inconsistent_denial_label")))
         .when(F.col("_row_priority") > 1, F.lit(get_silver_diagnostic_id("claims", "duplicate_claim_id")))
         .otherwise(F.lit(None))
     )
@@ -191,6 +201,7 @@ def _claims_stream():
         .when(F.col("invalid_claim_date"), F.lit("invalid_claim_date"))
         .when(F.col("unknown_provider_reference"), F.lit("unknown_provider_reference"))
         .when(F.col("unknown_diagnosis_reference"), F.lit("unknown_diagnosis_reference"))
+        .when(F.col("inconsistent_denial_label"), F.lit("inconsistent_denial_label"))
         .when(F.col("_row_priority") > 1, F.lit("duplicate_claim_id"))
         .otherwise(F.lit(None))
     )
@@ -226,11 +237,14 @@ def silver_claims():
         "invalid_claim_date",
         "unknown_provider_reference",
         "unknown_diagnosis_reference",
+        "inconsistent_denial_label",
         "diagnostic_id",
         "rule_name",
         "quarantine_reason",
         "provider_exists",
         "diagnosis_exists",
+        "provider_id_lookup",
+        "diagnosis_code_lookup",
     )
 
 
@@ -268,6 +282,9 @@ def quarantine_claims():
         "invalid_claim_date",
         "unknown_provider_reference",
         "unknown_diagnosis_reference",
+        "inconsistent_denial_label",
         "provider_exists",
         "diagnosis_exists",
+        "provider_id_lookup",
+        "diagnosis_code_lookup",
     )

@@ -40,6 +40,7 @@ def _diagnosis_stream():
     duplicate_window = Window.partitionBy("diagnosis_code").orderBy(
         F.col("_ingested_at").desc(),
         F.col("_pipeline_run_id").desc(),
+        F.col("_source_file").desc(),
     )
     return (
         read_bronze_cdf(spark, BRONZE_DIAGNOSIS_TABLE)

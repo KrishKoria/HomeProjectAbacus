@@ -35,6 +35,7 @@ def _providers_stream():
     duplicate_window = Window.partitionBy("provider_id").orderBy(
         F.col("_ingested_at").desc(),
         F.col("_pipeline_run_id").desc(),
+        F.col("_source_file").desc(),
     )
     cleaned = (
         read_bronze_cdf(spark, BRONZE_PROVIDERS_TABLE)

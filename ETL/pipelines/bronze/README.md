@@ -93,7 +93,7 @@ All five tables are created with these properties (`interval 2190 days` is the c
 The claims table additionally carries PHI metadata properties (§ 164.312(a)(2)(iv)):
 
 ```python
-"hipaa.phi_columns"     : "patient_id,billed_amount,diagnosis_code,date"
+"hipaa.phi_columns"     : "allowed_amount,billed_amount,claim_status,date,denial_reason_code,diagnosis_code,follow_up_required,is_denied,paid_amount,patient_id"
 "hipaa.data_sensitivity": "PHI"
 ```
 
@@ -121,7 +121,7 @@ file reference; `content` holds raw PDF bytes. Text extraction happens in Silver
 
 | Table | PHI Columns | Not PHI |
 |---|---|---|
-| claims | `patient_id`, `billed_amount`, `diagnosis_code`, `date` | `claim_id` (PHI-adjacent), `provider_id`, `procedure_code` |
+| claims | `patient_id`, `diagnosis_code`, `billed_amount`, `date`, `claim_status`, `denial_reason_code`, `allowed_amount`, `paid_amount`, `is_denied`, `follow_up_required` | `claim_id` (PHI-adjacent), `provider_id`, `procedure_code` |
 | diagnosis | none — reference table without patient linkage (§ 164.501) | all columns |
 | providers | none — provider identity is operational data (§ 164.501) | all columns |
 | cost | none — benchmark reference data | all columns |

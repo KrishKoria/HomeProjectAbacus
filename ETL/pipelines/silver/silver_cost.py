@@ -43,6 +43,7 @@ def _cost_stream():
         # Benchmarks are keyed by procedure + region, so later records replace earlier ones.
         F.col("_ingested_at").desc(),
         F.col("_pipeline_run_id").desc(),
+        F.col("_source_file").desc(),
     )
     return (
         read_bronze_cdf(spark, BRONZE_COST_TABLE)

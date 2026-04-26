@@ -119,6 +119,7 @@ def _policy_documents_stream():
         # into chunks, while older copies are preserved for quarantine diagnostics.
         F.coalesce(F.col("_ingested_at"), F.col("modificationTime")).desc(),
         F.col("_pipeline_run_id").desc(),
+        F.col("_source_file").desc(),
     )
     extracted = (
         read_bronze_cdf(spark, BRONZE_POLICIES_TABLE)
@@ -130,12 +131,12 @@ def _policy_documents_stream():
         .withColumn("extraction_error_message", F.col("extract_result.error_message"))
         .withColumn(
             "_data_quality_flags",
-            F.array_remove(
+            F.filter(
                 F.array(
                     F.when(F.col("extraction_status") == F.lit("UNREADABLE_PDF"), F.lit("unreadable_pdf")),
                     F.when(F.col("extraction_status") == F.lit("EMPTY_PDF_TEXT"), F.lit("empty_pdf_text")),
                 ),
-                F.lit(None),
+                lambda flag: flag.isNotNull(),
             ),
         )
     )
