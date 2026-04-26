@@ -47,6 +47,10 @@ def ensure_analytics_schema(spark, catalog: str, analytics_schema: str) -> None:
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{analytics_schema}")
 
 
+def _cache_if_available(dataframe):
+    return dataframe.cache() if hasattr(dataframe, "cache") else dataframe
+
+
 def _binary_flag(column_name: str):
     from pyspark.sql import functions as F
 
@@ -114,11 +118,11 @@ def build_claims_diagnosis_joined(spark, catalog: str, bronze_schema: str):
     )
 
 
-def build_claims_by_specialty_summary(spark, catalog: str, bronze_schema: str):
+def build_claims_by_specialty_summary(spark, catalog: str, bronze_schema: str, joined=None):
     """Aggregate claim activity by provider specialty."""
     from pyspark.sql import functions as F
 
-    joined = build_claims_provider_joined(spark, catalog, bronze_schema)
+    joined = joined if joined is not None else build_claims_provider_joined(spark, catalog, bronze_schema)
     return (
         joined.groupBy("specialty")
         .agg(
@@ -131,11 +135,11 @@ def build_claims_by_specialty_summary(spark, catalog: str, bronze_schema: str):
     )
 
 
-def build_claims_by_region_summary(spark, catalog: str, bronze_schema: str):
+def build_claims_by_region_summary(spark, catalog: str, bronze_schema: str, joined=None):
     """Aggregate claim activity by provider region."""
     from pyspark.sql import functions as F
 
-    joined = build_claims_provider_joined(spark, catalog, bronze_schema)
+    joined = joined if joined is not None else build_claims_provider_joined(spark, catalog, bronze_schema)
     return (
         joined.groupBy(F.col("location").alias("region"))
         .agg(
@@ -148,43 +152,68 @@ def build_claims_by_region_summary(spark, catalog: str, bronze_schema: str):
     )
 
 
+def _build_claims_provider_cost_enriched(spark, catalog: str, bronze_schema: str):
+    """Join claims, providers, and cost with unambiguous post-join column names."""
+    from pyspark.sql import functions as F
+
+    claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims")).select(
+        "claim_id",
+        "provider_id",
+        "date",
+        F.col("procedure_code").alias("claim_procedure_code"),
+        "billed_amount",
+    )
+    providers = spark.table(bronze_table_name(catalog, bronze_schema, "providers")).select(
+        "provider_id",
+        "doctor_name",
+        "specialty",
+        F.col("location").alias("provider_region"),
+    )
+    cost = spark.table(bronze_table_name(catalog, bronze_schema, "cost")).select(
+        F.col("procedure_code").alias("cost_procedure_code"),
+        F.col("region").alias("cost_region"),
+        "expected_cost",
+    )
+
+    return (
+        claims.join(providers, on="provider_id", how="left")
+        .join(
+            cost,
+            on=[
+                F.col("claim_procedure_code") == F.col("cost_procedure_code"),
+                F.col("provider_region") == F.col("cost_region"),
+            ],
+            how="left",
+        )
+        .withColumn(
+            "amount_to_benchmark_ratio",
+            F.col("billed_amount").cast("double") / F.col("expected_cost").cast("double"),
+        )
+    )
+
+
 def build_high_cost_claims_summary(
     spark,
     catalog: str,
     bronze_schema: str,
     threshold_ratio: float = HIGH_COST_THRESHOLD_RATIO,
+    enriched=None,
 ):
     """Return claim-level overbilling summary using Bronze claims, providers, and cost."""
     from pyspark.sql import functions as F
 
-    claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims")).alias("claims")
-    providers = spark.table(bronze_table_name(catalog, bronze_schema, "providers")).alias("providers")
-    cost = spark.table(bronze_table_name(catalog, bronze_schema, "cost")).alias("cost")
-
+    enriched = enriched if enriched is not None else _build_claims_provider_cost_enriched(spark, catalog, bronze_schema)
     return (
-        claims.join(providers, on="provider_id", how="left")
-        # The benchmark table is keyed by procedure and provider region, so both sides
-        # are needed before a claim can be compared to an expected cost.
-        .join(
-            cost,
-            on=[
-                claims["procedure_code"] == cost["procedure_code"],
-                providers["location"] == cost["region"],
-            ],
-            how="left",
-        )
-        .select(
-            claims["claim_id"],
-            claims["provider_id"],
-            providers["doctor_name"],
-            providers["specialty"],
-            providers["location"].alias("region"),
-            claims["procedure_code"],
-            claims["billed_amount"],
-            cost["expected_cost"],
-            (
-                F.col("billed_amount").cast("double") / F.col("expected_cost").cast("double")
-            ).alias("amount_to_benchmark_ratio"),
+        enriched.select(
+            "claim_id",
+            "provider_id",
+            "doctor_name",
+            "specialty",
+            F.col("provider_region").alias("region"),
+            F.col("claim_procedure_code").alias("procedure_code"),
+            "billed_amount",
+            "expected_cost",
+            "amount_to_benchmark_ratio",
         )
         # Claims without a regional benchmark stay visible in the broader EDA tables,
         # but they cannot participate in the high-cost ratio analysis.
@@ -194,28 +223,15 @@ def build_high_cost_claims_summary(
     )
 
 
-def build_claims_dashboard_summary(spark, catalog: str, bronze_schema: str):
+def build_claims_dashboard_summary(spark, catalog: str, bronze_schema: str, enriched=None):
     """Create a date-grain dashboard table for total claims, trends, and anomalies."""
     from pyspark.sql import functions as F
 
-    claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims")).alias("claims")
-    providers = spark.table(bronze_table_name(catalog, bronze_schema, "providers")).alias("providers")
-    cost = spark.table(bronze_table_name(catalog, bronze_schema, "cost")).alias("cost")
-
     enriched = (
-        claims.join(providers, on="provider_id", how="left")
-        .join(
-            cost,
-            on=[
-                claims["procedure_code"] == cost["procedure_code"],
-                providers["location"] == cost["region"],
-            ],
-            how="left",
-        )
-        .withColumn(
-            "amount_to_benchmark_ratio",
-            F.col("billed_amount").cast("double") / F.col("expected_cost").cast("double"),
-        )
+        enriched if enriched is not None else _build_claims_provider_cost_enriched(spark, catalog, bronze_schema)
+    )
+    enriched = (
+        enriched
         .withColumn(
             # Keep this as an integer flag so the daily rollup can sum anomalies directly.
             "is_high_cost_claim",
@@ -236,11 +252,11 @@ def build_claims_dashboard_summary(spark, catalog: str, bronze_schema: str):
     )
 
 
-def build_claims_adjudication_summary(spark, catalog: str, bronze_schema: str):
+def build_claims_adjudication_summary(spark, catalog: str, bronze_schema: str, claims=None):
     """Aggregate top-line adjudication and reimbursement KPIs from Bronze claims."""
     from pyspark.sql import functions as F
 
-    claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims"))
+    claims = claims if claims is not None else spark.table(bronze_table_name(catalog, bronze_schema, "claims"))
     denied_flag = _binary_flag("is_denied")
     follow_up_flag = _binary_flag("follow_up_required")
     billed_amount = _double_amount("billed_amount")
@@ -263,11 +279,11 @@ def build_claims_adjudication_summary(spark, catalog: str, bronze_schema: str):
     )
 
 
-def build_claims_denial_reason_summary(spark, catalog: str, bronze_schema: str):
+def build_claims_denial_reason_summary(spark, catalog: str, bronze_schema: str, claims=None):
     """Aggregate denial reason counts and financial impact from Bronze claims."""
     from pyspark.sql import functions as F
 
-    claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims"))
+    claims = claims if claims is not None else spark.table(bronze_table_name(catalog, bronze_schema, "claims"))
     denied_flag = _binary_flag("is_denied")
     follow_up_flag = _binary_flag("follow_up_required")
     billed_amount = _double_amount("billed_amount")
@@ -291,11 +307,11 @@ def build_claims_denial_reason_summary(spark, catalog: str, bronze_schema: str):
     )
 
 
-def build_claims_revenue_daily_summary(spark, catalog: str, bronze_schema: str):
+def build_claims_revenue_daily_summary(spark, catalog: str, bronze_schema: str, claims=None):
     """Aggregate date-grain adjudication and reimbursement metrics from Bronze claims."""
     from pyspark.sql import functions as F
 
-    claims = spark.table(bronze_table_name(catalog, bronze_schema, "claims"))
+    claims = claims if claims is not None else spark.table(bronze_table_name(catalog, bronze_schema, "claims"))
     denied_flag = _binary_flag("is_denied")
     follow_up_flag = _binary_flag("follow_up_required")
     billed_amount = _double_amount("billed_amount")
@@ -333,16 +349,30 @@ def build_and_persist_claims_assets(
     """Build all Week 2 analytics outputs and persist them to Delta tables."""
     ensure_analytics_schema(spark, catalog, analytics_schema)
 
+    claims_provider_joined = _cache_if_available(build_claims_provider_joined(spark, catalog, bronze_schema))
+    claims_provider_cost_enriched = _cache_if_available(_build_claims_provider_cost_enriched(spark, catalog, bronze_schema))
+    claims = _cache_if_available(spark.table(bronze_table_name(catalog, bronze_schema, "claims")))
+
     outputs = {
-        "claims_provider_joined": build_claims_provider_joined(spark, catalog, bronze_schema),
+        "claims_provider_joined": claims_provider_joined,
         "claims_diagnosis_joined": build_claims_diagnosis_joined(spark, catalog, bronze_schema),
-        "claims_by_specialty_summary": build_claims_by_specialty_summary(spark, catalog, bronze_schema),
-        "claims_by_region_summary": build_claims_by_region_summary(spark, catalog, bronze_schema),
-        "high_cost_claims_summary": build_high_cost_claims_summary(spark, catalog, bronze_schema),
-        "claims_dashboard_summary": build_claims_dashboard_summary(spark, catalog, bronze_schema),
-        "claims_adjudication_summary": build_claims_adjudication_summary(spark, catalog, bronze_schema),
-        "claims_denial_reason_summary": build_claims_denial_reason_summary(spark, catalog, bronze_schema),
-        "claims_revenue_daily_summary": build_claims_revenue_daily_summary(spark, catalog, bronze_schema),
+        "claims_by_specialty_summary": build_claims_by_specialty_summary(spark, catalog, bronze_schema, claims_provider_joined),
+        "claims_by_region_summary": build_claims_by_region_summary(spark, catalog, bronze_schema, claims_provider_joined),
+        "high_cost_claims_summary": build_high_cost_claims_summary(
+            spark,
+            catalog,
+            bronze_schema,
+            enriched=claims_provider_cost_enriched,
+        ),
+        "claims_dashboard_summary": build_claims_dashboard_summary(
+            spark,
+            catalog,
+            bronze_schema,
+            enriched=claims_provider_cost_enriched,
+        ),
+        "claims_adjudication_summary": build_claims_adjudication_summary(spark, catalog, bronze_schema, claims),
+        "claims_denial_reason_summary": build_claims_denial_reason_summary(spark, catalog, bronze_schema, claims),
+        "claims_revenue_daily_summary": build_claims_revenue_daily_summary(spark, catalog, bronze_schema, claims),
     }
 
     persisted: dict[str, str] = {}
@@ -370,4 +400,5 @@ __all__ = [
     "build_claims_revenue_daily_summary",
     "build_high_cost_claims_summary",
     "build_claims_dashboard_summary",
+    "_build_claims_provider_cost_enriched",
 ]
