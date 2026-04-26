@@ -46,17 +46,29 @@ def _nested_event_log_path(dataframe, root: str, path: str):
     from pyspark.sql import functions as F
     from pyspark.sql.types import StringType, StructType
 
+    path_type = _event_log_path_type(dataframe, root, path)
+    if path_type is not None and not isinstance(dataframe.schema[root].dataType, StringType):
+        return F.col(f"{root}.{path}")
+    if isinstance(dataframe.schema[root].dataType, StringType) if root in dataframe.columns else False:
+        return F.get_json_object(F.col(root), f"$.{path}")
+    return F.lit(None).cast("string")
+
+
+def _event_log_path_type(dataframe, root: str, path: str):
+    """Return the Spark type for a nested event-log path when it is available."""
+    from pyspark.sql.types import StringType, StructType
+
     root_type = dataframe.schema[root].dataType if root in dataframe.columns else None
     if isinstance(root_type, StructType):
         current_type = root_type
         for part in path.split("."):
             if not isinstance(current_type, StructType) or part not in current_type.names:
-                return F.lit(None).cast("string")
+                return None
             current_type = current_type[part].dataType
-        return F.col(f"{root}.{path}")
+        return current_type
     if isinstance(root_type, StringType):
-        return F.get_json_object(F.col(root), f"$.{path}")
-    return F.lit(None).cast("string")
+        return StringType()
+    return None
 
 
 def _nested_event_log_field(dataframe, root: str, field: str):
@@ -107,6 +119,7 @@ def build_expectation_metrics(dataframe):
     origin_update_id = _nested_event_log_field(dataframe, "origin", "update_id")
     details_update_id = _nested_event_log_field(dataframe, "details", "update_id")
     expectations = _nested_event_log_path(dataframe, "details", "flow_progress.data_quality.expectations")
+    expectation_type = _event_log_path_type(dataframe, "details", "flow_progress.data_quality.expectations")
     expectation_schema = ArrayType(
         StructType(
             [
@@ -117,18 +130,19 @@ def build_expectation_metrics(dataframe):
             ]
         )
     )
+    if isinstance(expectation_type, ArrayType):
+        expectation_rows = F.explode_outer(expectations)
+    else:
+        expectation_rows = F.explode_outer(
+            F.when(
+                expectations.cast("string").isNotNull(),
+                F.from_json(expectations.cast("string"), expectation_schema),
+            )
+        )
 
     return (
         dataframe.where(F.col("event_type") == "flow_progress")
-        .withColumn(
-            "_expectation",
-            F.explode_outer(
-                F.when(
-                    expectations.cast("string").isNotNull(),
-                    F.from_json(expectations.cast("string"), expectation_schema),
-                )
-            ),
-        )
+        .withColumn("_expectation", expectation_rows)
         .where(F.col("_expectation").isNotNull())
         .select(
             F.col("timestamp"),
