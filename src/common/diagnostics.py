@@ -41,7 +41,8 @@ SILVER_DIAGNOSTIC_IDS: Final[dict[str, dict[str, str]]] = {
         "invalid_claim_date": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 105),
         "unknown_provider_reference": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 106),
         "unknown_diagnosis_reference": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 107),
-        "duplicate_claim_id": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 108),
+        "inconsistent_denial_label": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 108),
+        "duplicate_claim_id": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 109),
     },
     "providers": {
         "missing_provider_id": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 201),
