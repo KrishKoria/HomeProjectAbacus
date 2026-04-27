@@ -1,5 +1,7 @@
 # Week 4 Implementation Plan: ML Denial Prediction
 
+> **STATUS (post-execution, 2026-04-27):** Waves 1-5 are implemented and 93 tests pass (1 skipped). Wave 3 was a no-op — `build_gold_claim_denial_features` was never present in `src/analytics/claims_analytics.py`. A defect-cleanup follow-up wave (see §11) was completed alongside the original waves: 30-day window unit fix, `diagnosis_count` partition fix, target-leak surface drops, blocking release gate, and `Recall@HIGH` evaluation metric. The plan below is preserved for historical context.
+
 ## 1. Project Context
 
 **Project**: AI-Powered Claim Denial Prevention & Remediation System
@@ -7,13 +9,13 @@
 **Current Phase**: Weeks 1-3 code-ready (Bronze ingestion + Silver processing + analytics)
 **This Phase**: Week 4 — Gold feature layer + ML model training
 
-### Current State
+### Current State (at plan-write time)
 
 - Bronze: 5 Delta tables via SDP pipelines (`healthcare.bronze.{claims,providers,diagnosis,cost,policies}`)
 - Silver: 5 trusted + quarantine tables (`healthcare.silver.{claims,providers,diagnosis,cost,policy_chunks}`)
 - Claims dataset: 1000 rows with synthetic labels (`is_denied`, `denial_reason_code`, `claim_status`, etc.)
-- Analytics: `src/analytics/claims_analytics.py` with dashboard builders and basic `build_gold_claim_denial_features()`
-- Tests: 53 passing, 1 skipped (baseline healthy)
+- Analytics: `src/analytics/claims_analytics.py` with dashboard builders (no Gold-feature builder; Wave 3 became a no-op)
+- Tests: 71 passing baseline, 1 skipped (post-execution, with Gold + ML contract tests landed: 93 passing)
 - Local dev: `local_dev/` workflow with local Bronze fallback and Streamlit dashboard
 
 ### Key Files
@@ -552,6 +554,46 @@ Each task should be delegated to category-optimized subagents:
 
 ### Gap 5: `_build_claims_provider_cost_enriched` must not be removed
 
-**Found**: The analytics function `_build_claims_provider_cost_enriched` is used by 4 other builders (high_cost_claims_summary, claims_dashboard_summary, silver_claims_cost_enriched, claims_provider_specialty_mismatch). Only `build_gold_claim_denial_features` uses it for Gold features.
+---
 
-**Decision**: Keep `_build_claims_provider_cost_enriched` and all other analytics builders intact. Only remove the `build_gold_claim_denial_features` function, its output in `build_and_persist_claims_assets()`, its entry in `DASHBOARD_SOURCE_TABLES`, and its `__all__` export.
+## 11. Defect Cleanup (post-execution)
+
+After the original Waves 1-5 landed in tree, a verification pass surfaced six concrete defects, three architecture deviations, and a handful of coding-standard nits. All were resolved in the same follow-up commit.
+
+### Implementation defects fixed
+
+- **30-day provider window** (`ETL/pipelines/gold/gold_claim_features.py`): cast `date` through `timestamp` before `cast("long")` so the `rangeBetween(-30 * 86400, 0)` units (seconds) match the column. Previously `provider_claim_count_30d` was effectively unbounded and identical to `provider_claim_count`.
+- **`diagnosis_count` partition** (same file): re-partition the window by `provider_id` only. Partitioning by `(provider_id, diagnosis_code)` and then taking `approx_count_distinct("diagnosis_code")` is always 1.
+- **Target-leak surface** (same file): explicitly drop `claim_status`, `denial_reason_code`, `allowed_amount`, `paid_amount`, `follow_up_required` inside `_claims_feature_base` so any future widening of the final `select` cannot leak the label into the feature surface.
+- **`XGBoost_DEFAULT_PARAMS` casing** (`src/ml/train.py`): renamed to `XGBOOST_DEFAULT_PARAMS` and added `Final` typing. Default params now include `scale_pos_weight=2.5` so the `--no-tune` path matches §13.
+- **Bronze CSV fallback** (`scripts/train_denial_model.py`): replaced silent fallback to `datasets/claims_1000.csv` (Bronze, no engineered features) with an explicit `--gold-csv` flag and clear error messages.
+- **Release gate** (same file): `meets_thresholds()` now drives a `sys.exit(1)` and skips `pickle.dump` so failing models are not persisted under the production artifact path.
+
+### Architecture alignment
+
+- **`PHI_COLUMNS_GOLD`** widened to `(billed_amount, date, diagnosis_code, is_denied, patient_id)` to match the bronze authority for the columns that flow through the Gold final select.
+- **§13 Recall@HIGH**: `EvaluationMetrics` gained a `recall_at_high` field, `evaluate.py` exposes a `recall_at_high()` helper plus `HIGH_RISK_PROBABILITY_THRESHOLD` and `DEFAULT_MIN_*` constants, and `meets_thresholds()` now gates on Recall@HIGH (not global recall) per the spec.
+- **Risk-tier alignment**: `src/ml/predict.py` extracts `RISK_THRESHOLD_LOW = 0.3`, `RISK_THRESHOLD_HIGH = 0.7`, and `LATENCY_BUDGET_MS = 150.0`; a contract test asserts the inference threshold matches the evaluation threshold.
+- **Latency observability**: `predict_single` emits a `logger.debug` line with `latency_ms` so production monitoring can track the §13 < 150 ms p95 budget.
+- **MLflow scope clarified** in ARCHITECTURE.md §13.3: v1 uses experiment tracking + artifact logging; the train-script gate is the promotion barrier.
+
+### Coding-standard fixes
+
+- `__all__` re-sorted in `src/common/log_categories.py` and `src/common/log_messages.py`.
+- Public functions across `src/ml/` got one-line docstrings explaining their role.
+- Heavy third-party imports (`sklearn.model_selection`, `pickle`) lifted to module top.
+- Bare `except Exception` blocks replaced with `logger.warning(..., exc_info=True)`.
+
+### New regression tests (added to `tests/test_gold_contract.py` and `tests/test_ml_contract.py`)
+
+- `test_gold_pipeline_30d_window_casts_date_through_timestamp` — guards the unit fix.
+- `test_gold_pipeline_diagnosis_count_partition_is_provider_only` — guards the partition fix.
+- `test_gold_pipeline_drops_target_leak_columns` — guards the leakage drops.
+- `test_recall_at_high_only_counts_high_tier_positives` and `test_recall_at_high_returns_zero_when_no_positives` — unit tests for the new metric.
+- `test_meets_thresholds_uses_recall_at_high_not_global_recall` — locks in the gate semantics.
+- `test_risk_thresholds_align_with_evaluate_module` — keeps inference and evaluation thresholds in sync.
+- `test_main_exits_nonzero_and_skips_save_when_metrics_fail` — proves the release gate blocks promotion.
+
+### Verification
+
+`uv sync --group ml && uv run pytest -q` → **93 passed, 1 skipped**.
