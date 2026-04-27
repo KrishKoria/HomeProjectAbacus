@@ -278,13 +278,14 @@ class SilverContractTests(unittest.TestCase):
         self.assertIn("inconsistent_denial_label", source)
         self.assertIn('denial_reason_code") != F.lit("NONE")', source)
 
-    def test_silver_claims_shared_stream_is_pipeline_temporary_view(self) -> None:
+    def test_silver_claims_shared_intermediate_is_private_materialized_view(self) -> None:
         source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_claims.py"
         source = source_path.read_text(encoding="utf-8")
 
-        self.assertIn("@dp.temporary_view", source)
-        self.assertIn('name="claims_stream"', source)
-        self.assertIn('spark.read.table("claims_stream")', source)
+        self.assertIn("@dp.materialized_view", source)
+        self.assertIn('name="claims_validated_rows"', source)
+        self.assertIn("private=True", source)
+        self.assertIn('spark.read.table("claims_validated_rows")', source)
 
     def test_silver_dedup_windows_use_source_file_tiebreaker(self) -> None:
         for relative_path in (
