@@ -1,0 +1,1 @@
+from src.common.gold_pipeline_config import *  # noqa: F401,F403
