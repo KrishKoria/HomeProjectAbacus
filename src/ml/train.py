@@ -18,19 +18,29 @@ def _resolve_experiment_name(model_name: str) -> str:
     """Return an MLflow experiment name valid for the active tracking backend.
 
     Databricks rejects relative experiment names — they must be absolute
-    workspace paths like ``/Users/<user>/<experiment>``. Detect the runtime
-    via ``DATABRICKS_RUNTIME_VERSION`` and resolve the current user via the
-    standard Databricks env vars; fall back to a plain relative name for
-    local runs (which MLflow's local file-based tracking accepts).
+    workspace paths like ``/Users/<user>/<experiment>``. ``$USER`` on
+    Databricks compute is the cluster service account (e.g. ``spark-…``)
+    not the workspace user, so we resolve the actual user via Spark's
+    ``current_user()`` SQL function. ``MLFLOW_EXPERIMENT_NAME`` env var
+    overrides everything for explicit control. Local runs keep the plain
+    relative name (MLflow's file-based tracker accepts it).
     """
+    override = os.environ.get("MLFLOW_EXPERIMENT_NAME")
+    if override:
+        return override
     base = f"claim_denial_{model_name}"
     if not os.environ.get("DATABRICKS_RUNTIME_VERSION"):
         return base
-    user = (
-        os.environ.get("DATABRICKS_USER")
-        or os.environ.get("USER")
-        or "shared"
-    )
+    user = "shared"
+    try:
+        from pyspark.sql import SparkSession
+
+        spark = SparkSession.builder.getOrCreate()
+        row = spark.sql("SELECT current_user() AS user").first()
+        if row and row["user"]:
+            user = row["user"]
+    except Exception:
+        logger.warning("Failed to resolve Databricks workspace user", exc_info=True)
     return f"/Users/{user}/{base}"
 
 XGBOOST_DEFAULT_PARAMS: Final[dict[str, Any]] = {
@@ -39,7 +49,6 @@ XGBOOST_DEFAULT_PARAMS: Final[dict[str, Any]] = {
     "n_estimators": 100,
     "objective": "binary:logistic",
     "eval_metric": "logloss",
-    "use_label_encoder": False,
     "early_stopping_rounds": 50,
     # Synthetic claim labels are ~70/30 (approved/denied); without rebalancing
     # XGBoost biases toward the majority class and silently misses ARCHITECTURE
@@ -101,7 +110,6 @@ def _optuna_objective(
         "scale_pos_weight": trial.suggest_float("scale_pos_weight", 1.0, 10.0),
         "objective": "binary:logistic",
         "eval_metric": "logloss",
-        "use_label_encoder": False,
         "random_state": 42,
     }
     model = XGBClassifier(**params)
@@ -128,7 +136,6 @@ def tune_xgboost_optuna(
     best_params.update({
         "objective": "binary:logistic",
         "eval_metric": "logloss",
-        "use_label_encoder": False,
         "random_state": 42,
     })
     logger.info("Optuna best AUC: %.4f, params: %s", study.best_value, best_params)

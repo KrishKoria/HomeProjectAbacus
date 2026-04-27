@@ -123,10 +123,19 @@ def train_pipeline(
 
     xgb_metrics = evaluate_model(xgb_model, X_test, y_test)
 
-    best_model = xgb_model if xgb_metrics.roc_auc >= logreg_metrics.roc_auc else logreg
-    best_name = "xgboost" if xgb_metrics.roc_auc >= logreg_metrics.roc_auc else "logistic_regression"
-    best_params = xgb_params if best_name == "xgboost" else LOGREG_DEFAULT_PARAMS
-    best_metrics = xgb_metrics if best_name == "xgboost" else logreg_metrics
+    # Pick the model that best matches the §13 release gate intent: a model
+    # that clears the gate is always preferred over one that doesn't, even if
+    # the failing one has higher ROC-AUC. Among same-gate-status candidates
+    # rank by Recall@HIGH (the gate metric), then ROC-AUC as final tiebreak.
+    candidates = [
+        ("xgboost", xgb_model, xgb_params, xgb_metrics),
+        ("logistic_regression", logreg, LOGREG_DEFAULT_PARAMS, logreg_metrics),
+    ]
+    candidates.sort(
+        key=lambda c: (c[3].meets_thresholds(), c[3].recall_at_high, c[3].roc_auc),
+        reverse=True,
+    )
+    best_name, best_model, best_params, best_metrics = candidates[0]
 
     if mlflow_tracking_uri:
         import mlflow
@@ -167,8 +176,18 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print(f"Model: {name}")
-    print(f"LogReg ROC-AUC: {logreg_metrics.roc_auc:.4f}")
-    print(f"XGBoost ROC-AUC: {xgb_metrics.roc_auc:.4f}")
+    print(
+        f"LogReg  ROC-AUC: {logreg_metrics.roc_auc:.4f} "
+        f"Recall@HIGH: {logreg_metrics.recall_at_high:.4f} "
+        f"Precision: {logreg_metrics.precision:.4f} "
+        f"gate={'PASS' if logreg_metrics.meets_thresholds() else 'FAIL'}"
+    )
+    print(
+        f"XGBoost ROC-AUC: {xgb_metrics.roc_auc:.4f} "
+        f"Recall@HIGH: {xgb_metrics.recall_at_high:.4f} "
+        f"Precision: {xgb_metrics.precision:.4f} "
+        f"gate={'PASS' if xgb_metrics.meets_thresholds() else 'FAIL'}"
+    )
     print(
         f"Best: {name} (ROC-AUC: {best_metrics.roc_auc:.4f}, "
         f"Recall@HIGH: {best_metrics.recall_at_high:.4f}, "
