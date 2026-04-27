@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Final
 
 import mlflow
@@ -11,6 +12,26 @@ from xgboost import XGBClassifier
 from src.ml import FEATURE_COLUMNS, TARGET_COLUMN
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_experiment_name(model_name: str) -> str:
+    """Return an MLflow experiment name valid for the active tracking backend.
+
+    Databricks rejects relative experiment names — they must be absolute
+    workspace paths like ``/Users/<user>/<experiment>``. Detect the runtime
+    via ``DATABRICKS_RUNTIME_VERSION`` and resolve the current user via the
+    standard Databricks env vars; fall back to a plain relative name for
+    local runs (which MLflow's local file-based tracking accepts).
+    """
+    base = f"claim_denial_{model_name}"
+    if not os.environ.get("DATABRICKS_RUNTIME_VERSION"):
+        return base
+    user = (
+        os.environ.get("DATABRICKS_USER")
+        or os.environ.get("USER")
+        or "shared"
+    )
+    return f"/Users/{user}/{base}"
 
 XGBOOST_DEFAULT_PARAMS: Final[dict[str, Any]] = {
     "max_depth": 6,
@@ -124,7 +145,7 @@ def train_with_mlflow(
     artifact_path: str = "model",
 ) -> str:
     """Log a fit model + params + metrics to an MLflow experiment and return the run id."""
-    mlflow.set_experiment(f"claim_denial_{model_name}")
+    mlflow.set_experiment(_resolve_experiment_name(model_name))
     with mlflow.start_run(run_name=model_name):
         mlflow.log_params(params)
         mlflow.log_metrics(metrics)
