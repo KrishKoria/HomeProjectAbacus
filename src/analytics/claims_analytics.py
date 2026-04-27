@@ -40,7 +40,6 @@ DASHBOARD_SOURCE_TABLES: Final[tuple[str, ...]] = (
     "ops_data_freshness",
     "silver_claims_cost_enriched",
     "silver_claim_lineage",
-    "gold_claim_denial_features",
 )
 
 
@@ -524,35 +523,6 @@ def build_silver_claim_lineage(
     return trusted.unionByName(quarantined)
 
 
-def build_gold_claim_denial_features(
-    spark,
-    catalog: str,
-    bronze_schema: str = BRONZE_SCHEMA_DEFAULT,
-    enriched=None,
-    mismatch=None,
-):
-    """Materialize reusable denial-risk features from trusted Silver inputs."""
-    from pyspark.sql import functions as F
-
-    enriched = enriched if enriched is not None else _build_claims_provider_cost_enriched(spark, catalog, bronze_schema)
-    mismatch = mismatch if mismatch is not None else build_claims_provider_specialty_mismatch(spark, catalog, bronze_schema, enriched)
-    return (
-        enriched.join(mismatch.select("claim_id", "category", "severity", "specialty_diagnosis_mismatch"), on="claim_id", how="left")
-        .select(
-            "claim_id",
-            "provider_id",
-            "diagnosis_code",
-            "claim_procedure_code",
-            "billed_amount",
-            "expected_cost",
-            "amount_to_benchmark_ratio",
-            F.when(F.col("severity") == F.lit("High"), F.lit(1)).when(F.col("severity") == F.lit("Low"), F.lit(0)).otherwise(F.lit(None).cast("int")).alias("diagnosis_severity_encoded"),
-            F.col("specialty_diagnosis_mismatch").cast("int").alias("specialty_diagnosis_mismatch"),
-            F.col("expected_cost").isNull().alias("missing_expected_cost"),
-        )
-    )
-
-
 def write_managed_table(dataframe, table_name: str) -> str:
     """Persist a DataFrame as a managed Delta table with overwrite semantics."""
     dataframe.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(table_name)
@@ -612,13 +582,6 @@ def build_and_persist_claims_assets(
         "ops_data_freshness": build_ops_data_freshness(spark, catalog, bronze_schema),
         "silver_claims_cost_enriched": claims_provider_cost_enriched,
         "silver_claim_lineage": build_silver_claim_lineage(spark, catalog, bronze_schema),
-        "gold_claim_denial_features": build_gold_claim_denial_features(
-            spark,
-            catalog,
-            bronze_schema,
-            enriched=claims_provider_cost_enriched,
-            mismatch=mismatch,
-        ),
     }
 
     persisted: dict[str, str] = {}
@@ -647,7 +610,6 @@ __all__ = [
     "build_claims_provider_joined",
     "build_claims_provider_specialty_mismatch",
     "build_claims_revenue_daily_summary",
-    "build_gold_claim_denial_features",
     "build_high_cost_claims_summary",
     "build_ops_data_freshness",
     "build_silver_claim_lineage",
