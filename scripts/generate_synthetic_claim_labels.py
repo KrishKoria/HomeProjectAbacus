@@ -157,6 +157,8 @@ def classify_claim(
 
     expected_cost = expected_costs.get((row["procedure_code"], provider_regions.get(row["provider_id"], "")))
     billed_amount = Decimal(row["billed_amount"])
+    if expected_cost is not None and expected_cost <= Decimal("0"):
+        expected_cost = None
     if expected_cost is not None and billed_amount / expected_cost > Decimal("2.5"):
         return "OVER_BENCHMARK", _money(expected_cost)
     if row["claim_id"] in MEDICAL_REVIEW_CLAIM_IDS:

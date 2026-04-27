@@ -44,7 +44,7 @@ from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import (
     COMMON_DELTA_TABLE_PROPERTIES,
-    PIPELINE_RUN_ID_FORMAT,
+    stable_pipeline_run_id,
     bronze_table_name,
     bronze_volume_path,
     csv_autoloader_options,
@@ -89,7 +89,7 @@ VOLUME_PATH = bronze_volume_path("providers")
         "Known data quality issue: location is nullable. "
         "Missing location causes administrative rejection of associated claims. "
         "Silver layer (healthcare.silver.providers) imputes location='Unknown' for nulls. "
-        "Downstream: healthcare.silver.providers reads this table via Change Data Feed."
+        "Downstream: healthcare.silver.providers reads a governed Bronze snapshot for Silver materialization."
     ),
     table_properties=COMMON_DELTA_TABLE_PROPERTIES,
 )
@@ -130,7 +130,7 @@ def bronze_providers():
         .withColumn("_source_file", F.col("_metadata.file_path"))
         .withColumn(
             "_pipeline_run_id",
-            F.date_format(F.current_timestamp(), PIPELINE_RUN_ID_FORMAT),
+            stable_pipeline_run_id(),
         )
         .drop("_metadata")
     )

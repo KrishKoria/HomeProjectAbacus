@@ -71,7 +71,7 @@ from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import (
-    PIPELINE_RUN_ID_FORMAT,
+    stable_pipeline_run_id,
     bronze_table_name,
     bronze_volume_path,
     csv_autoloader_options,
@@ -116,6 +116,35 @@ CLAIMS_PHI_COLUMNS = tuple(sorted(BRONZE_SOURCES["claims"].phi_columns))
 # Denial impact: malformed rows cannot be validated or submitted.
 # Action required: investigate the source file for encoding or delimiter issues.
 @dp.expect("no_parse_errors", "_rescued_data IS NULL")
+
+# claim_status is an adjudication label used by downstream denial analytics.
+@dp.expect("claim_status_valid", "claim_status IS NULL OR upper(trim(claim_status)) IN ('APPROVED', 'DENIED')")
+
+# is_denied should agree with claim_status when both labels are present.
+@dp.expect(
+    "is_denied_matches_claim_status",
+    """
+    claim_status IS NULL OR is_denied IS NULL OR
+    (upper(trim(claim_status)) = 'DENIED' AND upper(trim(is_denied)) IN ('1', 'TRUE', 'YES', 'Y')) OR
+    (upper(trim(claim_status)) = 'APPROVED' AND upper(trim(is_denied)) IN ('0', 'FALSE', 'NO', 'N'))
+    """,
+)
+
+# Synthetic allowed and paid amounts must never be negative when supplied.
+@dp.expect(
+    "non_negative_payment_amounts",
+    "(allowed_amount IS NULL OR cast(allowed_amount AS DOUBLE) >= 0) AND (paid_amount IS NULL OR cast(paid_amount AS DOUBLE) >= 0)",
+)
+
+# Approved rows should carry NONE; denied rows should carry a specific reason.
+@dp.expect(
+    "denial_reason_code_consistent",
+    """
+    denial_reason_code IS NULL OR is_denied IS NULL OR
+    (upper(trim(is_denied)) IN ('0', 'FALSE', 'NO', 'N') AND upper(trim(denial_reason_code)) = 'NONE') OR
+    (upper(trim(is_denied)) IN ('1', 'TRUE', 'YES', 'Y') AND upper(trim(denial_reason_code)) <> 'NONE')
+    """,
+)
 @dp.table(
     name=TABLE_NAME,
     cluster_by=["claim_id", "date"],
@@ -124,7 +153,7 @@ CLAIMS_PHI_COLUMNS = tuple(sorted(BRONZE_SOURCES["claims"].phi_columns))
         f"{MESSAGE_BRONZE_APPEND_ONLY} "
         "PHI columns (encrypt at rest in production): patient_id, billed_amount, diagnosis_code, claim status, denial/payment labels. "
         "Known data quality issues: procedure_code and billed_amount are nullable. "
-        "Downstream: healthcare.silver.claims reads this table via Change Data Feed."
+        "Downstream: healthcare.silver.claims reads a governed Bronze snapshot for Silver materialization."
     ),
     table_properties=table_properties_for_sensitivity("PHI", CLAIMS_PHI_COLUMNS),
 )
@@ -184,7 +213,7 @@ def bronze_claims():
             "_pipeline_run_id",
             # Timestamp-based run ID groups rows from the same pipeline execution.
             # Format: yyyyMMdd_HHmmss — sortable, human-readable, no external dependency.
-            F.date_format(F.current_timestamp(), PIPELINE_RUN_ID_FORMAT),
+            stable_pipeline_run_id(),
         )
         # Drop the internal _metadata struct after extracting file_path into _source_file.
         # The struct itself is an Auto Loader implementation detail, not a business column.

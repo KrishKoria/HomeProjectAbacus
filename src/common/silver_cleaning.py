@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Mapping
+import re
+from typing import Final, Mapping
+
+
+_ACRONYM_TITLE_TOKENS: Final[tuple[str, ...]] = ("MD", "ENT", "OB/GYN", "RN", "PA", "DO", "NP")
+
+
+def _acronym_token_pattern(acronym: str) -> str:
+    return rf"(?<![A-Za-z]){re.escape(acronym.title())}(?![A-Za-z])"
 
 
 def normalize_nullable_string(value: object) -> str | None:
@@ -22,7 +30,12 @@ def normalize_code_value(value: object) -> str | None:
 def normalize_title_value(value: object) -> str | None:
     """Return a title-cased trimmed string or None."""
     normalized = normalize_nullable_string(value)
-    return normalized.title() if normalized else None
+    if not normalized:
+        return None
+    titled = normalized.title()
+    for acronym in _ACRONYM_TITLE_TOKENS:
+        titled = re.sub(_acronym_token_pattern(acronym), acronym, titled)
+    return titled
 
 
 def normalize_severity_value(value: object) -> str | None:
@@ -88,7 +101,10 @@ def spark_normalize_title(column):
     """Return a Spark expression that title-cases free-text labels."""
     from pyspark.sql import functions as F
 
-    return F.initcap(spark_trim_to_null(column))
+    normalized = F.initcap(spark_trim_to_null(column))
+    for acronym in _ACRONYM_TITLE_TOKENS:
+        normalized = F.regexp_replace(normalized, _acronym_token_pattern(acronym), acronym)
+    return normalized
 
 
 def spark_normalize_severity(column):

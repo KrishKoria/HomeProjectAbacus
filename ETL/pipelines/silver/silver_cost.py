@@ -26,7 +26,7 @@ from common.silver_pipeline_config import (
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
     quarantine_table_name,
-    read_bronze_cdf,
+    read_bronze_snapshot,
     silver_table_name,
     silver_table_properties,
 )
@@ -37,6 +37,7 @@ SILVER_COST_TABLE = silver_table_name(CATALOG_DEFAULT, "cost", SILVER_SCHEMA_DEF
 QUARANTINE_COST_TABLE = quarantine_table_name(CATALOG_DEFAULT, "cost", QUARANTINE_SCHEMA_DEFAULT)
 
 
+@dp.temporary_view(name="cost_stream")
 def _cost_stream():
     """Normalize regional benchmark rows and attach booleans used by the split outputs."""
     duplicate_window = Window.partitionBy("procedure_code", "region").orderBy(
@@ -46,7 +47,7 @@ def _cost_stream():
         F.col("_source_file").desc(),
     )
     return (
-        read_bronze_cdf(spark, BRONZE_COST_TABLE)
+        read_bronze_snapshot(spark, BRONZE_COST_TABLE)
         .withColumn("procedure_code", spark_normalize_code(F.col("procedure_code")))
         .withColumn("average_cost", spark_decimal_or_null(F.col("average_cost"), MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE))
         .withColumn("expected_cost", spark_decimal_or_null(F.col("expected_cost"), MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE))
@@ -76,7 +77,7 @@ def _cost_stream():
 )
 def silver_cost():
     """Emit the trusted Silver cost benchmark table."""
-    trusted = _cost_stream().where(
+    trusted = spark.read.table("cost_stream").where(
         (~F.col("missing_procedure_code"))
         & (~F.col("missing_region"))
         & (~F.col("invalid_average_cost"))
@@ -109,7 +110,7 @@ def silver_cost():
 def quarantine_cost():
     """Emit PHI-safe quarantine rows for invalid regional benchmark records."""
     quarantined = (
-        _cost_stream()
+        spark.read.table("cost_stream")
         .where(
             F.col("missing_procedure_code")
             | F.col("missing_region")

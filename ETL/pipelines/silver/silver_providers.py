@@ -19,7 +19,7 @@ from common.silver_pipeline_config import (
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
     quarantine_table_name,
-    read_bronze_cdf,
+    read_bronze_snapshot,
     silver_table_name,
     silver_table_properties,
 )
@@ -30,6 +30,7 @@ SILVER_PROVIDERS_TABLE = silver_table_name(CATALOG_DEFAULT, "providers", SILVER_
 QUARANTINE_PROVIDERS_TABLE = quarantine_table_name(CATALOG_DEFAULT, "providers", QUARANTINE_SCHEMA_DEFAULT)
 
 
+@dp.temporary_view(name="providers_stream")
 def _providers_stream():
     """Normalize provider records and attach validation booleans used downstream."""
     duplicate_window = Window.partitionBy("provider_id").orderBy(
@@ -38,7 +39,7 @@ def _providers_stream():
         F.col("_source_file").desc(),
     )
     cleaned = (
-        read_bronze_cdf(spark, BRONZE_PROVIDERS_TABLE)
+        read_bronze_snapshot(spark, BRONZE_PROVIDERS_TABLE)
         .withColumn("provider_id", spark_normalize_code(F.col("provider_id")))
         .withColumn("doctor_name", spark_normalize_title(F.col("doctor_name")))
         .withColumn("specialty", spark_normalize_title(F.col("specialty")))
@@ -72,7 +73,7 @@ def _providers_stream():
 )
 def silver_providers():
     """Emit the trusted Silver providers table."""
-    trusted = _providers_stream().where(
+    trusted = spark.read.table("providers_stream").where(
         F.col("missing_provider_id").eqNullSafe(False)
         & F.col("missing_doctor_name").eqNullSafe(False)
         & (F.col("_row_priority") == 1)
@@ -101,7 +102,7 @@ def silver_providers():
 def quarantine_providers():
     """Emit PHI-safe quarantine rows for provider records that cannot be trusted."""
     diagnostics = (
-        _providers_stream()
+        spark.read.table("providers_stream")
         .where(F.col("missing_provider_id") | F.col("missing_doctor_name") | (F.col("_row_priority") > 1))
         .withColumn(
             "diagnostic_id",
