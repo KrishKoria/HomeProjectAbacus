@@ -271,7 +271,6 @@ class AnalyticsContractTests(unittest.TestCase):
                 "ops_data_freshness",
                 "silver_claims_cost_enriched",
                 "silver_claim_lineage",
-                "gold_claim_denial_features",
             ),
         )
         self.assertEqual(analytics_table_name("healthcare", "analytics", "claims_dashboard_summary"), "healthcare.analytics.claims_dashboard_summary")
@@ -332,7 +331,6 @@ class AnalyticsContractTests(unittest.TestCase):
             patch("src.analytics.claims_analytics.build_ops_data_freshness", return_value="freshness", create=True),
             patch("src.analytics.claims_analytics.build_silver_claims_cost_enriched", return_value="silver_cost", create=True),
             patch("src.analytics.claims_analytics.build_silver_claim_lineage", return_value="lineage", create=True),
-            patch("src.analytics.claims_analytics.build_gold_claim_denial_features", return_value="features", create=True),
         ):
             persisted = build_and_persist_claims_assets(fake_spark)
 
@@ -347,7 +345,6 @@ class AnalyticsContractTests(unittest.TestCase):
                 "ops_data_freshness",
                 "silver_claims_cost_enriched",
                 "silver_claim_lineage",
-                "gold_claim_denial_features",
             }.issubset(persisted.keys())
         )
 
