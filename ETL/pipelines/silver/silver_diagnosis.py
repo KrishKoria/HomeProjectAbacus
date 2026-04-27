@@ -24,7 +24,7 @@ from common.silver_pipeline_config import (
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
     quarantine_table_name,
-    read_bronze_cdf,
+    read_bronze_snapshot,
     silver_table_name,
     silver_table_properties,
 )
@@ -35,6 +35,7 @@ SILVER_DIAGNOSIS_TABLE = silver_table_name(CATALOG_DEFAULT, "diagnosis", SILVER_
 QUARANTINE_DIAGNOSIS_TABLE = quarantine_table_name(CATALOG_DEFAULT, "diagnosis", QUARANTINE_SCHEMA_DEFAULT)
 
 
+@dp.temporary_view(name="diagnosis_stream")
 def _diagnosis_stream():
     """Normalize diagnosis rows and attach validation flags for trusted/quarantine splits."""
     duplicate_window = Window.partitionBy("diagnosis_code").orderBy(
@@ -43,7 +44,7 @@ def _diagnosis_stream():
         F.col("_source_file").desc(),
     )
     return (
-        read_bronze_cdf(spark, BRONZE_DIAGNOSIS_TABLE)
+        read_bronze_snapshot(spark, BRONZE_DIAGNOSIS_TABLE)
         .withColumn("diagnosis_code", spark_normalize_code(F.col("diagnosis_code")))
         .withColumn("category", spark_normalize_title(F.col("category")))
         .withColumn("severity", spark_normalize_severity(F.col("severity")))
@@ -72,7 +73,7 @@ def _diagnosis_stream():
 )
 def silver_diagnosis():
     """Emit the trusted Silver diagnosis lookup table."""
-    trusted = _diagnosis_stream().where(
+    trusted = spark.read.table("diagnosis_stream").where(
         (~F.col("missing_diagnosis_code"))
         & (~F.col("missing_category"))
         & (~F.col("missing_severity"))
@@ -105,7 +106,7 @@ def silver_diagnosis():
 def quarantine_diagnosis():
     """Emit PHI-safe quarantine rows for diagnosis records that failed validation."""
     quarantined = (
-        _diagnosis_stream()
+        spark.read.table("diagnosis_stream")
         .where(
             F.col("missing_diagnosis_code")
             | F.col("missing_category")

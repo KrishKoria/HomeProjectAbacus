@@ -34,7 +34,7 @@ from common.silver_pipeline_config import (
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
     quarantine_table_name,
-    read_bronze_cdf,
+    read_bronze_snapshot,
     silver_table_name,
     silver_table_properties,
 )
@@ -89,9 +89,10 @@ def _normalized_diagnosis_lookup():
     )
 
 
+@dp.temporary_view(name="claims_stream")
 def _claims_stream():
     """Build the shared normalized claims stream used by trusted and quarantine outputs."""
-    claims = read_bronze_cdf(spark, BRONZE_CLAIMS_TABLE)
+    claims = read_bronze_snapshot(spark, BRONZE_CLAIMS_TABLE)
     providers = _normalized_provider_lookup()
     diagnosis = _normalized_diagnosis_lookup()
 
@@ -226,8 +227,7 @@ def _claims_stream():
 )
 def silver_claims():
     """Emit the trusted Silver claims table."""
-    trusted = _claims_stream().where(F.col("diagnostic_id").isNull()
-                                     ).where(F.col("_row_priority") == 1)
+    trusted = spark.read.table("claims_stream").where(F.col("diagnostic_id").isNull()).where(F.col("_row_priority") == 1)
     return trusted.drop(
         "_row_priority",
         "missing_claim_id",
@@ -263,7 +263,7 @@ def silver_claims():
 )
 def quarantine_claims():
     """Emit PHI-safe quarantine rows for claims that failed trusted-row validation."""
-    quarantined = _claims_stream().where(F.col("diagnostic_id").isNotNull())
+    quarantined = spark.read.table("claims_stream").where(F.col("diagnostic_id").isNotNull())
     return quarantined.withColumn(
         "status_message",
         F.concat(

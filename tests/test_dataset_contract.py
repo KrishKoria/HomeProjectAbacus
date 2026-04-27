@@ -1,5 +1,6 @@
 import sys
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -69,6 +70,23 @@ class DatasetContractTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_synthetic_claim_label_generator_treats_zero_expected_cost_as_missing(self) -> None:
+        from scripts.generate_synthetic_claim_labels import classify_claim
+
+        reason, allowed_amount = classify_claim(
+            {
+                "claim_id": "C9999",
+                "provider_id": "PR100",
+                "procedure_code": "PROC1",
+                "billed_amount": "100.00",
+            },
+            {"PR100": "Delhi"},
+            {("PROC1", "Delhi"): Decimal("0")},
+        )
+
+        self.assertEqual(reason, "NONE")
+        self.assertEqual(allowed_amount, "85.00")
 
 
 if __name__ == "__main__":
