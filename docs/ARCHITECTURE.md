@@ -471,16 +471,23 @@ flowchart TD
 
 ### 9.3 Derived Denial Risk Features (Gold Layer)
 
-| Feature                        | Derivation                                | Denial Signal |
-| ------------------------------ | ----------------------------------------- | ------------- |
-| `is_procedure_missing`         | procedure_code IS NULL                    | Very High     |
-| `is_amount_missing`            | billed_amount IS NULL                     | Very High     |
-| `amount_to_benchmark_ratio`    | billed_amount / expected_cost             | > 1.5 = High  |
-| `severity_procedure_mismatch`  | High-severity dx + low-cost procedure     | Medium        |
-| `specialty_diagnosis_mismatch` | Provider specialty ≠ diagnosis category   | Medium        |
-| `provider_location_missing`    | location IS NULL                          | Low           |
-| `claim_frequency`              | Count of claims per provider last 30 days | Context       |
-| `diagnosis_severity`           | From diagnosis.severity (High=1, Low=0)   | Context       |
+The Gold layer ships **13 engineered features** consumed as `FEATURE_COLUMNS` by `src/ml/`. The first eight are the original denial-risk signals; the last five are cost-benchmark and provider-history aggregations called out in WEEK4.md and used by the model.
+
+| Feature                        | Derivation                                                     | Denial Signal |
+| ------------------------------ | -------------------------------------------------------------- | ------------- |
+| `is_procedure_missing`         | procedure_code IS NULL                                         | Very High     |
+| `is_amount_missing`            | billed_amount IS NULL                                          | Very High     |
+| `amount_to_benchmark_ratio`    | billed_amount / expected_cost                                  | > 1.5 = High  |
+| `severity_procedure_mismatch`  | High-severity dx + low-cost procedure                          | Medium        |
+| `specialty_diagnosis_mismatch` | Provider specialty ≠ diagnosis category                        | Medium        |
+| `provider_location_missing`    | location IS NULL                                               | Low           |
+| `provider_claim_count_30d`     | Count of claims per provider in trailing 30-day window         | Context       |
+| `diagnosis_severity_encoded`   | From diagnosis.severity (High=1, Low=0)                        | Context       |
+| `billed_vs_avg_cost`           | billed_amount / average_cost                                   | > 1.5 = High  |
+| `high_cost_flag`               | amount_to_benchmark_ratio ≥ 1.5                                | High          |
+| `diagnosis_count`              | Distinct diagnoses observed for the provider                   | Context       |
+| `provider_claim_count`         | Total claims observed for the provider                         | Context       |
+| `provider_risk_score`          | Provider-level denied / total ratio (rule-based proxy)         | Medium-High   |
 
 ---
 
@@ -666,7 +673,7 @@ Silver materialization reads governed Bronze snapshots in the current pipeline i
 
 **Implementation Approach:**
 
-Gold joins all four Silver tables (claims, providers, diagnosis, cost) and computes the eight denial risk features defined in Section 9.3. A rule-based `denial_label` is derived as a proxy training target. The result is written to `healthcare.gold.claim_features` as the ML feature store.
+Gold joins all four Silver tables (claims, providers, diagnosis, cost) and computes the 13 denial risk features defined in Section 9.3. A rule-based `denial_label` is derived as a proxy training target. The result is written to `healthcare.gold.claim_features` (clustered by `claim_id`, `claimops.layer = "gold"`) as the ML feature store. Provider-level aggregations and the trailing 30-day window function execute inside the pipeline so downstream consumers read precomputed columns.
 
 ---
 
@@ -684,7 +691,7 @@ flowchart TD
         F2["Train/Test Split\n80/20 stratified"]
         F3["XGBoost Classifier\nmax_depth=6 · lr=0.1\nscale_pos_weight\nearly_stopping_rounds=50"]
         F4["Hyperparameter Tuning\nOptuna / Databricks AutoML"]
-        F5["Evaluation Gates\nRecall@HIGH on proxy labels > 0.80\nPrecision > 0.70 · manual review pass"]
+        F5["Evaluation Gates\nRecall@HIGH on proxy labels > 0.80\nPrecision > 0.70 · ROC-AUC > 0.85\nmanual review pass"]
         F1 --> LBL --> F2 --> F3 --> F4 --> F5
     end
 
@@ -709,6 +716,8 @@ The model is packaged as an MLflow `pyfunc` model that returns risk score (0–1
 
 - **Model versioning:** Every trained model registered in MLflow with full parameter lineage
 - **Promotion gates:** Staging → Production requires proxy-label quality gates plus analyst review
+- **Release gate enforcement:** `scripts/train_denial_model.py` computes Recall@HIGH (positives whose probability ≥ `RISK_THRESHOLD_HIGH = 0.7`), Precision, and ROC-AUC; on any miss it exits non-zero and refuses to persist the model artifact, blocking downstream promotion. Recall@HIGH is the gate metric — global recall is reported but not gated, because the production HIGH risk tier is what triggers remediation.
+- **MLflow scope (v1):** experiment tracking + artifact logging via `mlflow.sklearn.log_model`. Registry/version transitions are not yet automated; the train script produces a candidate artifact and the gate decides whether it is fit for promotion.
 - **Drift detection:** Weekly data drift check using Evidently AI (population stability index)
 - **Retraining trigger:** Automatic retraining if PSI > 0.2 or model accuracy drops >5%
 - **Audit log:** Every prediction logged with claim_id, model_version, risk_score, timestamp
