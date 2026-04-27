@@ -9,7 +9,7 @@ Use this runbook after the Week 3 Silver pipeline refresh completes. The goal is
 - week 3 observability tables were materialized under `healthcare.analytics`
 - no PHI values are required in logs or summaries to diagnose data quality issues
 
-The companion notebook is `src/notebooks/week3_silver_validation.py`.
+The companion notebook is `src/notebooks/silver_validation.ipynb`.
 
 ## Expected outputs
 

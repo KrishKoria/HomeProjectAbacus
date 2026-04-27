@@ -57,7 +57,7 @@ Use this checklist when Databricks workspace validation is ready. This pass prep
 
 ## Week 3 Quality Tables
 
-- [ ] `src/notebooks/week3_silver_validation.py` completed.
+- [ ] `src/notebooks/silver_validation.ipynb` completed.
 - [ ] `healthcare.analytics.ops_silver_table_status` includes all five Week 3 datasets.
 - [ ] `healthcare.analytics.ops_quarantine_summary` includes expected quarantine counts.
 - [ ] Silver row counts and quarantine row counts are captured in the evidence notes.

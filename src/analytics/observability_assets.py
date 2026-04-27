@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Final
 
 from src.common.bronze_pipeline_config import format_claimops_diagnostic_id
@@ -34,11 +35,35 @@ def latest_failure_diagnostic_id(dataset: str) -> str:
 
 def load_event_log_dataframe(spark, pipeline_id: str | None = None, published_event_log_table: str | None = None):
     """Load the pipeline event log using either a published Delta table or a minimal SQL bridge."""
+    if pipeline_id and published_event_log_table:
+        raise ValueError("Provide only one of published_event_log_table or pipeline_id.")
     if published_event_log_table:
         return spark.table(published_event_log_table)
     if not pipeline_id:
         raise ValueError("Provide either published_event_log_table or pipeline_id.")
     return spark.sql(event_log_bridge_sql(pipeline_id))
+
+
+def _cache_if_available(dataframe):
+    """Cache the shared event log input when the runtime supports it."""
+    if not hasattr(dataframe, "cache"):
+        return dataframe
+    try:
+        return dataframe.cache()
+    except Exception as exc:
+        message = str(exc)
+        if "NOT_SUPPORTED_WITH_SERVERLESS" in message or "PERSIST TABLE is not supported" in message:
+            return dataframe
+        raise
+
+
+def _unpersist_if_available(dataframe) -> None:
+    if not hasattr(dataframe, "unpersist"):
+        return
+    try:
+        dataframe.unpersist()
+    except Exception:
+        return
 
 
 def _nested_event_log_path(dataframe, root: str, path: str):
@@ -215,12 +240,16 @@ def write_observability_tables(
     published_event_log_table: str | None = None,
     catalog: str = "healthcare",
     analytics_schema: str = "analytics",
+    parallel_writes: bool = True,
+    max_parallel_writes: int = 4,
 ) -> dict[str, str]:
     """Build and persist Databricks-native observability tables."""
-    event_log_df = load_event_log_dataframe(
-        spark,
-        pipeline_id=pipeline_id,
-        published_event_log_table=published_event_log_table,
+    event_log_df = _cache_if_available(
+        load_event_log_dataframe(
+            spark,
+            pipeline_id=pipeline_id,
+            published_event_log_table=published_event_log_table,
+        )
     )
 
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{analytics_schema}")
@@ -231,11 +260,21 @@ def write_observability_tables(
         "ops_latest_failures": build_latest_failures(event_log_df),
     }
 
-    persisted: dict[str, str] = {}
-    for table_name, dataframe in outputs.items():
+    def persist_one(item: tuple[str, object]) -> tuple[str, str]:
+        table_name, dataframe = item
         table_fqn = f"{catalog}.{analytics_schema}.{table_name}"
         dataframe.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(table_fqn)
-        persisted[table_name] = MESSAGE_EVENT_LOG_SQL_BRIDGE if not published_event_log_table else table_fqn
+        return table_name, MESSAGE_EVENT_LOG_SQL_BRIDGE if not published_event_log_table else table_fqn
+
+    try:
+        if parallel_writes and len(outputs) > 1:
+            worker_count = max(1, min(max_parallel_writes, len(outputs)))
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                persisted = dict(executor.map(persist_one, outputs.items()))
+        else:
+            persisted = dict(persist_one(item) for item in outputs.items())
+    finally:
+        _unpersist_if_available(event_log_df)
 
     return persisted
 
