@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Final
 
 import mlflow
-import numpy as np
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
 from xgboost import XGBClassifier
 
 from src.ml import FEATURE_COLUMNS, TARGET_COLUMN
-from src.ml.features import prepare_training_data, stratified_split
 
 logger = logging.getLogger(__name__)
 
-XGBoost_DEFAULT_PARAMS: dict[str, Any] = {
+XGBOOST_DEFAULT_PARAMS: Final[dict[str, Any]] = {
     "max_depth": 6,
     "learning_rate": 0.1,
     "n_estimators": 100,
@@ -21,10 +20,14 @@ XGBoost_DEFAULT_PARAMS: dict[str, Any] = {
     "eval_metric": "logloss",
     "use_label_encoder": False,
     "early_stopping_rounds": 50,
+    # Synthetic claim labels are ~70/30 (approved/denied); without rebalancing
+    # XGBoost biases toward the majority class and silently misses ARCHITECTURE
+    # §13's Recall@HIGH gate. The Optuna search refines this further per fold.
+    "scale_pos_weight": 2.5,
     "random_state": 42,
 }
 
-LOGREG_DEFAULT_PARAMS: dict[str, Any] = {
+LOGREG_DEFAULT_PARAMS: Final[dict[str, Any]] = {
     "max_iter": 1000,
     "class_weight": "balanced",
     "random_state": 42,
@@ -36,6 +39,7 @@ def train_logistic_regression(
     y_train: Any,
     params: dict[str, Any] | None = None,
 ) -> LogisticRegression:
+    """Fit the baseline logistic-regression model using class-balanced weights."""
     training_params = {**LOGREG_DEFAULT_PARAMS, **(params or {})}
     model = LogisticRegression(**training_params)
     model.fit(X_train, y_train)
@@ -49,8 +53,9 @@ def train_xgboost(
     y_val: Any = None,
     params: dict[str, Any] | None = None,
 ) -> XGBClassifier:
-    training_params = {**XGBoost_DEFAULT_PARAMS, **(params or {})}
-    early_stopping = training_params.pop("early_stopping_rounds", 50)
+    """Fit the primary XGBoost classifier with optional early-stopping eval set."""
+    training_params = {**XGBOOST_DEFAULT_PARAMS, **(params or {})}
+    training_params.pop("early_stopping_rounds", 50)
     model = XGBClassifier(**training_params)
     fit_kwargs: dict[str, Any] = {}
     if X_val is not None and y_val is not None:
@@ -65,8 +70,7 @@ def _optuna_objective(
     X_train: Any,
     y_train: Any,
 ) -> float:
-    from sklearn.model_selection import cross_val_score
-
+    """Objective for the Optuna study: 5-fold CV ROC-AUC on the training fold."""
     params = {
         "max_depth": trial.suggest_int("max_depth", 3, 10),
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
@@ -89,6 +93,7 @@ def tune_xgboost_optuna(
     y_train: Any,
     n_trials: int = 50,
 ) -> tuple[XGBClassifier, dict[str, Any]]:
+    """Run Optuna hyperparameter tuning and return the best-fit XGBoost model."""
     import optuna
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -118,6 +123,7 @@ def train_with_mlflow(
     metrics: dict[str, float],
     artifact_path: str = "model",
 ) -> str:
+    """Log a fit model + params + metrics to an MLflow experiment and return the run id."""
     mlflow.set_experiment(f"claim_denial_{model_name}")
     with mlflow.start_run(run_name=model_name):
         mlflow.log_params(params)
@@ -125,21 +131,22 @@ def train_with_mlflow(
         signature_input = None
         try:
             from mlflow.models import infer_signature
+
             if hasattr(model, "feature_names_in_"):
                 import pandas as pd
+                from sklearn.base import is_classifier
+
                 sample_input = pd.DataFrame(
                     {col: [0.0] for col in model.feature_names_in_},
+                ).astype(float)
+                signature_output = (
+                    pd.DataFrame({col: [0.5] for col in ["denial_probability"]})
+                    if is_classifier(model)
+                    else None
                 )
-                sample_input = sample_input.astype(float)
-                from sklearn.base import is_classifier
-                if is_classifier(model):
-                    signature_output = pd.DataFrame(
-                        {col: [0.5] for col in ["denial_probability"]},
-                    )
-                else:
-                    signature_output = None
                 signature_input = infer_signature(sample_input, signature_output)
         except Exception:
+            logger.warning("MLflow signature inference failed", exc_info=True)
             signature_input = None
         mlflow.sklearn.log_model(
             model,
@@ -151,9 +158,9 @@ def train_with_mlflow(
 
 __all__ = [
     "LOGREG_DEFAULT_PARAMS",
-    "XGBoost_DEFAULT_PARAMS",
+    "XGBOOST_DEFAULT_PARAMS",
     "train_logistic_regression",
-    "train_xgboost",
     "train_with_mlflow",
+    "train_xgboost",
     "tune_xgboost_optuna",
 ]
