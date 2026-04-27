@@ -44,27 +44,39 @@ def build_silver_table_status(
     quarantine_schema: str = QUARANTINE_SCHEMA_DEFAULT,
 ):
     """Build one status row per week 3 trusted/quarantine table pair."""
-    rows = []
+    frames = []
     for dataset in WEEK3_DATASETS:
         silver_table = _silver_fqn(catalog, dataset, silver_schema)
         quarantine_table = _silver_fqn(catalog, dataset, quarantine_schema)
-        silver_count = spark.table(silver_table).count()
-        quarantine_count = spark.table(quarantine_table).count()
-        rows.append(
-            {
-                "dataset": dataset,
-                "silver_table": silver_table,
-                "silver_row_count": silver_count,
-                "quarantine_table": quarantine_table,
-                "quarantine_row_count": quarantine_count,
-                "status_message": render_silver_table_ready(
-                    table_name=silver_table,
-                    category=LOG_CATEGORY_SILVER_PIPELINE,
-                    sensitivity="PHI" if dataset == "claims" else "NON-PHI",
+        silver_counts = spark.table(silver_table).agg(F.count(F.lit(1)).alias("silver_row_count"))
+        quarantine_counts = spark.table(quarantine_table).agg(F.count(F.lit(1)).alias("quarantine_row_count"))
+        frames.append(
+            silver_counts.crossJoin(quarantine_counts)
+            .withColumn("dataset", F.lit(dataset))
+            .withColumn("silver_table", F.lit(silver_table))
+            .withColumn("quarantine_table", F.lit(quarantine_table))
+            .withColumn(
+                "status_message",
+                F.lit(
+                    render_silver_table_ready(
+                        table_name=silver_table,
+                        category=LOG_CATEGORY_SILVER_PIPELINE,
+                        sensitivity="PHI" if dataset == "claims" else "NON-PHI",
+                    )
                 ),
-            }
+            )
         )
-    return spark.createDataFrame(rows)
+    status = frames[0]
+    for frame in frames[1:]:
+        status = status.unionByName(frame)
+    return status.select(
+        "dataset",
+        "silver_table",
+        "silver_row_count",
+        "quarantine_table",
+        "quarantine_row_count",
+        "status_message",
+    )
 
 
 def build_quarantine_summary(

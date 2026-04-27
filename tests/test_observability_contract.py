@@ -53,6 +53,10 @@ from src.analytics.claims_analytics import (  # noqa: E402
 )
 
 
+def _read_text(relative_path: str) -> str:
+    return (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+
+
 class BronzePipelineConfigTests(unittest.TestCase):
     def test_audit_columns_are_stable_and_ordered(self) -> None:
         self.assertEqual(
@@ -174,11 +178,27 @@ class BronzePipelineConfigTests(unittest.TestCase):
             {
                 "cloudFiles.format": "csv",
                 "header": "true",
-                "cloudFiles.inferColumnTypes": "true",
+                "cloudFiles.inferColumnTypes": "false",
                 "cloudFiles.schemaEvolutionMode": "addNewColumns",
                 "cloudFiles.rescuedDataColumn": "_rescued_data",
             },
         )
+
+    def test_bronze_pipelines_use_stable_run_id_helper_and_claim_label_expectations(self) -> None:
+        config_source = _read_text("src/common/bronze_pipeline_config.py")
+        claims_source = _read_text("ETL/pipelines/bronze/bronze_claims.py")
+
+        self.assertIn("stable_pipeline_run_id", config_source)
+        self.assertIn("stable_pipeline_run_id()", claims_source)
+        self.assertNotIn('F.date_format(F.current_timestamp(), PIPELINE_RUN_ID_FORMAT)', claims_source)
+        for expectation in (
+            "claim_status_valid",
+            "is_denied_matches_claim_status",
+            "non_negative_payment_amounts",
+            "denial_reason_code_consistent",
+        ):
+            with self.subTest(expectation=expectation):
+                self.assertIn(expectation, claims_source)
 
     def test_diagnostic_id_format_is_stable(self) -> None:
         self.assertEqual(format_claimops_diagnostic_id("BRZ", 7), "CLAIMOPS-BRZ-007")
@@ -240,15 +260,35 @@ class AnalyticsContractTests(unittest.TestCase):
                 "claims_diagnosis_joined",
                 "claims_by_specialty_summary",
                 "claims_by_region_summary",
+                "claims_by_diagnosis_summary",
+                "claims_provider_specialty_mismatch",
                 "high_cost_claims_summary",
                 "claims_dashboard_summary",
                 "claims_adjudication_summary",
                 "claims_denial_reason_summary",
                 "claims_revenue_daily_summary",
+                "bronze_pipeline_audit",
+                "ops_data_freshness",
+                "silver_claims_cost_enriched",
+                "silver_claim_lineage",
+                "gold_claim_denial_features",
             ),
         )
         self.assertEqual(analytics_table_name("healthcare", "analytics", "claims_dashboard_summary"), "healthcare.analytics.claims_dashboard_summary")
         self.assertEqual(HIGH_COST_THRESHOLD_RATIO, 1.5)
+
+    def test_claims_analytics_uses_silver_sources_and_null_safe_boolean_flags(self) -> None:
+        source = _read_text("src/analytics/claims_analytics.py")
+
+        self.assertIn("trusted_table_name", source)
+        self.assertIn("raw_bronze_table_name", source)
+        self.assertNotIn("\ndef bronze_table_name(", source)
+        self.assertIn('"TRUE", "YES", "Y"', source)
+        self.assertIn('"FALSE", "NO", "N"', source)
+        self.assertIn("unknown_adjudication_status_claims", source)
+        self.assertIn('silver_table_name(catalog, "claims"', source)
+        self.assertIn("F.broadcast(providers)", source)
+        self.assertIn("F.broadcast(cost)", source)
 
     def test_dashboard_json_includes_adjudication_page_and_datasets(self) -> None:
         dashboard_path = PROJECT_ROOT / "src" / "dashboards" / "claims_exploration.lvdash.json"
@@ -281,19 +321,33 @@ class AnalyticsContractTests(unittest.TestCase):
             patch("src.analytics.claims_analytics.build_claims_diagnosis_joined", return_value="diagnosis"),
             patch("src.analytics.claims_analytics.build_claims_by_specialty_summary", return_value="specialty"),
             patch("src.analytics.claims_analytics.build_claims_by_region_summary", return_value="region"),
+            patch("src.analytics.claims_analytics.build_claims_by_diagnosis_summary", return_value="diagnosis_summary"),
+            patch("src.analytics.claims_analytics.build_claims_provider_specialty_mismatch", return_value="mismatch"),
             patch("src.analytics.claims_analytics.build_high_cost_claims_summary", return_value="risk"),
             patch("src.analytics.claims_analytics.build_claims_dashboard_summary", return_value="overview"),
             patch("src.analytics.claims_analytics.build_claims_adjudication_summary", return_value="adjudication", create=True),
             patch("src.analytics.claims_analytics.build_claims_denial_reason_summary", return_value="denial_reason", create=True),
             patch("src.analytics.claims_analytics.build_claims_revenue_daily_summary", return_value="revenue_daily", create=True),
+            patch("src.analytics.claims_analytics.build_bronze_pipeline_audit", return_value="bronze_audit", create=True),
+            patch("src.analytics.claims_analytics.build_ops_data_freshness", return_value="freshness", create=True),
+            patch("src.analytics.claims_analytics.build_silver_claims_cost_enriched", return_value="silver_cost", create=True),
+            patch("src.analytics.claims_analytics.build_silver_claim_lineage", return_value="lineage", create=True),
+            patch("src.analytics.claims_analytics.build_gold_claim_denial_features", return_value="features", create=True),
         ):
             persisted = build_and_persist_claims_assets(fake_spark)
 
         self.assertTrue(
             {
+                "claims_by_diagnosis_summary",
+                "claims_provider_specialty_mismatch",
                 "claims_adjudication_summary",
                 "claims_denial_reason_summary",
                 "claims_revenue_daily_summary",
+                "bronze_pipeline_audit",
+                "ops_data_freshness",
+                "silver_claims_cost_enriched",
+                "silver_claim_lineage",
+                "gold_claim_denial_features",
             }.issubset(persisted.keys())
         )
 
@@ -334,6 +388,91 @@ class AnalyticsContractTests(unittest.TestCase):
         self.assertIn("ArrayType", source)
         self.assertIn("_event_log_path_type", source)
         self.assertIn("F.explode_outer(expectations)", source)
+
+    def test_observability_loader_rejects_ambiguous_event_log_sources(self) -> None:
+        source = _read_text("src/analytics/observability_assets.py")
+
+        self.assertIn("if pipeline_id and published_event_log_table:", source)
+        self.assertIn("Provide only one", source)
+
+    def test_observability_writes_support_cached_event_log_and_parallel_persistence(self) -> None:
+        source = _read_text("src/analytics/observability_assets.py")
+
+        self.assertIn("_cache_if_available", source)
+        self.assertIn("parallel_writes", source)
+        self.assertIn("ThreadPoolExecutor", source)
+
+
+class QualityAssetsContractTests(unittest.TestCase):
+    def test_quality_status_counts_are_planned_as_union_aggregates(self) -> None:
+        source = _read_text("src/analytics/quality_assets.py")
+        function_source = source[
+            source.index("def build_silver_table_status") : source.index("def build_quarantine_summary")
+        ]
+
+        self.assertNotIn(".count()", function_source)
+        self.assertIn("unionByName", function_source)
+
+
+class RepositoryContractTests(unittest.TestCase):
+    def test_etl_common_modules_are_thin_wrappers_over_src_common(self) -> None:
+        for path in sorted((PROJECT_ROOT / "ETL" / "common").glob("*.py")):
+            with self.subTest(module=path.name):
+                if path.name == "__init__.py":
+                    continue
+                source = path.read_text(encoding="utf-8").strip()
+                module_name = path.stem
+                self.assertIn(f"from src.common.{module_name} import *", source)
+
+    def test_etl_deployment_docs_require_src_common_on_python_path(self) -> None:
+        readme = _read_text("ETL/pipelines/README.md")
+
+        self.assertIn("src.common", readme)
+        self.assertIn("PYTHONPATH", readme)
+
+    def test_requirements_matches_runtime_project_dependencies(self) -> None:
+        requirements = set(_read_text("requirements.txt").splitlines())
+
+        for dependency in (
+            "altair>=6.0.0,<7.0.0",
+            "pandas>=2.2.3,<3.0.0",
+            "pdfplumber>=0.11,<1.0",
+            "pyarrow>=23.0.0,<24.0.0",
+            "streamlit>=1.50.0,<2.0.0",
+        ):
+            with self.subTest(dependency=dependency):
+                self.assertIn(dependency, requirements)
+
+
+class NotebookContractTests(unittest.TestCase):
+    def test_bronze_verify_notebook_covers_volume_widget_properties_and_policy_table(self) -> None:
+        source = _read_text("src/notebooks/bronze_verify_and_rbac.ipynb")
+
+        self.assertIn('dbutils.widgets.text(\\"volume\\", \\"raw_landing\\"', source)
+        self.assertIn("SHOW TBLPROPERTIES", source)
+        self.assertIn('\\"policies\\"', source)
+        self.assertIn("count_failures.append", source[source.index("except Exception as e:") :])
+
+    def test_bronze_profiling_notebook_uses_manifest_counts_and_single_pass_null_profile(self) -> None:
+        source = _read_text("src/notebooks/bronze_profiling.ipynb")
+
+        self.assertIn("BRONZE_SOURCES", source)
+        self.assertNotIn('counts[\\"claims\\"] != 1000', source)
+        self.assertIn(".agg(", source[source.index("def null_profile") : source.index("display(")])
+
+    def test_claims_exploration_notebook_uses_preflight_and_phi_safe_outputs(self) -> None:
+        source = _read_text("src/notebooks/claims_exploration.ipynb")
+
+        self.assertIn("assert_required_tables", source)
+        self.assertNotIn("display(claims.limit(10))", source)
+        self.assertIn("patient_id_hash", source)
+
+    def test_silver_validation_notebook_checks_required_tables_and_counts(self) -> None:
+        source = _read_text("src/notebooks/silver_validation.ipynb")
+
+        self.assertIn("required_tables", source)
+        self.assertIn("missing_tables", source)
+        self.assertIn("trusted_claims", source)
 
 
 if __name__ == "__main__":
