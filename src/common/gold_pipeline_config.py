@@ -13,7 +13,9 @@ GOLD_AUDIT_COLUMNS: Final[tuple[str, ...]] = (
 
 PHI_COLUMNS_GOLD: Final[tuple[str, ...]] = (
     "billed_amount",
+    "date",
     "diagnosis_code",
+    "is_denied",
     "patient_id",
 )
 
