@@ -38,10 +38,23 @@ MESSAGE_TEMPLATE_POLICY_CHUNK_SUMMARY: Final[str] = (
     "diagnostic_id={diagnostic_id}"
 )
 
+MESSAGE_TEMPLATE_GOLD_TABLE_READY: Final[str] = (
+    "Gold dataset ready: table={table_name} category={category} sensitivity={sensitivity}"
+)
+
 
 def render_silver_table_ready(table_name: str, category: str, sensitivity: str) -> str:
     """Render a stable PHI-safe status line for trusted Silver assets."""
     return MESSAGE_TEMPLATE_SILVER_TABLE_READY.format(
+        table_name=table_name,
+        category=category,
+        sensitivity=sensitivity,
+    )
+
+
+def render_gold_table_ready(table_name: str, category: str, sensitivity: str) -> str:
+    """Render a stable PHI-safe status line for Gold feature assets."""
+    return MESSAGE_TEMPLATE_GOLD_TABLE_READY.format(
         table_name=table_name,
         category=category,
         sensitivity=sensitivity,
@@ -83,8 +96,10 @@ __all__ = [
     "MESSAGE_TEMPLATE_EXPECTATION_METRIC",
     "MESSAGE_TEMPLATE_PIPELINE_FAILURE",
     "MESSAGE_TEMPLATE_POLICY_CHUNK_SUMMARY",
+    "MESSAGE_TEMPLATE_GOLD_TABLE_READY",
     "MESSAGE_TEMPLATE_QUARANTINE_SUMMARY",
     "MESSAGE_TEMPLATE_SILVER_TABLE_READY",
+    "render_gold_table_ready",
     "render_policy_chunk_summary",
     "render_quarantine_summary",
     "render_silver_table_ready",
