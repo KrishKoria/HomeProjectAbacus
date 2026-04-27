@@ -47,7 +47,7 @@ from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import (
     COMMON_DELTA_TABLE_PROPERTIES,
-    PIPELINE_RUN_ID_FORMAT,
+    stable_pipeline_run_id,
     bronze_table_name,
     bronze_volume_path,
     csv_autoloader_options,
@@ -100,7 +100,7 @@ VOLUME_PATH = bronze_volume_path("cost")
         "Provides average_cost and expected_cost per procedure_code and region. "
         "Key use: amount_to_benchmark_ratio = billed_amount / expected_cost in Gold layer. "
         "Ratio > 1.5 → HIGH denial risk. Ratio > 2.0 → potential fraud flag. "
-        "Downstream: healthcare.silver.cost reads this table via Change Data Feed."
+        "Downstream: healthcare.silver.cost reads a governed Bronze snapshot for Silver materialization."
     ),
     table_properties=COMMON_DELTA_TABLE_PROPERTIES,
 )
@@ -137,7 +137,7 @@ def bronze_cost():
         .withColumn("_source_file", F.col("_metadata.file_path"))
         .withColumn(
             "_pipeline_run_id",
-            F.date_format(F.current_timestamp(), PIPELINE_RUN_ID_FORMAT),
+            stable_pipeline_run_id(),
         )
         .drop("_metadata")
     )

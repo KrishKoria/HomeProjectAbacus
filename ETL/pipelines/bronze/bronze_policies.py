@@ -71,7 +71,7 @@ from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import (
-    PIPELINE_RUN_ID_FORMAT,
+    stable_pipeline_run_id,
     binary_file_autoloader_options,
     bronze_table_name,
     bronze_volume_path,
@@ -111,7 +111,7 @@ VOLUME_PATH = bronze_volume_path("policies")
         f"Binary content (raw PDF bytes) preserved as-is. {MESSAGE_BRONZE_APPEND_ONLY} "
         "No PHI — policy documents are insurance billing policy text (Assumption A-04). "
         "pathGlobFilter=*.pdf: only PDF files are ingested; other file types are ignored. "
-        "Downstream: healthcare.silver.policy_chunks reads this table via Change Data Feed "
+        "Downstream: healthcare.silver.policy_chunks reads a governed Bronze snapshot "
         "and applies pdfplumber text extraction + 512-token chunking for RAG indexing."
     ),
     table_properties=table_properties_for_sensitivity("NON-PHI"),
@@ -163,7 +163,7 @@ def bronze_policies():
             "_pipeline_run_id",
             # Timestamp-based run ID groups documents from the same pipeline execution.
             # Format: yyyyMMdd_HHmmss — sortable, human-readable, no external dependency.
-            F.date_format(F.current_timestamp(), PIPELINE_RUN_ID_FORMAT),
+            stable_pipeline_run_id(),
         )
         # Drop the internal _metadata struct — file_path is already captured in `path`.
         .drop("_metadata")

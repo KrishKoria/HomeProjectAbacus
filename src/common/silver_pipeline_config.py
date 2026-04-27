@@ -68,7 +68,7 @@ def silver_table_properties(
     return properties
 
 
-def read_bronze_cdf(spark, table_name: str):
+def read_bronze_snapshot(spark, table_name: str):
     """Return a batch snapshot of a Bronze table for Silver materialization."""
     return spark.read.table(table_name)
 
@@ -88,7 +88,7 @@ __all__ = [
     "SILVER_SCHEMA_DEFAULT",
     "create_required_schemas",
     "quarantine_table_name",
-    "read_bronze_cdf",
+    "read_bronze_snapshot",
     "silver_table_name",
     "silver_table_properties",
 ]

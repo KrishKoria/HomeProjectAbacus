@@ -658,7 +658,7 @@ Bronze tables are defined as Lakeflow Spark Declarative Pipeline (SDP) streaming
 
 **Implementation Approach:**
 
-Silver reads incrementally from Bronze via Change Data Feed. Transformations apply null flags, type casts, and deduplication (keep latest record per `claim_id`). Audit columns `_silver_processed_at` and `_data_quality_flags` are added. Results are merged (upserted) into `healthcare.silver.claims` on `claim_id`.
+Silver materialization reads governed Bronze snapshots in the current pipeline implementation. Transformations apply null flags, type casts, and deduplication (keep latest record per `claim_id`). Audit columns `_silver_processed_at` and `_data_quality_flags` are added. Results are written to `healthcare.silver.claims` with quarantine outputs preserving rejected rows.
 
 ### 12.4 Gold Layer — Business & ML-Ready Features
 

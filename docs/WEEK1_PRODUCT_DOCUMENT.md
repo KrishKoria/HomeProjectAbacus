@@ -90,7 +90,7 @@ Shows the full data layer. **Bronze layer only.**
 | diagnosis_code                               | PHI                 | Encrypted at rest                         |
 | claim_id                                     | PHI-adjacent        | Standard storage, access controlled       |
 | provider_id                                  | Operational         | Standard storage                          |
-| Audit columns (\_ingested_at, \_source_file) | Compliance metadata | Append-only, never deleted                |
+| Audit columns (\_ingested_at, \_source_file, \_pipeline_run_id) | Compliance metadata | Append-only, never deleted                |
 
 ### 6.3 HIPAA Bronze Table Properties
 
@@ -289,7 +289,7 @@ Run profiling on all five Bronze tables using PySpark (not pandas — these are 
 | Row count match          | Compare table row count vs source CSV line count     | 100% match, no data loss                                  |
 | Idempotent re-run        | Re-run the SDP pipeline a second time on same files  | Checkpoint prevents reprocessing already ingested files   |
 | TBLPROPERTIES set        | Run DESCRIBE EXTENDED on each Bronze table           | CDF enabled and `interval 2190 days` retention visible on all 4 tables  |
-| Audit columns present    | Query each table and inspect first row               | \_ingested_at and \_source_file are populated on all rows |
+| Audit columns present    | Query each table and inspect first row               | \_ingested_at, \_source_file, and \_pipeline_run_id are populated on all rows |
 | RBAC applied             | Attempt a SELECT and INSERT with analyst credentials | SELECT succeeds; INSERT is denied                         |
 | No hardcoded credentials | Manual review of all notebooks                       | Zero plaintext credentials in any cell                    |
 | Profiling complete       | Review profiling notebook outputs                    | All 6 profiling questions answered for all 4 tables       |
