@@ -89,9 +89,20 @@ def _normalized_diagnosis_lookup():
     )
 
 
-@dp.temporary_view(name="claims_stream")
-def _claims_stream():
-    """Build the shared normalized claims stream used by trusted and quarantine outputs."""
+@dp.materialized_view(
+    name="claims_validated_rows",
+    private=True,
+    comment=(
+        "Private materialized Silver claims intermediate shared by trusted and "
+        "quarantine outputs."
+    ),
+    table_properties=silver_table_properties(
+        "PHI",
+        CLAIMS_PHI_COLUMNS,
+    ),
+)
+def _claims_validated_rows():
+    """Build the shared normalized claims rows used by trusted and quarantine outputs."""
     claims = read_bronze_snapshot(spark, BRONZE_CLAIMS_TABLE)
     providers = _normalized_provider_lookup()
     diagnosis = _normalized_diagnosis_lookup()
@@ -176,7 +187,7 @@ def _claims_stream():
         .when(F.col("unknown_provider_reference"), F.lit("provider_id does not match a known provider reference row"))
         .when(F.col("unknown_diagnosis_reference"), F.lit("diagnosis_code does not match a known diagnosis reference row"))
         .when(F.col("inconsistent_denial_label"), F.lit("is_denied must agree with denial_reason_code != NONE"))
-        .when(F.col("_row_priority") > 1, F.lit("duplicate claim_id observed in the silver stream"))
+        .when(F.col("_row_priority") > 1, F.lit("duplicate claim_id observed in the silver validation input"))
         .otherwise(F.lit(None))
     )
 
@@ -227,7 +238,11 @@ def _claims_stream():
 )
 def silver_claims():
     """Emit the trusted Silver claims table."""
-    trusted = spark.read.table("claims_stream").where(F.col("diagnostic_id").isNull()).where(F.col("_row_priority") == 1)
+    trusted = (
+        spark.read.table("claims_validated_rows")
+        .where(F.col("diagnostic_id").isNull())
+        .where(F.col("_row_priority") == 1)
+    )
     return trusted.drop(
         "_row_priority",
         "missing_claim_id",
@@ -263,7 +278,7 @@ def silver_claims():
 )
 def quarantine_claims():
     """Emit PHI-safe quarantine rows for claims that failed trusted-row validation."""
-    quarantined = spark.read.table("claims_stream").where(F.col("diagnostic_id").isNotNull())
+    quarantined = spark.read.table("claims_validated_rows").where(F.col("diagnostic_id").isNotNull())
     return quarantined.withColumn(
         "status_message",
         F.concat(
