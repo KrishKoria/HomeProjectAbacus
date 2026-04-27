@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Final, Iterable
 
 from src.common.diagnostics import CLAIMOPS_DOMAINS, format_claimops_diagnostic_id
@@ -12,6 +13,8 @@ AUDIT_COLUMNS: Final[tuple[str, str, str]] = (
 )
 RESCUED_DATA_COLUMN: Final[str] = "_rescued_data"
 PIPELINE_RUN_ID_FORMAT: Final[str] = "yyyyMMdd_HHmmss"
+PIPELINE_RUN_ID_CONF: Final[str] = "claimops.pipeline_run_id"
+_DEFAULT_PIPELINE_RUN_ID: Final[str] = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 CATALOG_DEFAULT: Final[str] = "healthcare"
 BRONZE_SCHEMA_DEFAULT: Final[str] = "bronze"
 BRONZE_VOLUME_DEFAULT: Final[str] = "raw_landing"
@@ -65,10 +68,25 @@ def csv_autoloader_options() -> dict[str, str]:
     return {
         "cloudFiles.format": "csv",
         "header": "true",
-        "cloudFiles.inferColumnTypes": "true",
+        "cloudFiles.inferColumnTypes": "false",
         "cloudFiles.schemaEvolutionMode": "addNewColumns",
         "cloudFiles.rescuedDataColumn": RESCUED_DATA_COLUMN,
     }
+
+
+def stable_pipeline_run_id():
+    """Return a Spark literal run ID stable across micro-batches in one module load."""
+    from pyspark.sql import SparkSession
+    from pyspark.sql import functions as F
+
+    configured = ""
+    spark_session = SparkSession.getActiveSession()
+    if spark_session is not None:
+        try:
+            configured = spark_session.conf.get(PIPELINE_RUN_ID_CONF, "")
+        except Exception:
+            configured = ""
+    return F.lit(configured or _DEFAULT_PIPELINE_RUN_ID)
 
 
 def binary_file_autoloader_options(path_glob_filter: str = "*.pdf") -> dict[str, str]:
@@ -98,6 +116,7 @@ __all__ = [
     "CATALOG_DEFAULT",
     "CLAIMOPS_DOMAINS",
     "COMMON_DELTA_TABLE_PROPERTIES",
+    "PIPELINE_RUN_ID_CONF",
     "PIPELINE_RUN_ID_FORMAT",
     "RESCUED_DATA_COLUMN",
     "binary_file_autoloader_options",
@@ -106,6 +125,7 @@ __all__ = [
     "bronze_volume_path",
     "csv_autoloader_options",
     "format_claimops_diagnostic_id",
+    "stable_pipeline_run_id",
     "table_name",
     "table_properties_for_sensitivity",
 ]

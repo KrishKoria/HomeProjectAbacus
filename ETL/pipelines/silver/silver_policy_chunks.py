@@ -23,7 +23,7 @@ from common.silver_pipeline_config import (
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
     quarantine_table_name,
-    read_bronze_cdf,
+    read_bronze_snapshot,
     silver_table_name,
     silver_table_properties,
 )
@@ -112,6 +112,7 @@ _extract_policy_text_udf = F.udf(_extract_policy_text, _TEXT_SCHEMA)
 _chunk_policy_text_udf = F.udf(_chunk_policy_text, _CHUNK_SCHEMA)
 
 
+@dp.temporary_view(name="policy_documents_stream")
 def _policy_documents_stream():
     """Build the shared document stream for trusted chunks and quarantined PDFs."""
     duplicate_window = Window.partitionBy("path").orderBy(
@@ -122,7 +123,7 @@ def _policy_documents_stream():
         F.col("_source_file").desc(),
     )
     extracted = (
-        read_bronze_cdf(spark, BRONZE_POLICIES_TABLE)
+        read_bronze_snapshot(spark, BRONZE_POLICIES_TABLE)
         .withColumn("_silver_processed_at", F.current_timestamp())
         .withColumn("_row_priority", F.row_number().over(duplicate_window))
         .withColumn("extract_result", _extract_policy_text_udf(F.col("content")))
@@ -159,7 +160,7 @@ def _policy_documents_stream():
 def silver_policy_chunks():
     """Emit trusted policy chunks for downstream retrieval/indexing."""
     trusted_docs = (
-        _policy_documents_stream()
+        spark.read.table("policy_documents_stream")
         .where(F.col("extraction_status") == F.lit("OK"))
         .where(F.col("_row_priority") == 1)
         .withColumn("chunks", _chunk_policy_text_udf(F.col("policy_text")))
@@ -174,6 +175,8 @@ def silver_policy_chunks():
             "chunk_id",
             F.sha2(F.concat_ws("::", F.col("path"), F.col("chunk.chunk_index").cast("string")), 256),
         )
+        .withColumn("embedding_vector", F.lit(None).cast("array<double>"))
+        .withColumn("embedding_status", F.lit("NOT_CONFIGURED"))
     )
     return trusted_docs.select(
         "chunk_id",
@@ -181,6 +184,8 @@ def silver_policy_chunks():
         "chunk_index",
         "chunk_text",
         "token_count",
+        "embedding_vector",
+        "embedding_status",
         "_silver_processed_at",
         "_data_quality_flags",
         "_source_file",
@@ -205,7 +210,7 @@ def silver_policy_chunks():
 def quarantine_policy_chunks():
     """Emit PHI-safe quarantine rows for unreadable or empty policy documents."""
     quarantined = (
-        _policy_documents_stream()
+        spark.read.table("policy_documents_stream")
         .where((F.col("extraction_status") != F.lit("OK")) | (F.col("_row_priority") > 1))
         .withColumn(
             "diagnostic_id",

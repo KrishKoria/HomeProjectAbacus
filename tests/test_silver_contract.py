@@ -49,7 +49,7 @@ from common.silver_pipeline_config import (  # noqa: E402
     QUARANTINE_AUDIT_COLUMNS,
     SILVER_AUDIT_COLUMNS,
     quarantine_table_name,
-    read_bronze_cdf,
+    read_bronze_snapshot,
     silver_table_name,
 )
 
@@ -119,6 +119,20 @@ class SilverCleaningTests(unittest.TestCase):
         finally:
             spark.stop()
 
+    def test_spark_title_normalization_preserves_known_acronyms(self) -> None:
+        source = (PROJECT_ROOT / "src" / "common" / "silver_cleaning.py").read_text(encoding="utf-8")
+
+        self.assertIn("spark_normalize_title", source)
+        self.assertIn("ACRONYM_TITLE_TOKENS", source)
+        self.assertIn('"ENT"', source)
+        self.assertIn('"OB/GYN"', source)
+        self.assertIn('"RN"', source)
+        self.assertIn("(?<![A-Za-z])", source)
+
+    def test_title_normalization_preserves_acronym_tokens_only(self) -> None:
+        self.assertEqual(normalize_title_value("rn pa do np ent ob/gyn md"), "RN PA DO NP ENT OB/GYN MD")
+        self.assertEqual(normalize_title_value("entitlement medical"), "Entitlement Medical")
+
 
 class PolicyChunkingTests(unittest.TestCase):
     def test_policy_chunk_pipeline_udfs_do_not_capture_common_modules(self) -> None:
@@ -159,6 +173,16 @@ class PolicyChunkingTests(unittest.TestCase):
         self.assertNotIn("array_remove", source)
         self.assertIn("F.filter", source)
 
+    def test_policy_documents_are_shared_with_temporary_view_and_embedding_contract(self) -> None:
+        source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_policy_chunks.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        self.assertIn("@dp.temporary_view", source)
+        self.assertIn('name="policy_documents_stream"', source)
+        self.assertIn('spark.read.table("policy_documents_stream")', source)
+        self.assertIn("embedding_vector", source)
+        self.assertIn("embedding_status", source)
+
     def test_policy_text_is_normalized_before_chunking(self) -> None:
         self.assertEqual(
             normalize_policy_text("Line one\n\nLine two\tLine three"),
@@ -191,7 +215,7 @@ class SilverContractTests(unittest.TestCase):
             "healthcare.quarantine.policy_chunks",
         )
 
-    def test_bronze_reader_uses_batch_snapshot_for_silver_windows(self) -> None:
+    def test_bronze_snapshot_reader_uses_batch_snapshot_for_silver_windows(self) -> None:
         class FakeReader:
             def __init__(self) -> None:
                 self.table_name: str | None = None
@@ -206,12 +230,26 @@ class SilverContractTests(unittest.TestCase):
 
             @property
             def readStream(self):  # pragma: no cover - should never be touched
-                raise AssertionError("Silver CDF reader must not use streaming mode with analytic windows")
+                raise AssertionError("Silver snapshot reader must not use streaming mode with analytic windows")
 
         spark = FakeSpark()
 
-        self.assertEqual(read_bronze_cdf(spark, "healthcare.bronze.claims"), "frame")
+        self.assertEqual(read_bronze_snapshot(spark, "healthcare.bronze.claims"), "frame")
         self.assertEqual(spark.read.table_name, "healthcare.bronze.claims")
+
+    def test_silver_reference_streams_are_pipeline_temporary_views(self) -> None:
+        expected_views = {
+            "silver_providers.py": "providers_stream",
+            "silver_cost.py": "cost_stream",
+            "silver_diagnosis.py": "diagnosis_stream",
+        }
+        for relative_path, view_name in expected_views.items():
+            with self.subTest(file=relative_path):
+                source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / relative_path
+                source = source_path.read_text(encoding="utf-8")
+                self.assertIn("@dp.temporary_view", source)
+                self.assertIn(f'name="{view_name}"', source)
+                self.assertIn(f'spark.read.table("{view_name}")', source)
 
     def test_silver_claims_drops_internal_lookup_join_keys(self) -> None:
         source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_claims.py"
@@ -239,6 +277,14 @@ class SilverContractTests(unittest.TestCase):
 
         self.assertIn("inconsistent_denial_label", source)
         self.assertIn('denial_reason_code") != F.lit("NONE")', source)
+
+    def test_silver_claims_shared_stream_is_pipeline_temporary_view(self) -> None:
+        source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_claims.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        self.assertIn("@dp.temporary_view", source)
+        self.assertIn('name="claims_stream"', source)
+        self.assertIn('spark.read.table("claims_stream")', source)
 
     def test_silver_dedup_windows_use_source_file_tiebreaker(self) -> None:
         for relative_path in (

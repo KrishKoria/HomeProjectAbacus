@@ -50,7 +50,7 @@ from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import (
     COMMON_DELTA_TABLE_PROPERTIES,
-    PIPELINE_RUN_ID_FORMAT,
+    stable_pipeline_run_id,
     bronze_table_name,
     bronze_volume_path,
     csv_autoloader_options,
@@ -97,7 +97,7 @@ VOLUME_PATH = bronze_volume_path("diagnosis")
         "diagnosis_code becomes PHI only when combined with patient_id in healthcare.bronze.claims. "
         "Maps diagnosis_code to category and severity for downstream ML feature engineering. "
         "Used to detect: (1) specialty-diagnosis mismatch, (2) high-severity + low-cost procedure. "
-        "Downstream: healthcare.silver.diagnosis reads this table via Change Data Feed."
+        "Downstream: healthcare.silver.diagnosis reads a governed Bronze snapshot for Silver materialization."
     ),
     table_properties=COMMON_DELTA_TABLE_PROPERTIES,
 )
@@ -137,7 +137,7 @@ def bronze_diagnosis():
         .withColumn("_source_file", F.col("_metadata.file_path"))
         .withColumn(
             "_pipeline_run_id",
-            F.date_format(F.current_timestamp(), PIPELINE_RUN_ID_FORMAT),
+            stable_pipeline_run_id(),
         )
         .drop("_metadata")
     )
