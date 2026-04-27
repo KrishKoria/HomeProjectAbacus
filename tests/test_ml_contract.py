@@ -195,11 +195,47 @@ class ModelEvaluationTests(unittest.TestCase):
     def test_evaluation_report_structure(self):
         from src.ml.evaluate import EvaluationMetrics, generate_evaluation_report
 
-        metrics = EvaluationMetrics(accuracy=0.85, precision=0.75, recall=0.82, f1=0.78, roc_auc=0.88)
+        metrics = EvaluationMetrics(
+            accuracy=0.85,
+            precision=0.75,
+            recall=0.82,
+            f1=0.78,
+            roc_auc=0.88,
+            recall_at_high=0.85,
+        )
         report = generate_evaluation_report(metrics, (50, 10, 8, 32), "xgboost", feature_names=["f1", "f2"])
         self.assertEqual(report["model_name"], "xgboost")
         self.assertIn("meets_thresholds", report)
+        self.assertIn("recall_at_high", report)
         self.assertTrue(report["meets_thresholds"])
+
+    def test_recall_at_high_only_counts_high_tier_positives(self):
+        from src.ml.evaluate import recall_at_high
+
+        # Two positives total; only one has prob >= 0.7, so Recall@HIGH = 0.5.
+        y_true = [1, 1, 0, 0]
+        y_prob = [0.95, 0.55, 0.10, 0.40]
+        self.assertAlmostEqual(recall_at_high(y_true, y_prob), 0.5, places=6)
+
+    def test_recall_at_high_returns_zero_when_no_positives(self):
+        from src.ml.evaluate import recall_at_high
+
+        self.assertEqual(recall_at_high([0, 0, 0], [0.9, 0.8, 0.95]), 0.0)
+
+    def test_meets_thresholds_uses_recall_at_high_not_global_recall(self):
+        from src.ml.evaluate import EvaluationMetrics
+
+        # Global recall passes (0.90) but Recall@HIGH fails (0.50). The §13
+        # gate must reject this model — global recall is irrelevant.
+        metrics = EvaluationMetrics(
+            accuracy=0.85,
+            precision=0.75,
+            recall=0.90,
+            f1=0.82,
+            roc_auc=0.88,
+            recall_at_high=0.50,
+        )
+        self.assertFalse(metrics.meets_thresholds())
 
 
 class PredictionTests(unittest.TestCase):
@@ -286,6 +322,54 @@ class PredictionTests(unittest.TestCase):
             predict_single(self.model, feature_dict)
         elapsed = (time.perf_counter() - start) / 10
         self.assertLess(elapsed, 0.150, f"Average prediction latency {elapsed*1000:.1f}ms exceeds 150ms p95 target")
+
+    def test_risk_thresholds_align_with_evaluate_module(self):
+        # Inference-time risk tiering (predict.RISK_THRESHOLD_HIGH) must match
+        # the threshold used to compute Recall@HIGH in the evaluation gate,
+        # otherwise the production "HIGH" tier and the gate measure diverge.
+        from src.ml.evaluate import HIGH_RISK_PROBABILITY_THRESHOLD
+        from src.ml.predict import RISK_THRESHOLD_HIGH
+
+        self.assertEqual(RISK_THRESHOLD_HIGH, HIGH_RISK_PROBABILITY_THRESHOLD)
+
+
+class ReleaseGateTests(unittest.TestCase):
+    def test_main_exits_nonzero_and_skips_save_when_metrics_fail(self):
+        from unittest import mock
+
+        from scripts import train_denial_model
+        from src.ml.evaluate import EvaluationMetrics
+
+        failing_metrics = EvaluationMetrics(
+            accuracy=0.5,
+            precision=0.5,
+            recall=0.5,
+            f1=0.5,
+            roc_auc=0.5,
+            recall_at_high=0.5,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "should_not_exist.pkl"
+            with mock.patch.object(
+                train_denial_model,
+                "_load_features",
+                return_value=pd.DataFrame(),
+            ), mock.patch.object(
+                train_denial_model,
+                "train_pipeline",
+                return_value=(object(), "xgboost", failing_metrics, failing_metrics, failing_metrics),
+            ):
+                rc = train_denial_model.main(
+                    [
+                        "--no-tune",
+                        "--model-output",
+                        str(model_path),
+                    ]
+                )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(model_path.exists(), "Failing model must not be persisted")
 
 
 if __name__ == "__main__":

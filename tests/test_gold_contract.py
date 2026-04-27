@@ -40,9 +40,13 @@ class GoldConfigContractTests(unittest.TestCase):
     def test_phi_columns_gold_are_stable(self):
         from src.common.gold_pipeline_config import PHI_COLUMNS_GOLD
 
+        # Must include every column the Gold final select emits that is also
+        # classified PHI in src/common/bronze_sources.py (patient_id,
+        # diagnosis_code, billed_amount, date, is_denied). The narrower 3-set
+        # used previously under-reported PHI on the Gold table property.
         self.assertEqual(
             set(PHI_COLUMNS_GOLD),
-            {"billed_amount", "diagnosis_code", "patient_id"},
+            {"billed_amount", "date", "diagnosis_code", "is_denied", "patient_id"},
         )
 
     def test_read_silver_snapshot_uses_batch_mode(self):
@@ -117,6 +121,36 @@ class GoldPipelineContractTests(unittest.TestCase):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
         self.assertIn("rangeBetween", source)
         self.assertIn("86400", source)
+
+    def test_gold_pipeline_30d_window_casts_date_through_timestamp(self):
+        # Regression: DateType.cast("long") yields days-since-epoch, which made
+        # `rangeBetween(-30 * 86400, 0)` (seconds) effectively unbounded and
+        # silently turned provider_claim_count_30d into provider_claim_count.
+        source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
+        self.assertIn('cast("timestamp").cast("long")', source)
+
+    def test_gold_pipeline_diagnosis_count_partition_is_provider_only(self):
+        # Regression: partitioning by (provider_id, diagnosis_code) and then
+        # taking distinct(diagnosis_code) is always 1. Per ARCHITECTURE.md §9.3
+        # diagnosis_count is "distinct diagnoses per provider".
+        source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
+        self.assertIn('diagnosis_window = Window.partitionBy("provider_id")', source)
+        self.assertNotIn(
+            'Window.partitionBy("provider_id", "diagnosis_code")',
+            source,
+        )
+
+    def test_gold_pipeline_drops_target_leak_columns(self):
+        source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
+        for leak_col in (
+            "claim_status",
+            "denial_reason_code",
+            "allowed_amount",
+            "paid_amount",
+            "follow_up_required",
+        ):
+            with self.subTest(column=leak_col):
+                self.assertIn(f'"{leak_col}"', source)
 
     def test_gold_pipeline_broadcast_joins(self):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
