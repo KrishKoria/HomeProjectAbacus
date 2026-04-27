@@ -140,6 +140,15 @@ def _claims_feature_base():
     ).drop(
         "cost_procedure_code",
         "cost_region",
+        # Defense-in-depth: drop Silver columns that mirror the training target so
+        # any future widening of the final select cannot leak label information
+        # into the feature surface. `is_denied` is preserved because it is the
+        # source of `denial_label` and is excluded from FEATURE_COLUMNS.
+        "claim_status",
+        "denial_reason_code",
+        "allowed_amount",
+        "paid_amount",
+        "follow_up_required",
     )
 
 
@@ -187,13 +196,19 @@ def gold_claim_features():
     base = spark.read.table("claims_feature_base")
     provider_agg = spark.read.table("provider_aggregations")
 
+    # `date` is DateType; casting directly to long yields *days* since epoch,
+    # which makes a `rangeBetween(-30 * 86400, 0)` window effectively unbounded.
+    # Cast through timestamp first so the range units (seconds) match the column.
     claim_window_30d = (
         Window.partitionBy("provider_id")
-        .orderBy(F.col("date").cast("long"))
+        .orderBy(F.col("date").cast("timestamp").cast("long"))
         .rangeBetween(-30 * 86400, 0)
     )
 
-    diagnosis_window = Window.partitionBy("provider_id", "diagnosis_code")
+    # `diagnosis_count` per ARCHITECTURE.md §9.3 is "distinct diagnoses per
+    # provider"; partitioning by (provider_id, diagnosis_code) would always
+    # collapse to 1.
+    diagnosis_window = Window.partitionBy("provider_id")
 
     result = (
         base.join(
@@ -211,8 +226,8 @@ def gold_claim_features():
         .withColumn(
             "diagnosis_count",
             F.when(
-                F.col("diagnosis_code").isNotNull(),
-                F.approx_count_distinct("diagnosis_code").over(diagnosis_window.rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)),
+                F.col("provider_id").isNotNull(),
+                F.approx_count_distinct("diagnosis_code").over(diagnosis_window),
             ).otherwise(F.lit(None).cast("int")),
         )
     )
