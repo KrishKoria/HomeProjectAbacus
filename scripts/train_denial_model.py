@@ -272,6 +272,6 @@ if __name__ == "__main__":
     # Ctrl-D" warning even on a clean pass. Only escalate non-zero exits via
     # sys.exit so CI/CD still sees the failure code, while a passing notebook
     # run terminates silently.
-    _rc = main()
+    _rc = main(["--tune"])
     if _rc != 0:
         sys.exit(_rc)
