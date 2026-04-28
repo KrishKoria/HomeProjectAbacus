@@ -45,6 +45,19 @@ def load_trained_model(path: str | Path) -> Any:
         return pickle.load(handle)
 
 
+def _looks_like_databricks() -> bool:
+    """Detect Databricks runtime via env var or filesystem markers.
+
+    ``DATABRICKS_RUNTIME_VERSION`` is the canonical signal but isn't always
+    populated in every notebook kernel context, so fall back to the
+    ``/databricks`` and ``/Workspace`` directories that exist on every
+    Databricks compute node.
+    """
+    if os.environ.get("DATABRICKS_RUNTIME_VERSION"):
+        return True
+    return os.path.exists("/databricks") or os.path.exists("/Workspace")
+
+
 def load_from_registry(
     name: str = "healthcare.ml.claim_denial_model",
     alias: str = "champion",
@@ -61,8 +74,7 @@ def load_from_registry(
     """
     import mlflow
 
-    on_databricks = bool(os.environ.get("DATABRICKS_RUNTIME_VERSION"))
-    if on_databricks and name.count(".") == 2:
+    if name.count(".") == 2 and _looks_like_databricks():
         mlflow.set_registry_uri("databricks-uc")
     return mlflow.sklearn.load_model(f"models:/{name}@{alias}")
 
