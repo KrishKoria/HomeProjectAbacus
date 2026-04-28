@@ -69,14 +69,24 @@ def load_from_registry(
     version that cleared the ARCHITECTURE.md §13 gate, so callers do not
     need to know about run_ids or pickle paths.
 
-    On Databricks with a 3-level (Unity Catalog) name we set BOTH:
+    Multi-strategy load order (each one uses a different MLflow artifact
+    repository, so a credential failure on one strategy does not block the
+    next):
 
-    - ``mlflow.set_registry_uri('databricks-uc')`` so the version lookup
-      hits the same registry the training script wrote to.
-    - ``mlflow.set_tracking_uri('databricks')`` so artifact download goes
-      through the Databricks REST API instead of trying direct S3 access
-      against the underlying ``dbstorage-*`` bucket (which fails with 400
-      Bad Request because the cluster lacks raw S3 credentials).
+    1. ``models:/<name>@<alias>`` via ``mlflow.sklearn.load_model`` —
+       cleanest production path, but on some Databricks UC configurations
+       this falls back to anonymous S3 HEADs against ``s3://dbstorage-*``
+       and 400s. We try it first because when it works, it works.
+    2. Resolve the alias to a ``run_id`` and load ``runs:/<run_id>/model``
+       — this routes through ``DatabricksArtifactRepository`` which always
+       authenticates via the workspace REST API, side-stepping the raw-S3
+       credential issue.
+    3. Explicit ``mlflow.artifacts.download_artifacts`` to a tempdir, then
+       ``load_model`` from the local path. Last-resort safety net.
+
+    On Databricks with a 3-level UC name we also set ``registry_uri`` to
+    ``databricks-uc`` and ``tracking_uri`` to ``databricks`` so both
+    lookup and artifact-fetch hit the workspace.
     """
     import mlflow
 
@@ -84,7 +94,43 @@ def load_from_registry(
         mlflow.set_registry_uri("databricks-uc")
         if not mlflow.get_tracking_uri().startswith("databricks"):
             mlflow.set_tracking_uri("databricks")
-    return mlflow.sklearn.load_model(f"models:/{name}@{alias}")
+
+    alias_uri = f"models:/{name}@{alias}"
+    errors: list[tuple[str, str]] = []
+
+    try:
+        return mlflow.sklearn.load_model(alias_uri)
+    except Exception as exc:
+        errors.append(("alias→sklearn.load_model", f"{exc.__class__.__name__}: {str(exc)[:300]}"))
+        logger.warning("Strategy 1 (alias load) failed; falling through", exc_info=True)
+
+    try:
+        client = mlflow.MlflowClient()
+        version = client.get_model_version_by_alias(name=name, alias=alias)
+        run_uri = f"runs:/{version.run_id}/model"
+        logger.info("Strategy 2: loading via run artifact %s", run_uri)
+        return mlflow.sklearn.load_model(run_uri)
+    except Exception as exc:
+        errors.append(("alias→run_id→sklearn.load_model", f"{exc.__class__.__name__}: {str(exc)[:300]}"))
+        logger.warning("Strategy 2 (run-artifact load) failed; falling through", exc_info=True)
+
+    try:
+        import tempfile
+
+        local_dir = mlflow.artifacts.download_artifacts(
+            artifact_uri=alias_uri,
+            dst_path=tempfile.mkdtemp(prefix="mlflow_model_"),
+        )
+        logger.info("Strategy 3: downloaded artifacts to %s", local_dir)
+        return mlflow.sklearn.load_model(local_dir)
+    except Exception as exc:
+        errors.append(("download_artifacts→local load", f"{exc.__class__.__name__}: {str(exc)[:300]}"))
+        logger.warning("Strategy 3 (download+local-load) failed", exc_info=True)
+
+    summary = "\n".join(f"  [{label}] {msg}" for label, msg in errors)
+    raise RuntimeError(
+        f"All MLflow load strategies failed for {alias_uri}:\n{summary}"
+    )
 
 
 def _coerce_features(
