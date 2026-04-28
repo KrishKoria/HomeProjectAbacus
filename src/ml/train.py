@@ -222,14 +222,50 @@ def tune_xgboost_optuna(
     return calibrated, best_params
 
 
+def _is_unity_catalog_model_name(name: str) -> bool:
+    """Unity Catalog requires three-level names: ``<catalog>.<schema>.<model>``."""
+    return name.count(".") == 2
+
+
+def _configure_registry_for_runtime(registered_model_name: str | None) -> None:
+    """Point MLflow at the right registry for the active runtime.
+
+    On Databricks with a 3-level (Unity Catalog) model name we set the
+    registry URI to ``databricks-uc`` so the model lands in UC alongside
+    ``healthcare.bronze.*`` / ``healthcare.silver.*`` / ``healthcare.gold.*``.
+    Local runs use whatever registry MLflow defaults to (file-based or
+    whatever ``MLFLOW_TRACKING_URI`` points at).
+    """
+    if not registered_model_name:
+        return
+    on_databricks = bool(os.environ.get("DATABRICKS_RUNTIME_VERSION"))
+    if on_databricks and _is_unity_catalog_model_name(registered_model_name):
+        mlflow.set_registry_uri("databricks-uc")
+
+
 def train_with_mlflow(
     model: Any,
     model_name: str,
     params: dict[str, Any],
     metrics: dict[str, float],
     artifact_path: str = "model",
+    registered_model_name: str | None = None,
+    champion_alias: str | None = "champion",
 ) -> str:
-    """Log a fit model + params + metrics to an MLflow experiment and return the run id."""
+    """Log a fit model + params + metrics to an MLflow experiment and return the run id.
+
+    When ``registered_model_name`` is provided, the model is also registered
+    as a new version in the MLflow Model Registry (Unity Catalog on
+    Databricks) and ``champion_alias`` is moved to point at it. Prediction
+    callers can then load with::
+
+        mlflow.sklearn.load_model(f"models:/{registered_model_name}@{champion_alias}")
+
+    so they never depend on a run_id or local pickle path. Pass
+    ``champion_alias=None`` to register without moving the alias (useful
+    for shadow/staging models).
+    """
+    _configure_registry_for_runtime(registered_model_name)
     mlflow.set_experiment(_resolve_experiment_name(model_name))
     with mlflow.start_run(run_name=model_name):
         mlflow.log_params(params)
@@ -254,12 +290,42 @@ def train_with_mlflow(
         except Exception:
             logger.warning("MLflow signature inference failed", exc_info=True)
             signature_input = None
-        mlflow.sklearn.log_model(
-            model,
-            artifact_path,
-            signature=signature_input,
-        )
-        return mlflow.active_run().info.run_id
+        log_kwargs: dict[str, Any] = {
+            "name": artifact_path,
+            "signature": signature_input,
+        }
+        if registered_model_name:
+            log_kwargs["registered_model_name"] = registered_model_name
+        logged = mlflow.sklearn.log_model(model, **log_kwargs)
+        run_id = mlflow.active_run().info.run_id
+
+    if registered_model_name and champion_alias:
+        try:
+            client = mlflow.tracking.MlflowClient()
+            version = getattr(logged, "registered_model_version", None)
+            if version is None:
+                # Fallback: look up the latest version registered against this run.
+                versions = client.search_model_versions(
+                    f"name='{registered_model_name}' and run_id='{run_id}'"
+                )
+                if versions:
+                    version = max(int(v.version) for v in versions)
+            if version is not None:
+                client.set_registered_model_alias(
+                    name=registered_model_name,
+                    alias=champion_alias,
+                    version=str(version),
+                )
+                logger.info(
+                    "Registered %s version %s and moved alias '%s'",
+                    registered_model_name,
+                    version,
+                    champion_alias,
+                )
+        except Exception:
+            logger.warning("Setting champion alias failed", exc_info=True)
+
+    return run_id
 
 
 __all__ = [
