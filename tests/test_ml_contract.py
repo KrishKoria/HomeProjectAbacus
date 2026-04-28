@@ -131,6 +131,28 @@ class ModelTrainingTests(unittest.TestCase):
         preds = model.predict(self.X_test)
         self.assertEqual(len(preds), len(self.y_test))
 
+    def test_calibrate_classifier_returns_calibrated_wrapper(self):
+        # Calibration is what makes the §13 HIGH_RISK_PROBABILITY_THRESHOLD = 0.7
+        # cutoff land on a meaningful part of the score distribution. A bare
+        # XGBoost is uncalibrated; the wrapper must expose predict/predict_proba
+        # and unwrap cleanly for SHAP.
+        from sklearn.calibration import CalibratedClassifierCV
+
+        from src.ml.evaluate import _unwrap_for_shap
+        from src.ml.train import calibrate_classifier, train_xgboost
+
+        raw = train_xgboost(self.X_train, self.y_train)
+        calibrated = calibrate_classifier(
+            raw, self.X_train, self.y_train, method="sigmoid", cv=3
+        )
+        self.assertIsInstance(calibrated, CalibratedClassifierCV)
+        self.assertTrue(hasattr(calibrated, "predict_proba"))
+        probs = calibrated.predict_proba(self.X_test)[:, 1]
+        self.assertTrue((probs >= 0).all() and (probs <= 1).all())
+        # SHAP unwrap should reach back to the underlying XGBoost.
+        from xgboost import XGBClassifier
+        self.assertIsInstance(_unwrap_for_shap(calibrated), XGBClassifier)
+
 
 class ModelEvaluationTests(unittest.TestCase):
     @classmethod

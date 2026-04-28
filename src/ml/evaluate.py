@@ -100,6 +100,23 @@ def evaluate_model(
     )
 
 
+def _unwrap_for_shap(model: Any) -> Any:
+    """Return the underlying tree model when ``model`` is a CalibratedClassifierCV.
+
+    SHAP's ``TreeExplainer`` needs the raw XGBoost / sklearn tree estimator,
+    not the Platt-scaling wrapper. Calibration is applied per-fold, so we
+    take the first calibrated sub-classifier's underlying estimator —
+    SHAP attributions across the ensemble are essentially identical for
+    the explanation use case (top-N feature contributions per claim).
+    """
+    sub = getattr(model, "calibrated_classifiers_", None)
+    if sub:
+        inner = getattr(sub[0], "estimator", None)
+        if inner is not None:
+            return inner
+    return model
+
+
 def compute_shap_values(
     model: Any,
     X_sample: Any,
@@ -115,7 +132,7 @@ def compute_shap_values(
 
     X_input = X_sample[:max_samples] if len(X_sample) > max_samples else X_sample
 
-    explainer = shap.TreeExplainer(model)
+    explainer = shap.TreeExplainer(_unwrap_for_shap(model))
     shap_values = explainer.shap_values(X_input)
 
     if feature_names is not None:
