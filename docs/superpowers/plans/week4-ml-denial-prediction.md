@@ -596,4 +596,9 @@ After the original Waves 1-5 landed in tree, a verification pass surfaced six co
 
 ### Verification
 
-`uv sync --group ml && uv run pytest -q` → **93 passed, 1 skipped**.
+`uv sync --group ml && uv run pytest -q` → **94 passed, 1 skipped** (after the `claim_type`-deferral cleanup).
+
+### Closing WEEK4.md outputs
+
+- **Output 5: Sample Prediction** — `notebooks/sample_prediction.ipynb` loads `healthcare.ml.claim_denial_model@champion` (with local-pickle fallback), pulls 5 rows from `healthcare.gold.claim_features` (with synthetic fallback), and prints the `Claim ID: … / Risk: HIGH (0.82)` shape plus a risk-tier distribution. Re-runs after every retrain because `champion` auto-advances.
+- **`claim_type` feature** — explicitly deferred. WEEK4 §4 Step 2 lists it without semantics, derivation rule, or business justification. Implementing speculatively would cascade through ~11 files (synthetic generator → dataset CSV → Bronze schema → Silver pass-through → Gold features → `FEATURE_COLUMNS` → 4 test classes → ARCHITECTURE.md → forced model retrain) for an undefined feature. The current 13-feature model already clears the §13 release gate. **If a Week 5+ consumer (Model Serving, RAG, dashboard) actually needs `claim_type`, it becomes the first task of that week** — the full waterfall is in the project-root `CLAUDE.md`. Do not implement it speculatively.
