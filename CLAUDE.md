@@ -39,6 +39,19 @@ This becomes the **first task of that week**. The full waterfall is:
 - **Test command:** `uv run pytest -q` (94 passed, 1 skipped baseline).
 - **ML deps install:** `uv sync --group ml`.
 
+## Cluster prerequisites (Databricks)
+
+- **Runtime: DBR 14.3 LTS ML or later.** Older runtimes ship with an MLflow client that returns the raw `s3://dbstorage-*` URI to the artifact downloader for UC-registered models, which then 400s on HEAD because the cluster lacks raw S3 credentials. DBR 14.3 ML+ routes through `DatabricksArtifactRepository` which uses workspace REST credentials.
+- **Quick fix without runtime change:** in any notebook that loads from the registry, first cell:
+  ```python
+  %pip install -U mlflow databricks-sdk
+  dbutils.library.restartPython()
+  ```
+- **UC permissions:** the cluster service principal needs `USE CATALOG` + `USE SCHEMA` on `healthcare.ml` and `EXECUTE` on the registered model.
+- **One-time schema setup:** `CREATE SCHEMA IF NOT EXISTS healthcare.ml;` before the first registration.
+
+If `load_from_registry` ever 400s on `s3://dbstorage-*` again, the diagnosis is always one of the four bullets above — never a code change to `src/ml/predict.py`.
+
 ## Hard rules (already in place)
 
 - Every code module starts with `from __future__ import annotations`.
