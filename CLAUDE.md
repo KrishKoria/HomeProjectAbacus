@@ -42,9 +42,15 @@ This becomes the **first task of that week**. The full waterfall is:
 ## Cluster prerequisites (Databricks)
 
 - **Runtime: DBR 14.3 LTS ML or later.** Older runtimes ship with an MLflow client that returns the raw `s3://dbstorage-*` URI to the artifact downloader for UC-registered models, which then 400s on HEAD because the cluster lacks raw S3 credentials. DBR 14.3 ML+ routes through `DatabricksArtifactRepository` which uses workspace REST credentials.
-- **Quick fix without runtime change:** in any notebook that loads from the registry, first cell:
+- **Quick fix without runtime change:** in any notebook that loads from the registry, first cell installs the upgraded MLflow client AND the model's runtime deps (`mlflow.pyfunc.load_model` refuses to load a model whose `requirements.txt` references a missing package — e.g. xgboost, scikit-learn, shap):
   ```python
-  %pip install -U mlflow databricks-sdk
+  %pip install -q -U mlflow databricks-sdk xgboost scikit-learn shap
+  dbutils.library.restartPython()
+  ```
+  If you need to match the trained model's exact pinned versions, the canonical Databricks pattern is:
+  ```python
+  deps = mlflow.pyfunc.get_model_dependencies("models:/healthcare.ml.claim_denial_model@champion")
+  %pip install -r {deps}
   dbutils.library.restartPython()
   ```
 - **UC permissions:** the cluster service principal needs `USE CATALOG` + `USE SCHEMA` on `healthcare.ml` and `EXECUTE` on the registered model.
