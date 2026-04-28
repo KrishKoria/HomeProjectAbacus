@@ -17,6 +17,7 @@ from src.ml.features import prepare_training_data, stratified_split
 from src.ml.train import (
     LOGREG_DEFAULT_PARAMS,
     XGBOOST_DEFAULT_PARAMS,
+    calibrate_classifier,
     train_logistic_regression,
     train_with_mlflow,
     train_xgboost,
@@ -105,17 +106,26 @@ def train_pipeline(
     tune: bool = False,
     mlflow_tracking_uri: str | None = None,
 ) -> tuple:
-    """Run the full LR + XGBoost training + MLflow logging pipeline."""
+    """Run the full LR + XGBoost training + MLflow logging pipeline.
+
+    Both candidates are wrapped in ``CalibratedClassifierCV`` (Platt scaling)
+    before evaluation so the §13 ``HIGH_RISK_PROBABILITY_THRESHOLD = 0.7``
+    cutoff lands on properly calibrated probabilities. ``tune_xgboost_optuna``
+    already returns a calibrated model, so we only calibrate the no-tune
+    XGBoost path and the LR baseline here.
+    """
     X, y = prepare_training_data(df)
     X_train, X_test, y_train, y_test = stratified_split(X, y)
 
-    logreg = train_logistic_regression(X_train, y_train)
+    logreg_raw = train_logistic_regression(X_train, y_train)
+    logreg = calibrate_classifier(logreg_raw, X_train, y_train, method="sigmoid", cv=3)
     logreg_metrics = evaluate_model(logreg, X_test, y_test)
 
     if tune:
         xgb_model, xgb_params = tune_xgboost_optuna(X_train, y_train, n_trials=50)
     else:
-        xgb_model = train_xgboost(X_train, y_train, X_val=X_test, y_val=y_test)
+        xgb_raw = train_xgboost(X_train, y_train)
+        xgb_model = calibrate_classifier(xgb_raw, X_train, y_train, method="sigmoid", cv=3)
         xgb_params = {
             k: v for k, v in XGBOOST_DEFAULT_PARAMS.items()
             if k != "early_stopping_rounds"
