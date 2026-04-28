@@ -317,16 +317,17 @@ resources:
               - champion
           job_cluster_key: shared_cluster
           libraries:
+            # Versions match pyproject.toml `[dependency-groups] ml`. Keep in sync — do not pin tighter here.
             - pypi:
-                package: "xgboost==2.1.4"
+                package: "xgboost>=2.0,<3.0"
             - pypi:
-                package: "scikit-learn==1.5.2"
+                package: "scikit-learn>=1.5,<2.0"
             - pypi:
-                package: "shap==0.46.0"
+                package: "shap>=0.44,<1.0"
             - pypi:
-                package: "optuna==4.1.0"
+                package: "optuna>=3.6,<4.0"
             - pypi:
-                package: "mlflow==2.18.0"
+                package: "mlflow>=3.0,<4.0"
 
         # Notebook task — required because dbutils.jobs.taskValues.get() is Python-notebook-only.
         - task_key: skip_retraining
@@ -340,9 +341,9 @@ resources:
 
 Notes:
 
-- Library versions above are example pins. Match the project's `pyproject.toml` ML group at implementation time.
+- `train_model` library versions intentionally use the same ranges as `pyproject.toml` `[dependency-groups] ml` so the bundle tracks the project's ML pinning policy. Do not tighten the pins in this file independently.
 - `${var.node_type_id}` is set per target (`dev`, `prod`) in `databricks.yml`. AWS default `i3.xlarge`; document Azure/GCP equivalents if the workspace is multi-cloud.
-- `run_silver_pipeline` depends on `verify_bronze`, `run_gold_pipeline` and `build_analytics` depend on `verify_silver` — these are real DAG gates.
+- **Verification gates the data path; observability does not.** `run_silver_pipeline` depends on `verify_bronze`, and `run_gold_pipeline` / `build_analytics` depend on `verify_silver` — these are real DAG gates. The `observe_bronze` / `observe_silver` / `observe_gold` tasks depend only on their own pipeline run (not on the verifiers), so they collect event-log telemetry even when verification fails. This is intentional: a failed run is exactly when you want the event log captured, and observability is informational, not a gate.
 - The condition task uses string comparison; `check_new_data.ipynb` must call `dbutils.jobs.taskValues.set(key="should_retrain", value="true")` (or `"false"`) using exactly those literals.
 
 ---
