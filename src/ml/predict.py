@@ -67,15 +67,23 @@ def load_from_registry(
     Prefer this over ``load_trained_model`` in production code paths: the
     registry alias (default ``champion``) always points at the latest
     version that cleared the ARCHITECTURE.md §13 gate, so callers do not
-    need to know about run_ids or pickle paths. On Databricks with a
-    3-level (Unity Catalog) name we redirect the registry URI to
-    ``databricks-uc`` so the lookup hits the same registry the training
-    script wrote to.
+    need to know about run_ids or pickle paths.
+
+    On Databricks with a 3-level (Unity Catalog) name we set BOTH:
+
+    - ``mlflow.set_registry_uri('databricks-uc')`` so the version lookup
+      hits the same registry the training script wrote to.
+    - ``mlflow.set_tracking_uri('databricks')`` so artifact download goes
+      through the Databricks REST API instead of trying direct S3 access
+      against the underlying ``dbstorage-*`` bucket (which fails with 400
+      Bad Request because the cluster lacks raw S3 credentials).
     """
     import mlflow
 
     if name.count(".") == 2 and _looks_like_databricks():
         mlflow.set_registry_uri("databricks-uc")
+        if not mlflow.get_tracking_uri().startswith("databricks"):
+            mlflow.set_tracking_uri("databricks")
     return mlflow.sklearn.load_model(f"models:/{name}@{alias}")
 
 
