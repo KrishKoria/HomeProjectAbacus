@@ -58,6 +58,26 @@ def _looks_like_databricks() -> bool:
     return os.path.exists("/databricks") or os.path.exists("/Workspace")
 
 
+def _registry_model_uri(name: str, alias: str) -> str:
+    return f"models:/{name}@{alias}"
+
+
+def _configure_registry_uri(mlflow: Any, name: str) -> None:
+    if name.count(".") == 2 and _looks_like_databricks():
+        mlflow.set_registry_uri("databricks-uc")
+
+
+def get_registry_model_dependencies(
+    name: str = "healthcare.ml.claim_denial_model",
+    alias: str = "champion",
+) -> str:
+    """Return the dependency spec path bundled with a registered pyfunc model."""
+    import mlflow
+
+    _configure_registry_uri(mlflow, name)
+    return mlflow.pyfunc.get_model_dependencies(_registry_model_uri(name, alias))
+
+
 def load_from_registry(
     name: str = "healthcare.ml.claim_denial_model",
     alias: str = "champion",
@@ -93,9 +113,24 @@ def load_from_registry(
     """
     import mlflow
 
-    if name.count(".") == 2 and _looks_like_databricks():
-        mlflow.set_registry_uri("databricks-uc")
-    return mlflow.pyfunc.load_model(f"models:/{name}@{alias}")
+    _configure_registry_uri(mlflow, name)
+    model_uri = _registry_model_uri(name, alias)
+    try:
+        return mlflow.pyfunc.load_model(model_uri)
+    except ModuleNotFoundError as exc:
+        try:
+            deps_path = mlflow.pyfunc.get_model_dependencies(model_uri)
+        except Exception as deps_exc:
+            raise ModuleNotFoundError(
+                f"{exc}. Model load failed and the dependency spec could not be resolved "
+                f"for {model_uri}: {deps_exc}"
+            ) from exc
+        raise ModuleNotFoundError(
+            f"{exc}. Install the registered model dependencies from {deps_path} and restart "
+            "Python before retrying.\n"
+            f"%pip install -q -r {deps_path}\n"
+            "dbutils.library.restartPython()"
+        ) from exc
 
 
 def _coerce_features(
@@ -106,7 +141,7 @@ def _coerce_features(
     for col in feature_columns:
         if col in filled.columns and filled[col].dtype == bool:
             filled[col] = filled[col].astype(int)
-    return filled[list(feature_columns)]
+    return filled[list(feature_columns)].astype("float64")
 
 
 def predict_single(
@@ -165,6 +200,7 @@ __all__ = [
     "RISK_THRESHOLD_HIGH",
     "RISK_THRESHOLD_LOW",
     "RiskLevel",
+    "get_registry_model_dependencies",
     "load_from_registry",
     "load_trained_model",
     "predict_batch",

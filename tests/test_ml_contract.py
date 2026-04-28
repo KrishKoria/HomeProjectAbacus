@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import pickle
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -353,6 +355,70 @@ class PredictionTests(unittest.TestCase):
         from src.ml.predict import RISK_THRESHOLD_HIGH
 
         self.assertEqual(RISK_THRESHOLD_HIGH, HIGH_RISK_PROBABILITY_THRESHOLD)
+
+    def test_coerce_features_casts_all_model_inputs_to_float64(self):
+        from src.ml import FEATURE_COLUMNS
+        from src.ml.predict import _coerce_features
+
+        raw = pd.DataFrame(
+            [
+                {
+                    "is_procedure_missing": True,
+                    "is_amount_missing": False,
+                    "amount_to_benchmark_ratio": 1.2,
+                    "billed_vs_avg_cost": 0.9,
+                    "high_cost_flag": True,
+                    "severity_procedure_mismatch": False,
+                    "specialty_diagnosis_mismatch": True,
+                    "provider_location_missing": False,
+                    "diagnosis_severity_encoded": 1,
+                    "diagnosis_count": 4,
+                    "provider_claim_count": 25,
+                    "provider_claim_count_30d": 3,
+                    "provider_risk_score": 0.45,
+                }
+            ]
+        )
+
+        coerced = _coerce_features(raw, FEATURE_COLUMNS)
+
+        self.assertEqual(list(coerced.columns), list(FEATURE_COLUMNS))
+        self.assertTrue((coerced.dtypes == "float64").all(), coerced.dtypes.to_string())
+
+
+class RegistryLoadTests(unittest.TestCase):
+    def test_get_registry_model_dependencies_uses_alias_uri(self):
+        from src.ml.predict import get_registry_model_dependencies
+
+        fake_mlflow = mock.MagicMock()
+        fake_mlflow.pyfunc.get_model_dependencies.return_value = "/tmp/model/requirements.txt"
+
+        with mock.patch.dict(sys.modules, {"mlflow": fake_mlflow}):
+            path = get_registry_model_dependencies(
+                "healthcare.ml.claim_denial_model",
+                "champion",
+            )
+
+        self.assertEqual(path, "/tmp/model/requirements.txt")
+        fake_mlflow.pyfunc.get_model_dependencies.assert_called_once_with(
+            "models:/healthcare.ml.claim_denial_model@champion"
+        )
+
+    def test_load_from_registry_surfaces_model_dependency_bootstrap_guidance(self):
+        from src.ml.predict import load_from_registry
+
+        fake_mlflow = mock.MagicMock()
+        fake_mlflow.pyfunc.load_model.side_effect = ModuleNotFoundError("No module named 'xgboost'")
+        fake_mlflow.pyfunc.get_model_dependencies.return_value = "/tmp/model/requirements.txt"
+
+        with mock.patch.dict(sys.modules, {"mlflow": fake_mlflow}):
+            with self.assertRaises(ModuleNotFoundError) as ctx:
+                load_from_registry("healthcare.ml.claim_denial_model", "champion")
+
+        message = str(ctx.exception)
+        self.assertIn("/tmp/model/requirements.txt", message)
+        self.assertIn("%pip install -q -r /tmp/model/requirements.txt", message)
+        self.assertIn("dbutils.library.restartPython()", message)
 
 
 class ReleaseGateTests(unittest.TestCase):
