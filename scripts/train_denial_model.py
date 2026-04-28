@@ -232,4 +232,11 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    sys.exit(main())
+    # Databricks runs .py files as notebooks with ``__name__ == "__main__"``;
+    # raising SystemExit(0) there fires IPython's "use 'exit', 'quit', or
+    # Ctrl-D" warning even on a clean pass. Only escalate non-zero exits via
+    # sys.exit so CI/CD still sees the failure code, while a passing notebook
+    # run terminates silently.
+    _rc = main()
+    if _rc != 0:
+        sys.exit(_rc)
