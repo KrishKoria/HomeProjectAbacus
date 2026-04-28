@@ -68,6 +68,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="MLflow tracking URI (defaults to Databricks)",
     )
+    parser.add_argument(
+        "--registered-model-name",
+        default="healthcare.ml.claim_denial_model",
+        help=(
+            "MLflow Registry name for the gate-passing model. Use a 3-level "
+            "Unity Catalog name (catalog.schema.model) on Databricks; pass "
+            "an empty string to skip registration."
+        ),
+    )
+    parser.add_argument(
+        "--champion-alias",
+        default="champion",
+        help="Registry alias to move onto the new version (empty = no alias).",
+    )
     return parser.parse_args(argv)
 
 
@@ -105,6 +119,9 @@ def train_pipeline(
     df: pd.DataFrame,
     tune: bool = False,
     mlflow_tracking_uri: str | None = None,
+    registered_model_name: str | None = None,
+    champion_alias: str | None = "champion",
+    register_only_on_pass: bool = True,
 ) -> tuple:
     """Run the full LR + XGBoost training + MLflow logging pipeline.
 
@@ -152,6 +169,15 @@ def train_pipeline(
 
         mlflow.set_tracking_uri(mlflow_tracking_uri)
 
+    # Only register a model that clears the §13 gate (the registry should
+    # contain promotable artifacts only). The registration call also moves
+    # the ``champion`` alias so prediction callers can load the latest
+    # promoted version by alias rather than by run_id.
+    should_register = bool(registered_model_name) and (
+        best_metrics.meets_thresholds() or not register_only_on_pass
+    )
+    register_target = registered_model_name if should_register else None
+
     try:
         train_with_mlflow(
             best_model,
@@ -165,6 +191,8 @@ def train_pipeline(
                 "f1": best_metrics.f1,
                 "roc_auc": best_metrics.roc_auc,
             },
+            registered_model_name=register_target,
+            champion_alias=champion_alias or None,
         )
     except Exception:
         logger.warning("MLflow logging failed, continuing without tracking", exc_info=True)
@@ -183,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
         df,
         tune=tune,
         mlflow_tracking_uri=args.mlflow_tracking_uri,
+        registered_model_name=args.registered_model_name or None,
+        champion_alias=args.champion_alias or None,
     )
 
     print(f"Model: {name}")
@@ -227,6 +257,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print("PASS: Model meets evaluation thresholds")
     print(f"Model saved to {args.model_output}")
+    if args.registered_model_name:
+        print(
+            f"Registered to MLflow Registry as '{args.registered_model_name}'"
+            + (f" (alias '{args.champion_alias}')" if args.champion_alias else "")
+        )
     return 0
 
 

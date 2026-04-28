@@ -717,7 +717,7 @@ The model is packaged as an MLflow `pyfunc` model that returns risk score (0–1
 - **Model versioning:** Every trained model registered in MLflow with full parameter lineage
 - **Promotion gates:** Staging → Production requires proxy-label quality gates plus analyst review
 - **Release gate enforcement:** `scripts/train_denial_model.py` computes Recall@HIGH (positives whose probability ≥ `RISK_THRESHOLD_HIGH = 0.7`), Precision, and ROC-AUC; on any miss it exits non-zero and refuses to persist the model artifact, blocking downstream promotion. Recall@HIGH is the gate metric — global recall is reported but not gated, because the production HIGH risk tier is what triggers remediation.
-- **MLflow scope (v1):** experiment tracking + artifact logging via `mlflow.sklearn.log_model`. Registry/version transitions are not yet automated; the train script produces a candidate artifact and the gate decides whether it is fit for promotion.
+- **MLflow Registry (Unity Catalog):** when the gate passes, the calibrated best model is registered as `healthcare.ml.claim_denial_model` in the Unity Catalog Model Registry and the `champion` alias is moved onto the new version. Prediction code loads via `mlflow.sklearn.load_model("models:/healthcare.ml.claim_denial_model@champion")` (helper: `src.ml.predict.load_from_registry`) so callers never depend on run_ids or pickle paths. Failing models are not registered.
 - **Drift detection:** Weekly data drift check using Evidently AI (population stability index)
 - **Retraining trigger:** Automatic retraining if PSI > 0.2 or model accuracy drops >5%
 - **Audit log:** Every prediction logged with claim_id, model_version, risk_score, timestamp

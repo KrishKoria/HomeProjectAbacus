@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 import logging
+import os
 import pickle
 import time
 from pathlib import Path
@@ -42,6 +43,28 @@ def load_trained_model(path: str | Path) -> Any:
     model_path = Path(path)
     with model_path.open("rb") as handle:
         return pickle.load(handle)
+
+
+def load_from_registry(
+    name: str = "healthcare.ml.claim_denial_model",
+    alias: str = "champion",
+) -> Any:
+    """Load the gate-passing model from the MLflow Model Registry.
+
+    Prefer this over ``load_trained_model`` in production code paths: the
+    registry alias (default ``champion``) always points at the latest
+    version that cleared the ARCHITECTURE.md §13 gate, so callers do not
+    need to know about run_ids or pickle paths. On Databricks with a
+    3-level (Unity Catalog) name we redirect the registry URI to
+    ``databricks-uc`` so the lookup hits the same registry the training
+    script wrote to.
+    """
+    import mlflow
+
+    on_databricks = bool(os.environ.get("DATABRICKS_RUNTIME_VERSION"))
+    if on_databricks and name.count(".") == 2:
+        mlflow.set_registry_uri("databricks-uc")
+    return mlflow.sklearn.load_model(f"models:/{name}@{alias}")
 
 
 def _coerce_features(
@@ -111,6 +134,7 @@ __all__ = [
     "RISK_THRESHOLD_HIGH",
     "RISK_THRESHOLD_LOW",
     "RiskLevel",
+    "load_from_registry",
     "load_trained_model",
     "predict_batch",
     "predict_single",
