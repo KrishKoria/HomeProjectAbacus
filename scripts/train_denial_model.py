@@ -14,6 +14,8 @@ from src.ml.evaluate import (
     evaluate_model,
 )
 from src.ml.features import prepare_training_data, stratified_split
+from src.ml import FEATURE_COLUMNS, TARGET_COLUMN
+from src.ml.retrain_gate import compute_fingerprint
 from src.ml.train import (
     LOGREG_DEFAULT_PARAMS,
     XGBOOST_DEFAULT_PARAMS,
@@ -25,6 +27,10 @@ from src.ml.train import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _entrypoint_argv() -> list[str]:
+    return sys.argv[1:] if len(sys.argv) > 1 else ["--tune"]
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -122,6 +128,7 @@ def train_pipeline(
     registered_model_name: str | None = None,
     champion_alias: str | None = "champion",
     register_only_on_pass: bool = True,
+    gold_table_name: str = "healthcare.gold.claim_features",
 ) -> tuple:
     """Run the full LR + XGBoost training + MLflow logging pipeline.
 
@@ -177,6 +184,29 @@ def train_pipeline(
         best_metrics.meets_thresholds() or not register_only_on_pass
     )
     register_target = registered_model_name if should_register else None
+    training_metadata = {
+        "training_row_count": len(df),
+        "gold_table_name": gold_table_name,
+        "gold_table_version": -1,
+        "training_data_fingerprint": "",
+        "feature_columns": list(FEATURE_COLUMNS),
+        "target_column": TARGET_COLUMN,
+        "release_gate_passed": best_metrics.meets_thresholds(),
+    }
+    try:
+        from pyspark.sql import SparkSession
+
+        spark = SparkSession.builder.getOrCreate()
+        training_metadata["gold_table_version"] = int(
+            spark.sql(f"DESCRIBE HISTORY {gold_table_name} LIMIT 1").collect()[0]["version"]
+        )
+        training_metadata["training_data_fingerprint"] = compute_fingerprint(
+            spark,
+            gold_table_name,
+            list(FEATURE_COLUMNS),
+        )
+    except Exception:
+        logger.warning("Could not resolve Gold-table metadata for MLflow logging", exc_info=True)
 
     try:
         train_with_mlflow(
@@ -193,6 +223,7 @@ def train_pipeline(
             },
             registered_model_name=register_target,
             champion_alias=champion_alias or None,
+            training_metadata=training_metadata,
         )
     except Exception:
         logger.warning("MLflow logging failed, continuing without tracking", exc_info=True)
@@ -213,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
         mlflow_tracking_uri=args.mlflow_tracking_uri,
         registered_model_name=args.registered_model_name or None,
         champion_alias=args.champion_alias or None,
+        gold_table_name=args.gold_table,
     )
 
     print(f"Model: {name}")
@@ -272,6 +304,6 @@ if __name__ == "__main__":
     # Ctrl-D" warning even on a clean pass. Only escalate non-zero exits via
     # sys.exit so CI/CD still sees the failure code, while a passing notebook
     # run terminates silently.
-    _rc = main(["--tune"])
+    _rc = main(_entrypoint_argv())
     if _rc != 0:
         sys.exit(_rc)
