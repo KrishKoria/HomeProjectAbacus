@@ -240,6 +240,7 @@ def write_observability_tables(
     published_event_log_table: str | None = None,
     catalog: str = "healthcare",
     analytics_schema: str = "analytics",
+    pipeline_stage: str | None = None,
     parallel_writes: bool = True,
     max_parallel_writes: int = 4,
 ) -> dict[str, str]:
@@ -261,9 +262,21 @@ def write_observability_tables(
     }
 
     def persist_one(item: tuple[str, object]) -> tuple[str, str]:
+        from pyspark.sql import functions as F
+
         table_name, dataframe = item
         table_fqn = f"{catalog}.{analytics_schema}.{table_name}"
-        dataframe.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(table_fqn)
+        if pipeline_stage is not None:
+            dataframe = dataframe.withColumn("pipeline_stage", F.lit(pipeline_stage))
+            try:
+                existing = spark.table(table_fqn)
+                if "pipeline_stage" not in existing.columns:
+                    spark.sql(f"DROP TABLE IF EXISTS {table_fqn}")
+            except Exception:
+                pass
+            dataframe.write.mode("append").saveAsTable(table_fqn)
+        else:
+            dataframe.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(table_fqn)
         return table_name, MESSAGE_EVENT_LOG_SQL_BRIDGE if not published_event_log_table else table_fqn
 
     try:
