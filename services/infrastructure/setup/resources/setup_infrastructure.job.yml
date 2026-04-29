@@ -1,0 +1,30 @@
+resources:
+  jobs:
+    setup_infrastructure:
+      name: "[${bundle.target}] Setup Infrastructure"
+      job_clusters:
+        - job_cluster_key: shared_cluster
+          new_cluster:
+            spark_version: "14.3.x-cpu-ml-scala2.12"
+            node_type_id: ${var.node_type_id}
+            num_workers: 1
+      tasks:
+        - task_key: apply_grants
+          notebook_task:
+            notebook_path: ../../../../src/notebooks/grants.ipynb
+            base_parameters:
+              catalog: ${var.catalog}
+              bronze_schema: ${var.bronze_schema}
+              ml_schema: ${var.ml_schema}
+          job_cluster_key: shared_cluster
+        - task_key: create_retrain_decisions
+          depends_on:
+            - task_key: apply_grants
+          spark_python_task:
+            python_file: ../../../../src/scripts/setup_retrain_decisions.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --ml-schema
+              - ${var.ml_schema}
+          job_cluster_key: shared_cluster
