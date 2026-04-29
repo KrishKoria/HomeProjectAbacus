@@ -255,6 +255,31 @@ class RetrainGateTests(unittest.TestCase):
         self.assertTrue(decision.should_retrain)
         self.assertEqual(decision.reason, "feature columns changed")
 
+    def test_decide_retrain_requires_retrain_when_champion_feature_metadata_is_missing(self) -> None:
+        from src.ml.retrain_gate import decide_retrain
+
+        fake_spark = self._FakeSpark([{"a": 1}])
+        fake_client = mock.MagicMock()
+        fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
+        fake_client.get_run.return_value = SimpleNamespace(
+            data=SimpleNamespace(params={"training_data_fingerprint": "same"})
+        )
+        with (
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="same"),
+            mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=[]),
+        ):
+            decision = decide_retrain(
+                fake_spark,
+                gold_table="healthcare.gold.claim_features",
+                feature_columns=["a"],
+                registered_model_name="healthcare.ml.claim_denial_model",
+                champion_alias="champion",
+                mlflow_client=fake_client,
+            )
+
+        self.assertTrue(decision.should_retrain)
+        self.assertEqual(decision.reason, "champion feature_columns metadata missing")
+
     def test_decide_retrain_skips_when_metadata_matches(self) -> None:
         from src.ml.retrain_gate import decide_retrain
 

@@ -77,6 +77,8 @@ def _current_gold_version(spark, gold_table: str) -> int:
 
 
 def compute_fingerprint(spark, gold_table: str, feature_columns: list[str]) -> str:
+    # The caller must supply the non-PHI model feature list; this function never
+    # introspects arbitrary table columns on its own.
     columns = sorted(feature_columns)
     frame = spark.table(gold_table).select(*columns)
     row_count = frame.count()
@@ -150,6 +152,14 @@ def decide_retrain(
         )
 
     champion_feature_columns = _feature_columns_from_run(champion_run_id)
+    if feature_columns and not champion_feature_columns:
+        return RetrainDecision.should_retrain_true(
+            reason="champion feature_columns metadata missing",
+            current_row_count=current_row_count,
+            current_gold_version=current_gold_version,
+            current_fingerprint=current_fingerprint,
+            champion_run_id=champion_run_id,
+        )
     if champion_feature_columns and champion_feature_columns != list(feature_columns):
         return RetrainDecision.should_retrain_true(
             reason="feature columns changed",
