@@ -180,6 +180,8 @@ Every recurring entry point under `src/scripts/` and the new notebooks under `sr
 
 ## DAB Job Skeleton — `etl_ml_pipeline`
 
+> **Note:** The YAML below shows logical task dependencies and resource shapes assuming a flat `resources/jobs/` location (one directory below repo root). In the modular service layout used from Phase 0 onward, this job lives at `services/ml/training/resources/training.job.yml` (three directories below repo root) and **every relative path inside must gain two additional `../` segments**. See the **Path-rewriting checklist** in the *Composable Service Framework* section before copying these examples into a real `services/<...>/resources/*.yml`.
+
 Use `condition_task` (not `if_else_condition_task`). All path references are relative to the YAML file.
 
 ```yaml
@@ -349,6 +351,8 @@ Notes:
 ---
 
 ## Pipeline Resources
+
+> **Note:** The YAML below shows pipeline resource shape assuming a flat `resources/pipelines/` location. In the modular service layout used from Phase 0 onward, each pipeline lives at `services/etl/<stage>/resources/<stage>.pipeline.yml` (three directories below repo root) and **every relative path inside must gain two additional `../` segments** (e.g. `libraries[].glob.include: ../ETL/pipelines/bronze/**` becomes `../../../../ETL/pipelines/bronze/**`). See the **Path-rewriting checklist** in the *Composable Service Framework* section.
 
 Each Lakeflow Spark Declarative Pipeline is a DAB pipeline resource. Bronze example below; Silver and Gold follow the same pattern.
 
@@ -680,36 +684,719 @@ These notebooks and capabilities are **not** part of the orchestrated production
 
 ---
 
+## Composable Service Framework
+
+### Design Philosophy
+
+The integration plan above orchestrates a **fixed pipeline**: Bronze -> Silver -> Gold -> ML Training, with verification gates and observability at each stage. It is correct for the current implementation, but future components will add new deployable units: RAG indexing, Model Serving, agent orchestration, FastAPI, Streamlit, drift detection, and explanation caching.
+
+This section defines a **Composable Service Framework** that solves this problem. The core principle:
+
+> **Adding a new service should require new service files, one registry entry, and one additive orchestrator task. It should not require changing existing service implementations or framework code.**
+
+A "service" is any deployable unit or managed capability: a Lakeflow pipeline, a Databricks Job, a Model Serving endpoint, a Vector Search setup/sync task, or a Databricks App. Each service declares itself through custom metadata, owns its deployable DAB resource files, and exposes a standard health/verification contract where that is practical.
+
+The framework has four layers:
+
+1. **Service Manifest** (`service.yml`) - custom metadata for humans and validation scripts, not native DAB config.
+2. **Service Registry** (`services/manifest.yml`) - custom dependency graph used by `src.framework.validate_manifests`.
+3. **Python Verification Contract** (`src/framework/`) - shared result/config types for verifier scripts.
+4. **Modular DAB Resources** - `databricks.yml` `include:` block lists per-depth globs (`services/*/resources/*.yml`, `services/*/*/resources/*.yml`, `services/*/*/*/resources/*.yml`) so every service's deployable resource YAML is auto-discovered. DAB CLI's `**` matches one directory level only — see databricks.yml example for the working pattern.
+
+---
+
+### Service Manifest Schema
+
+Every service has a directory under `services/` containing:
+
+- `service.yml` for custom service metadata and manifest validation.
+- `resources/*.yml` for native Databricks bundle resources.
+- optional script, notebook, app, or pipeline code in the existing project directories.
+
+`service.yml` is intentionally **not** included by `databricks.yml`. It is parsed only by the custom manifest validator.
+
+```yaml
+# services/<service_name>/service.yml
+
+service:
+  name: etl_bronze
+  type: pipeline                            # pipeline | job | model_serving | vector_search | app | script
+  version: "1.0.0"
+  description: "Brief human-readable description"
+
+  entry_point:
+    resource_key: bronze_pipeline            # DAB resource key in resources/*.yml
+    resource_type: pipelines                 # pipelines | jobs | model_serving_endpoints | apps | script
+                                             # Use `script` for registry-only services that own no DAB
+                                             # resource (e.g. observability scripts run as job tasks).
+
+  dependencies:
+    upstream:
+      - name: load_sample_data
+        type: service
+        required: false
+    gates:
+      - name: verify_bronze
+        type: service
+        required: true
+
+  health_check:
+    type: script                             # script | sql | notebook | http
+    entry_point: src/scripts/verify_bronze.py
+    args: []
+
+  observability:
+    event_log:
+      catalog: ${var.catalog}
+      schema: ${var.analytics_schema}
+      table: bronze_pipeline_event_log
+    stage: bronze
+    metrics:
+      - row_count
+      - processing_time
+
+  config:
+    catalog: ${var.catalog}
+    target_schema: ${var.bronze_schema}
+    pipeline_libraries:
+      - glob: ../ETL/pipelines/bronze/**
+```
+
+Supported service types:
+
+| Type | Description | DAB Resource | Health Check |
+| --- | --- | --- | --- |
+| `pipeline` | Lakeflow Spark Declarative Pipeline | `pipelines:` in DAB | Script or SQL |
+| `job` | Multi-task Databricks Job | `jobs:` in DAB | Task-level verification |
+| `script` | Python script run by a Job task | `jobs:` task in DAB | Script exit code |
+| `model_serving` | Databricks Model Serving endpoint | `model_serving_endpoints:` in DAB | Script or HTTP |
+| `vector_search` | Vector Search endpoint/index setup and sync | SDK/API setup task plus source Delta table | SQL or script |
+| `app` | Databricks App (Streamlit, FastAPI, etc.) | `apps:` in DAB | HTTP health endpoint |
+
+`dependencies.upstream` vs `dependencies.gates` — both end up as DAB job `depends_on` edges, but the conceptual split matters for review and validation:
+
+- **`upstream`**: services that **produce data or state** the current service consumes (e.g. `etl_silver` is upstream of `rag_indexing` because RAG reads `silver.policy_chunks`). An upstream failure means the current service has no input.
+- **`gates`**: services that **assert quality or contract** before the current service is allowed to run (e.g. `verify_bronze` is a gate for `run_silver_pipeline`). A gate failure means inputs exist but are untrusted.
+
+Use `upstream` for data-producer relationships and `gates` for verification relationships. The validator (B-M1) treats both identically when computing the DAG; the split is reviewer-facing.
+
+---
+
+### Service Registry
+
+`services/manifest.yml` is custom metadata, not Databricks bundle syntax. It is the single source of truth for service ownership and dependency intent. A custom validator must compare it with the native DAB job `depends_on` graph so the registry does not drift from the actual deployed workflow.
+
+```yaml
+# services/manifest.yml
+
+services:
+  # ── ETL ──────────────────────────────────────────────────────────
+  etl_bronze:
+    type: pipeline
+    manifest: services/etl/bronze/service.yml
+
+  etl_silver:
+    type: pipeline
+    manifest: services/etl/silver/service.yml
+    depends_on: [etl_bronze]
+
+  etl_gold:
+    type: pipeline
+    manifest: services/etl/gold/service.yml
+    depends_on: [etl_silver]
+
+  # ── ML ────────────────────────────────────────────────────────────
+  ml_training:
+    type: job
+    manifest: services/ml/training/service.yml
+    depends_on: [etl_gold]
+
+  # ── Infrastructure ────────────────────────────────────────────────
+  setup_infrastructure:
+    type: job
+    manifest: services/infrastructure/setup/service.yml
+
+  load_sample_data:
+    type: job
+    manifest: services/infrastructure/load_sample_data/service.yml
+
+  # ── Observability ─────────────────────────────────────────────────
+  # Observability is a registry-only "pseudo-service" (resource_type: script,
+  # entry_point.resource_key: null). It owns the `ops_*` tables but its
+  # build_observability.py is run as three parallel job tasks (one per
+  # pipeline stage) inside etl_ml_pipeline. The registry entry tracks
+  # ownership and dependencies; the DAB job owns task multiplicity.
+  observability:
+    type: script
+    manifest: services/observability/service.yml
+    depends_on: [etl_bronze, etl_silver, etl_gold]
+
+  # ── Future Services (uncomment when implemented) ─────────────────
+  # rag_indexing:
+  #   type: pipeline
+  #   manifest: services/rag/indexing/service.yml
+  #   depends_on: [etl_silver]
+  #
+  # ml_serving:
+  #   type: model_serving
+  #   manifest: services/ml_serving/service.yml
+  #   depends_on: [ml_training]
+  #
+  # drift_detection:
+  #   type: job
+  #   manifest: services/ml/drift_detection/service.yml
+  #   depends_on: [ml_training]
+  #
+  # agent:
+  #   type: job
+  #   manifest: services/agent/service.yml
+  #   depends_on: [ml_serving, rag_indexing]
+  #
+  # api:
+  #   type: app
+  #   manifest: services/api/service.yml
+  #   depends_on: [agent]
+  #
+  # dashboard:
+  #   type: app
+  #   manifest: services/dashboard/service.yml
+  #   depends_on: [api]
+```
+
+Adding a new service:
+
+1. Create `services/<name>/service.yml` with the manifest.
+2. Create `services/<name>/resources/*.yml` with DAB resource files.
+3. Create the script/notebook/pipeline entry point in `src/scripts/`, `src/notebooks/`, or `ETL/pipelines/`.
+4. Add or uncomment the service entry in `services/manifest.yml`.
+5. Add a strictly additive task to the appropriate orchestrator job YAML, or create a new job YAML in the service's resources directory.
+
+Existing service implementation files should not be modified. The registry and orchestrator edits are expected and must remain small, reviewable additions.
+
+---
+
+### Manifest Validator Contract
+
+`src/framework/validate_manifests.py` is the custom validator referenced in Phase 5. It is invoked as `python -m src.framework.validate_manifests` and exits non-zero on any failure. It enforces the following minimum checks:
+
+1. **Registry-to-manifest existence**: every entry in `services/manifest.yml` has a `service.yml` file at the declared `manifest:` path.
+2. **Manifest schema**: every `service.yml` has the required fields (`service.name`, `service.type`, `entry_point.resource_key`, `entry_point.resource_type`). `entry_point.resource_type` is one of `pipelines | jobs | model_serving_endpoints | apps | script`.
+3. **Resource-existence cross-check**: for every service whose `resource_type` ≠ `script`, the `(resource_key, resource_type)` pair points to an actual DAB resource reported by `databricks bundle validate --output json`.
+4. **DAG check**: `services/manifest.yml` `depends_on` graph contains no cycles.
+5. **Registry vs DAB job consistency**: for each service that participates in a job's task graph, the registry's `depends_on` for that service is a **subset** of the actual DAB job task `depends_on` chain leading to it. The registry may claim fewer dependencies than the DAB job (registry is a logical view); it must never claim more.
+6. **Health-check entry point exists**: if `health_check.type == script`, the file at `health_check.entry_point` exists.
+
+The validator does not need to call out to the workspace; it operates entirely on local files plus the JSON output of `databricks bundle validate`.
+
+---
+
+### Python Verification Contract
+
+Pipelines, apps, and serving endpoints are deployed by Databricks resources, so they should not be forced into a Python `setup -> run -> observe` base class. The Python framework only standardizes service configuration and verifier output for scripts/notebook drivers.
+
+```python
+# src/framework/service.py
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+
+@dataclass(frozen=True, slots=True)
+class HealthCheckResult:
+    """Standard health check output for any service.
+
+    Print the one-line PHI-safe message to stdout and exit non-zero
+    on failure — matching the existing Script & Notebook Contract
+    in this integration plan.
+    """
+
+    service_name: str
+    healthy: bool
+    message: str
+    details: dict[str, Any] | None = None
+
+    def summary_line(self) -> str:
+        """Return a single PHI-safe summary line for DAB task logs."""
+        status = "OK" if self.healthy else "FAIL"
+        return f"{status}: {self.service_name} - {self.message}"
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceConfig:
+    """Base config loaded from a service manifest's config section."""
+
+    service_name: str
+    service_type: str
+    catalog: str = "healthcare"
+
+
+class ServiceVerifier(Protocol):
+    """Optional protocol for script/notebook health checks."""
+
+    def health_check(self) -> HealthCheckResult:
+        """Return structured health status. Must be PHI-safe."""
+
+    def verify(self) -> HealthCheckResult:
+        """Post-run verification. Must be PHI-safe."""
+```
+
+Existing scripts adopt this contract incrementally by returning or printing `HealthCheckResult.summary_line()` while keeping their current behavior. The output matches the existing Script & Notebook Contract: a single PHI-safe line like `OK: bronze tables=5 rows={...}`.
+
+```python
+# src/framework/__init__.py
+
+from src.framework.service import HealthCheckResult, ServiceConfig, ServiceVerifier
+
+__all__ = ["HealthCheckResult", "ServiceConfig", "ServiceVerifier"]
+```
+
+---
+
+### Service-Aware Observability
+
+The current `write_observability_tables()` writes per-pipeline-stage data with a `pipeline_stage` column. The framework extends this to a service-aware model:
+
+```text
+Current:   pipeline_stage = 'bronze' | 'silver' | 'gold'
+Extended:  service_name   = 'etl_bronze' | 'etl_silver' | 'etl_gold' | 'rag_indexing' | 'ml_serving' | ...
+           service_type   = 'pipeline' | 'model_serving' | 'app' | ...
+           stage          = 'bronze' | 'silver' | 'gold' | 'rag' | 'inference' | ...
+```
+
+For backward compatibility, `pipeline_stage` is retained as an alias for `stage` in pipeline services. New tables use the wider schema:
+
+| Table | Purpose |
+| --- | --- |
+| `ops_service_health` | Health check results per service per run (replaces ad hoc verify outputs) |
+| `ops_service_metrics` | Numeric metrics per service (row counts, latencies, model scores) |
+| `ops_service_events` | Event records per service (pipeline event logs for pipelines; job, app, serving, or custom health events for other services) |
+| `ops_service_failures` | Unified failure tracking across service types |
+
+The existing `ops_pipeline_updates`, `ops_expectation_metrics`, `ops_user_actions`, and `ops_latest_failures` tables continue to work for pipeline services. The new `ops_service_*` tables are additive. Pipeline services are populated from Lakeflow event logs; serving, app, and agent services use their own health checks, inference tables, HTTP health endpoints, job run metadata, or application metrics.
+
+---
+
+### Modular DAB Bundle Structure
+
+The DAB bundle is restructured from a flat `resources/` directory to a service-modular layout:
+
+```text
+homeprojectabacus/
+  databricks.yml                        # Thin orchestrator with auto-discovery
+  services/
+    manifest.yml                        # Service registry (dependency graph)
+    infrastructure/
+      setup/
+        service.yml
+        resources/
+          setup_infrastructure.job.yml
+      load_sample_data/
+        service.yml
+        resources/
+          load_sample_data.job.yml
+    etl/
+      bronze/
+        service.yml
+        resources/
+          bronze.pipeline.yml
+      silver/
+        service.yml
+        resources/
+          silver.pipeline.yml
+      gold/
+        service.yml
+        resources/
+          gold.pipeline.yml
+    ml/
+      training/
+        service.yml
+        resources/
+          training.job.yml              # The etl_ml_pipeline job with ML retrain gate
+    observability/
+      service.yml
+      resources/                         # (observability scripts are in src/scripts/)
+    # ── Future: uncomment when implementing ──
+    # rag/
+    #   indexing/
+    #     service.yml
+    #     resources/
+    #       rag_indexing.pipeline.yml
+    # ml_serving/
+    #   service.yml
+    #   resources/
+    #     serving.yml
+    # agent/
+    #   service.yml
+    #   resources/
+    #     agent.job.yml
+    # api/
+    #   service.yml
+    #   resources/
+    #     api.app.yml
+    # dashboard/
+    #   service.yml
+    #   resources/
+    #     dashboard.app.yml
+  resources/
+    schemas/
+      schemas.yml                       # Shared infrastructure — stays central
+    volumes/
+      volumes.yml                       # Shared infrastructure — stays central
+  src/
+    framework/
+      __init__.py
+      service.py                        # HealthCheckResult, ServiceConfig, ServiceVerifier
+    scripts/
+      verify_bronze.py                  # Uses HealthCheckResult / optional ServiceVerifier
+      verify_silver.py                  # Uses HealthCheckResult / optional ServiceVerifier
+      verify_gold.py                    # Future
+      build_analytics.py                # Emits service health/metrics where useful
+      build_observability.py            # Emits service health/metrics where useful
+      load_sample_data.py               # Emits service health/metrics where useful
+      verify_rag_index.py               # Future
+      verify_model_endpoint.py          # Future
+      verify_agent.py                   # Future
+    notebooks/
+      check_new_data.ipynb
+      skip_retraining.ipynb
+      grants.ipynb
+  ETL/
+    pipelines/
+      bronze/
+      silver/
+      gold/
+      # rag/                            # Future
+  scripts/
+    train_denial_model.py
+```
+
+The `databricks.yml` becomes a thin orchestrator:
+
+```yaml
+# databricks.yml
+
+bundle:
+  name: healthcare-claim-ops
+
+# NOTE: DAB `include` uses Go-style glob, not gitignore globs.
+# `**` only matches a SINGLE directory level (Databricks CLI issue #4831,
+# confirmed by `andrewnester` 2026-03-25). A single `services/**/resources/*.yml`
+# would silently miss `services/etl/bronze/resources/*.yml` (2 dirs deep under
+# services/). List explicit per-depth patterns below; add another line if the
+# tree ever grows deeper.
+include:
+  - "services/*/resources/*.yml"          # 1 deep: services/observability/resources/*.yml
+  - "services/*/*/resources/*.yml"        # 2 deep: services/etl/bronze/resources/*.yml
+  - "services/*/*/*/resources/*.yml"      # 3 deep: reserved for future grouped services
+  - "resources/schemas/schemas.yml"       # Shared infrastructure (not service-owned)
+  - "resources/volumes/volumes.yml"       # Shared infrastructure (not service-owned)
+
+variables:
+  catalog: { default: "healthcare" }
+  bronze_schema: { default: "bronze" }
+  silver_schema: { default: "silver" }
+  gold_schema: { default: "gold" }
+  analytics_schema: { default: "analytics" }
+  ml_schema: { default: "ml" }
+  node_type_id: { default: "i3.xlarge" }
+  # `model_version` is the registered-model version that ml_serving's
+  # served_entities binds to. It must be supplied at deploy time. Two options:
+  #   1. CI-resolved: a deploy script queries MLflow registry for the
+  #      `champion` alias and sets `--var=model_version=<n>` on
+  #      `databricks bundle deploy`. Recommended for prod.
+  #   2. DAB lookup variable (preview): bind to the registered model
+  #      alias if/when DAB exposes a registered_model_version lookup.
+  # No safe `default:` exists — leaving it unset forces the deploy step
+  # to provide a concrete version, preventing accidental serving of an
+  # arbitrary historical version.
+  model_version:
+    description: "MLflow registered-model version backing claim_denial_model serving (champion). Required at deploy time."
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      profile: dev
+    variables:
+      catalog: "healthcare"
+  prod:
+    mode: production
+    workspace:
+      profile: prod
+    variables:
+      catalog: "healthcare"
+```
+
+When a new service (e.g., RAG indexing) is added:
+1. Create `services/rag/indexing/service.yml`
+2. Create `services/rag/indexing/resources/rag_indexing.pipeline.yml`
+3. Create `ETL/pipelines/rag/` with the pipeline code
+4. Create `src/scripts/verify_rag_index.py` using `HealthCheckResult`
+5. Add or uncomment `rag_indexing` in `services/manifest.yml`
+6. Add the task to the appropriate job YAML (additive task entry only — if the service is itself a new orchestrator job, the file from step 2 is the orchestrator and no edit to an existing job YAML is needed).
+
+No existing service implementation file is modified. The registry and orchestrator job YAML receive small additive edits.
+
+#### Path-rewriting checklist (important migration cost)
+
+The original integration plan's job/pipeline YAML examples (e.g. **DAB Job Skeleton**, **Pipeline Resources**) assume the file lives at `resources/jobs/<x>.job.yml` or `resources/pipelines/<x>.pipeline.yml` — **one** directory below repo root. Inside those files, every `python_file`, `notebook_path`, `source_code_path`, and `libraries[].glob.include` is written as **one** `..` segment up to repo root (e.g. `python_file: ../src/scripts/verify_bronze.py`).
+
+In the modular layout used here, those same YAMLs sit at `services/<group>/<name>/resources/<x>.yml` — **three** directories below repo root. **Every relative path inside the YAML must gain two extra `../` segments** (or four total when nested deeper). For example:
+
+| Reference type | Original (1 dir deep) | Modular (3 dirs deep) |
+| --- | --- | --- |
+| `python_file` | `../src/scripts/verify_bronze.py` | `../../../../src/scripts/verify_bronze.py` |
+| `notebook_path` | `../src/notebooks/check_new_data.ipynb` | `../../../../src/notebooks/check_new_data.ipynb` |
+| `libraries[].glob.include` | `../ETL/pipelines/bronze/**` | `../../../../ETL/pipelines/bronze/**` |
+| `apps.<x>.source_code_path` | `./src/apps/api` (root) | `../../../src/apps/api` |
+
+`databricks bundle validate` does **not** flag dangling `python_file`/`notebook_path` references — only `databricks bundle deploy` exposes them. After moving or creating any resource YAML, manually grep its relative paths against the actual filesystem.
+
+---
+
+### Future Service Plug-In Examples
+
+#### RAG Indexing Service (Week 6)
+
+```yaml
+# services/rag/indexing/service.yml
+service:
+  name: rag_indexing
+  type: pipeline
+  version: "1.0.0"
+  description: "Policy PDF ingestion, chunking, embedding, and Vector Search indexing"
+  entry_point:
+    resource_key: rag_indexing_pipeline
+    resource_type: pipelines
+  dependencies:
+    upstream:
+      - name: etl_silver
+        type: service
+        required: true
+    gates:
+      - name: verify_rag_index
+        type: service
+        required: true
+  health_check:
+    type: script
+    entry_point: src/scripts/verify_rag_index.py
+    args: []
+  observability:
+    event_log:
+      catalog: ${var.catalog}
+      schema: ${var.analytics_schema}
+      table: rag_pipeline_event_log
+    stage: rag
+  config:
+    catalog: ${var.catalog}
+    target_schema: ${var.rag_schema}
+    source_table: ${var.catalog}.${var.silver_schema}.policy_chunks
+    pipeline_libraries:
+      - glob: ../ETL/pipelines/rag/**
+    vector_search:
+      setup_mode: sdk_or_rest_api
+      index_name: ${var.catalog}.${var.rag_schema}.policy_chunk_index
+      sync_mode: triggered
+```
+
+RAG indexing depends on Silver because the repo extracts and chunks policy PDFs in the Silver policy chunk pipeline. The Vector Search index itself should be created or synced by a setup/sync script using the Databricks SDK or REST API; do not model it as a generic DAB resource unless Databricks adds a first-class `vector_search_indexes` bundle resource.
+
+#### Model Serving Endpoint (Week 5+)
+
+```yaml
+# services/ml_serving/service.yml
+service:
+  name: ml_serving
+  type: model_serving
+  version: "1.0.0"
+  description: "Champion denial model serving endpoint"
+  entry_point:
+    resource_key: claim_denial_model_endpoint
+    resource_type: model_serving_endpoints
+  dependencies:
+    upstream:
+      - name: ml_training
+        type: service
+        required: true
+  health_check:
+    type: script
+    entry_point: src/scripts/verify_model_endpoint.py
+    args: ["--endpoint-name", "${var.catalog}.${var.ml_schema}.claim_denial_model"]
+  observability:
+    metrics:
+      - prediction_latency_p95
+      - prediction_count
+      - error_rate
+  config:
+    registered_model: ${var.catalog}.${var.ml_schema}.claim_denial_model
+    champion_alias: champion
+    workload_size: Small
+    scale_to_zero: true
+```
+
+The corresponding DAB resource lives under `resources.model_serving_endpoints`, not under registered-model resources or any hyphenated serving-endpoint key:
+
+```yaml
+# services/ml_serving/resources/serving.yml
+resources:
+  model_serving_endpoints:
+    claim_denial_model_endpoint:
+      name: claim_denial_model
+      config:
+        served_entities:
+          - name: champion
+            entity_name: ${var.catalog}.${var.ml_schema}.claim_denial_model
+            entity_version: ${var.model_version}
+            workload_size: Small
+            scale_to_zero_enabled: true
+```
+
+#### Agent Validation Service (Week 7)
+
+```yaml
+# services/agent/service.yml
+service:
+  name: agent
+  type: job
+  version: "1.0.0"
+  description: "Claim validation agent — combines rules, ML prediction, and RAG explanation"
+  entry_point:
+    resource_key: agent_validation_job
+    resource_type: jobs
+  dependencies:
+    upstream:
+      - name: ml_serving
+        type: service
+        required: true
+      - name: rag_indexing
+        type: service
+        required: true
+  health_check:
+    type: script
+    entry_point: src/scripts/verify_agent.py
+    args: []
+  observability:
+    metrics:
+      - validation_count
+      - fallback_count
+      - latency_p95
+    stage: agent
+```
+
+#### FastAPI Backend (Week 7-8)
+
+```yaml
+# services/api/service.yml
+service:
+  name: api
+  type: app
+  version: "1.0.0"
+  description: "FastAPI claims validation REST API with OIDC auth middleware"
+  entry_point:
+    resource_key: claims_api_app
+    resource_type: apps
+  dependencies:
+    upstream:
+      - name: agent
+        type: service
+        required: true
+  health_check:
+    type: http
+    endpoint: /api/v1/admin/health
+  observability:
+    metrics:
+      - request_count
+      - error_rate
+      - latency_p95
+  config:
+    catalog: ${var.catalog}
+```
+
+The app's deployable resource belongs in `services/api/resources/api.app.yml` and uses the DAB `apps:` resource shape:
+
+```yaml
+resources:
+  apps:
+    claims_api_app:
+      name: claims-api
+      source_code_path: ../../../src/apps/api
+      description: "FastAPI claims validation REST API"
+      resources:
+        - name: model-serving
+          serving_endpoint:
+            name: claim_denial_model
+            permission: CAN_QUERY
+```
+
+Use the same pattern for the Streamlit dashboard app: `apps:` resource, `source_code_path`, HTTP health endpoint, and explicit resource bindings for jobs, serving endpoints, tables, volumes, or secrets it needs.
+
+---
+
+### Adding a New Service — Checklist
+
+When a new service is ready to plug in:
+
+| Step | Action | Files Modified |
+| --- | --- | --- |
+| 1 | Create `services/<name>/service.yml` | New file only |
+| 2 | Create `services/<name>/resources/*.yml` (DAB resources) | New service resource files |
+| 3 | Create entry point script/notebook/pipeline | New service implementation file |
+| 4 | Add or uncomment service in `services/manifest.yml` | Existing file - small additive edit |
+| 5 | If the service plugs into an existing job's task graph, add an additive task entry to that job YAML. If the service is itself a new orchestrator job, no edit is needed — the job YAML created in step 2 IS the orchestrator. | Existing file (additive edit) OR none |
+| 6 | Run `databricks bundle validate` | None — verification only |
+| 7 | Run `python -m src.framework.validate_manifests` | None — verification only |
+
+Steps 1–3 create new files. Step 4 updates the registry. Step 5 either makes a small additive edit to an existing orchestrator OR is a no-op (the new file from step 2 is itself the orchestrator). **Existing service implementation files and framework code are not modified.**
+
+---
+
 ## Implementation Phases
 
-The phase order is constrained by the prerequisites above. Phase 3 and 4 code changes must precede the bundle skeleton, otherwise the bundle deploys but does not actually work end-to-end.
+The phase order is constrained by the prerequisites above. Phase 0 establishes the composable framework metadata and validation shape. Phases 1-2 add the code prerequisites and script entry points that the bundle will call. Phase 3 adds the bundle skeleton. Phase 4 wires observability.
+
+### Phase 0 — Service framework foundation (before DAB)
+
+> Note: at the start of Phase 0 the repo has **no** `databricks.yml`, **no** `resources/`, **no** `services/`, and **no** `src/framework/`. All steps below are creates, not migrations. DAB resource YAMLs are first written in Phase 3 directly into `services/<group>/<name>/resources/`; they never live under a flat `resources/pipelines/` path.
+
+- Create `services/manifest.yml` with the initial ETL + ML services registered.
+- Create `src/framework/__init__.py` and `src/framework/service.py` with `HealthCheckResult`, `ServiceConfig`, and optional `ServiceVerifier`.
+- Create service manifests: `services/etl/bronze/service.yml`, `services/etl/silver/service.yml`, `services/etl/gold/service.yml`, `services/ml/training/service.yml`, `services/infrastructure/setup/service.yml`, `services/infrastructure/load_sample_data/service.yml`, `services/observability/service.yml`.
+- Create empty `services/<group>/<name>/resources/` directories so Phase 3 can drop DAB resource YAMLs straight in.
+- Create the `src/framework/validate_manifests.py` validator script (see **Manifest Validator Contract** below).
+- Restructure `databricks.yml` to use the multi-pattern `include:` block shown in **Modular DAB Bundle Structure** (one explicit glob per depth — DAB `**` only matches a single level). Plus shared `resources/schemas/` and `resources/volumes/`.
+- Keep `resources/schemas/schemas.yml` and `resources/volumes/volumes.yml` central (shared infrastructure, not service-specific).
+- Add unit tests for `HealthCheckResult` formatting and manifest YAML schema validation.
 
 ### Phase 1 — Code prerequisites (no DAB yet)
 
 - `scripts/train_denial_model.py:275` argv passthrough fix.
 - MLflow training metadata logging in `src/ml/train.py` (row count, Gold version, fingerprint, feature columns, target column, release gate result).
-- `src/analytics/observability_assets.py` — add `pipeline_stage` parameter, append-mode writes, stage column.
-- Add unit tests for: argv passthrough; metadata logging; stage-aware observability output schema.
+- `src/analytics/observability_assets.py` — add `pipeline_stage` parameter, append-mode writes, stage column; add `service_name` and `service_type` columns to new `ops_service_*` tables (existing `ops_pipeline_*` tables unchanged for backward compatibility).
+- Add unit tests for: argv passthrough; metadata logging; stage-aware observability output schema; service-aware observability schema.
 
 ### Phase 2 — Script entry points
 
-- Create `src/scripts/{load_sample_data,verify_bronze,verify_silver,build_analytics,build_observability}.py`.
+- Create `src/scripts/{load_sample_data,verify_bronze,verify_silver,build_analytics,build_observability}.py`. Verification scripts use `HealthCheckResult` and may implement the optional `ServiceVerifier` protocol.
 - Create `src/notebooks/{check_new_data,skip_retraining,grants}.ipynb`.
 - Keep setup/reset/exploration/demo notebooks manual.
 - Add unit tests where local fakes are practical (especially for `check_new_data`'s should-retrain logic).
 
 ### Phase 3 — Bundle skeleton
 
-- Add `databricks.yml` with bundle variables (`catalog`, `bronze_schema`, `silver_schema`, `gold_schema`, `analytics_schema`, `ml_schema`, `node_type_id`) and per-target overrides for `dev`/`prod`.
-- Add `resources/pipelines/{bronze,silver,gold}.pipeline.yml` (with `event_log:` configured, classic clusters with `SPOT_WITH_FALLBACK`).
-- Add `resources/schemas/schemas.yml` and `resources/volumes/volumes.yml` (DAB-native infra).
-- Add `resources/jobs/{setup_infrastructure,load_sample_data,etl_ml_pipeline}.job.yml`.
+- Add `databricks.yml` with bundle variables (`catalog`, `bronze_schema`, `silver_schema`, `gold_schema`, `analytics_schema`, `ml_schema`, `node_type_id`, `model_version`) and per-target overrides for `dev`/`prod`. Use the explicit multi-depth `include:` block shown in **Modular DAB Bundle Structure** — single `services/**/resources/*.yml` does not work because DAB CLI's `**` only matches one directory level (issue #4831).
+- Service pipeline resources are in `services/etl/*/resources/*.pipeline.yml` (with `event_log:` configured, classic clusters with `SPOT_WITH_FALLBACK`).
+- Add `resources/schemas/schemas.yml` and `resources/volumes/volumes.yml` (DAB-native infra, stays central).
+- Job resources are in `services/*/resources/*.job.yml` (the `etl_ml_pipeline` job in `services/ml/training/resources/training.job.yml`, the setup job in `services/infrastructure/setup/resources/setup_infrastructure.job.yml`, the data loader in `services/infrastructure/load_sample_data/resources/load_sample_data.job.yml`).
 
 ### Phase 4 — Observability integration
 
-- Wire `build_observability.py` to Bronze, Silver, and Gold published event-log tables via `--published-event-log-table` and `--pipeline-stage`.
+- Wire `build_observability.py` to Bronze, Silver, and Gold published event-log tables via `--published-event-log-table` and `--pipeline-stage`. Extend to also write `service_name` and `service_type` columns to the new `ops_service_*` tables.
 - Verify stage-aware output: a single `ops_pipeline_updates` row exists per stage per update.
-- Add contract tests for stage-aware outputs.
+- Verify service-aware output: `SELECT service_name, service_type, COUNT(*) FROM healthcare.analytics.ops_service_events GROUP BY service_name, service_type` returns rows for each active pipeline service. Non-pipeline services populate `ops_service_*` from their own health checks, inference tables, HTTP checks, job metadata, or app metrics as they are implemented.
+- Add contract tests for stage-aware and service-aware outputs.
 
 ### Phase 5 — Validation
 
@@ -723,6 +1410,13 @@ uv run pytest -q
 
 ```bash
 databricks bundle validate
+```
+
+- Validate service manifests: confirm that every active service in `services/manifest.yml` has a corresponding `service.yml` and DAB resource file.
+
+```bash
+# Custom validation script (to be created)
+python -m src.framework.validate_manifests
 ```
 
 - Deploy to dev:
@@ -740,10 +1434,17 @@ databricks bundle deploy -t dev
 ## Acceptance Criteria
 
 - `databricks bundle validate` passes for every target.
+- Every active service in `services/manifest.yml` has a corresponding `service.yml` and deployable DAB resource file when the service owns a Databricks resource.
+- Adding a new service requires new service files plus a small registry entry and additive orchestrator task; it does not require modifying existing service implementations or framework code.
 - Bronze, Silver, and Gold pipelines deploy as DAB resources, each publishing its event log to UC.
 - The production job has no manual notebook steps in the recurring path (only `check_new_data` and `skip_retraining`, which are recurring notebooks by design).
 - Bronze and Silver verification failures stop downstream tasks (real DAG gates).
 - Observability captures each pipeline stage separately: `SELECT pipeline_stage, COUNT(*) FROM healthcare.analytics.ops_pipeline_updates GROUP BY pipeline_stage` returns three rows.
+- Service-aware observability captures each active pipeline service immediately and supports non-pipeline services through service-specific health/metrics sources.
+- Verification scripts return `HealthCheckResult` with a PHI-safe summary line.
+- `databricks bundle validate` reports a non-empty `Resources:` list for every target — confirms the per-depth `include:` patterns (`services/*/resources/*.yml`, `services/*/*/resources/*.yml`, `services/*/*/*/resources/*.yml`) successfully resolve every active service resource file. A single `services/**/resources/*.yml` does **not** work (DAB CLI `**` matches one directory level only — issue #4831).
+- `python -m src.framework.validate_manifests` confirms custom `service.yml` files and `services/manifest.yml` are internally consistent.
+- The dependency graph in `services/manifest.yml` matches the DAB job task `depends_on` structure.
 - `train_model` task receives DAB-passed parameters (verifies the C1 argv fix).
 - Model retraining runs only when the current Gold data fingerprint differs from the champion model metadata, or no champion exists.
 - Failed model release gates still block model persistence and registry promotion.
