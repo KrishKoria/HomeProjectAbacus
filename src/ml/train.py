@@ -251,6 +251,7 @@ def train_with_mlflow(
     artifact_path: str = "model",
     registered_model_name: str | None = None,
     champion_alias: str | None = "champion",
+    training_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Log a fit model + params + metrics to an MLflow experiment and return the run id.
 
@@ -270,6 +271,14 @@ def train_with_mlflow(
     with mlflow.start_run(run_name=model_name):
         mlflow.log_params(params)
         mlflow.log_metrics(metrics)
+        metadata = dict(training_metadata or {})
+        feature_columns = metadata.pop("feature_columns", None)
+        if metadata:
+            mlflow.log_params({key: str(value) for key, value in metadata.items()})
+        if "release_gate_passed" in metadata:
+            mlflow.set_tag("release_gate_passed", str(metadata["release_gate_passed"]).lower())
+        if feature_columns is not None:
+            mlflow.log_dict({"columns": list(feature_columns)}, "feature_columns.json")
         signature_input = None
         try:
             from mlflow.models import infer_signature
