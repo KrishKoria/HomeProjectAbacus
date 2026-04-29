@@ -1,0 +1,46 @@
+bundle:
+  name: healthcare-claim-ops
+  engine: direct
+
+include:
+  - resources/schemas/schemas.yml
+  - resources/volumes/volumes.yml
+  - services/*/resources/*.yml
+  - services/*/*/resources/*.yml
+  - services/*/*/*/resources/*.yml
+
+variables:
+  catalog:
+    default: healthcare
+  bronze_schema:
+    default: bronze
+  silver_schema:
+    default: silver
+  gold_schema:
+    default: gold
+  analytics_schema:
+    default: analytics
+  ml_schema:
+    default: ml
+  node_type_id:
+    default: i3.xlarge
+  model_version:
+    description: MLflow registered model version for production serving.
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      profile: dev
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: healthcare
+      model_version: "1"
+  prod:
+    mode: production
+    workspace:
+      profile: prod
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: healthcare

@@ -1,0 +1,7 @@
+resources:
+  volumes:
+    raw_landing_volume:
+      catalog_name: ${var.catalog}
+      schema_name: ${var.bronze_schema}
+      name: raw_landing
+      volume_type: MANAGED
