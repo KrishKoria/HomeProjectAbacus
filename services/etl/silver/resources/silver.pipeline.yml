@@ -1,0 +1,24 @@
+resources:
+  pipelines:
+    silver_pipeline:
+      name: "[${bundle.target}] Healthcare Silver Validation"
+      catalog: ${var.catalog}
+      target: ${var.silver_schema}
+      photon: true
+      channel: current
+      libraries:
+        - glob:
+            include: ../../../../ETL/pipelines/silver/**
+      event_log:
+        catalog: ${var.catalog}
+        schema: ${var.analytics_schema}
+        name: silver_pipeline_event_log
+      clusters:
+        - label: default
+          aws_attributes:
+            availability: SPOT_WITH_FALLBACK
+            spot_bid_price_percent: 100
+          autoscale:
+            min_workers: 1
+            max_workers: 4
+            mode: ENHANCED
