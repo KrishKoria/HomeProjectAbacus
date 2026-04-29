@@ -1,0 +1,20 @@
+resources:
+  schemas:
+    bronze_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.bronze_schema}
+    silver_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.silver_schema}
+    quarantine_schema:
+      catalog_name: ${var.catalog}
+      name: quarantine
+    gold_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.gold_schema}
+    analytics_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.analytics_schema}
+    ml_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.ml_schema}
