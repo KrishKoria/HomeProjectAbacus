@@ -15,9 +15,8 @@ resources:
         name: gold_pipeline_event_log
       clusters:
         - label: default
-          aws_attributes:
-            availability: SPOT_WITH_FALLBACK
-            spot_bid_price_percent: 100
+          gcp_attributes:
+            availability: PREEMPTIBLE_WITH_FALLBACK_GCP
           autoscale:
             min_workers: 1
             max_workers: 4

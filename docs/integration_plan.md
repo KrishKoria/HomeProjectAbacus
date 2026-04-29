@@ -13,7 +13,7 @@ Operational gaps that this revised plan now closes:
 3. **Each Lakeflow pipeline must publish its event log to a Unity Catalog table.** Without an `event_log:` block on the pipeline resource, `write_observability_tables()` cannot reliably read pipeline events across runs (the SQL TVF `event_log("<pipeline_id>")` requires per-run owner permissions).
 4. **`write_observability_tables()` writes four fixed table names with no stage tag**, so three sequential calls (Bronze, Silver, Gold) overwrite each other. The function needs a `pipeline_stage: str` parameter, append-mode writes, and a `pipeline_stage` column on every persisted row.
 5. **Pipelines must use classic clusters with spot fallback, not serverless.** Project preference: predictability + scale.
-6. **Job cluster runtime must be `14.3.x-cpu-ml-scala2.12` (DBR 14.3 LTS ML)**, not the non-ML runtime. Otherwise tasks that load the registered model 400 on `s3://dbstorage-*` (see CLAUDE.md "Cluster prerequisites").
+6. **Job cluster runtime should be `17.3.x-cpu-ml-scala2.13` (DBR 17.3 LTS ML)**, not the non-ML runtime. 17.3 LTS ML is the current long-lived ML runtime target; 18.x ML runtimes exist but are shorter-lived non-LTS releases.
 7. **`condition_task` syntax must use `condition_task` with `left`, `op`, `right`** — not `if_else_condition_task`.
 8. **Bronze and Silver verification must be real DAG gates.** Downstream tasks depend on the verifier task, not on the pipeline refresh task.
 9. **Model retraining cannot rely on `training_rows` until the training code logs it.** The retrain gate compares a logged Gold data fingerprint/version against the current Gold table state.
@@ -205,7 +205,7 @@ resources:
       job_clusters:
         - job_cluster_key: shared_cluster
           new_cluster:
-            spark_version: "14.3.x-cpu-ml-scala2.12"   # DBR 14.3 LTS ML — required by load_from_registry
+            spark_version: "17.3.x-cpu-ml-scala2.13"   # DBR 17.3 LTS ML — current long-lived ML runtime target
             node_type_id: ${var.node_type_id}
             autoscale:
               min_workers: 1
@@ -1523,7 +1523,7 @@ databricks bundle deploy -t dev
 - `train_model` task receives DAB-passed parameters (verifies the C1 argv fix).
 - Model retraining runs only when the current Gold data fingerprint differs from the champion model metadata, or no champion exists.
 - Failed model release gates still block model persistence and registry promotion.
-- Job cluster `spark_version` is the DBR ML runtime (`14.3.x-cpu-ml-scala2.12` or later).
+- Job cluster `spark_version` is the DBR ML runtime (`17.3.x-cpu-ml-scala2.13` for the current LTS target).
 - `claim_type` remains deferred.
 
 ---
