@@ -146,6 +146,12 @@ observability fan-out:
   -> observe_gold     after run_gold_pipeline
 ```
 
+Failure semantics (explicit):
+
+- `verify_bronze` / `verify_silver` failure → halts downstream data path (real DAG gate). `observe_*` still runs because the pipeline itself produced events worth capturing on a failed run.
+- `check_new_data` raises on **zero-row Gold** → `should_retrain` and everything below it never evaluate; the job ends in failure. **Zero-row Gold is a pipeline failure, not a "skip retraining" scenario** — silent skip would mask data loss upstream.
+- `observe_*` task failures do **not** gate anything (intentional — observability is best-effort). However, an `observe_*` failure during a run that otherwise succeeded means you have lost diagnostic data for that run; surface it via job-level `email_notifications.on_failure`.
+
 ### Dev Fixture Loading Job (`load_sample_data`)
 
 ```text
@@ -204,6 +210,15 @@ resources:
             autoscale:
               min_workers: 1
               max_workers: 4
+
+      # Job-level notifications. Single block covers every task — verify_bronze,
+      # verify_silver, train_model, check_new_data, AND the best-effort observe_*
+      # tasks. Without this, a 2 AM verify_bronze failure or a silently dropped
+      # observe_gold run is invisible until someone manually inspects the run.
+      email_notifications:
+        on_failure:
+          - data-eng-oncall@example.com
+        no_alert_for_skipped_runs: true
 
       tasks:
         - task_key: run_bronze_pipeline
@@ -447,6 +462,10 @@ Behavior:
 - Verify Silver trusted/quarantine tables exist; expected row-count and diagnostic outputs are present.
 - Exit non-zero on failed quality checks.
 
+### `src/scripts/verify_gold.py` (deferred)
+
+There is intentionally **no** `verify_gold.py` in this orchestration cut. Gold quality is asserted implicitly by `decide_retrain()` / `check_new_data` — the fingerprint + row-count + column-list comparison against the champion's logged metadata is the de-facto Gold contract check (zero-row Gold raises; column drift forces retrain; fingerprint drift forces retrain). Add an explicit `verify_gold.py` only when a non-ML downstream consumer (e.g. dashboard, agent) creates a concrete Gold contract requirement that the retrain gate does not already cover.
+
 ### `src/scripts/build_analytics.py`
 
 Purpose:
@@ -473,39 +492,100 @@ Behavior:
 - Accept `--pipeline-stage` for `bronze | silver | gold` — passed through to the persistence call.
 - Call `write_observability_tables()` (extended; see Code Changes Required below).
 
+### `src/ml/retrain_gate.py` (module — NEW)
+
+Purpose:
+
+- Hold the retrain decision logic in a plain Python module so it can be **unit-tested locally without a notebook runtime or MLflow registry**.
+
+Public function:
+
+```python
+def decide_retrain(
+    spark,
+    gold_table: str,                  # e.g. "healthcare.gold.claim_features"
+    feature_columns: list[str],       # from src.ml.FEATURE_COLUMNS
+    registered_model_name: str,
+    champion_alias: str = "champion",
+    mlflow_client=None,               # injectable for tests
+) -> RetrainDecision:
+    ...
+```
+
+`RetrainDecision` is a frozen dataclass: `should_retrain: bool`, `reason: str`, `current_row_count: int`, `current_gold_version: int`, `current_fingerprint: str`, `champion_run_id: str | None`.
+
+Rules (unchanged from previous version):
+
+- If no champion exists → retrain.
+- If current fingerprint differs from champion fingerprint → retrain.
+- If feature column list differs from champion's logged columns → retrain.
+- If current row count is zero → **raise `ValueError`** (zero-row Gold is a pipeline failure, not a skip-retraining scenario).
+- Row count alone is **not** a retrain signal.
+
+The module is unit-testable with a fake MLflow client and an in-memory Spark Gold table.
+
 ### `src/notebooks/check_new_data.ipynb` (notebook — NEW)
 
 Purpose:
 
-- Decide whether model retraining is needed and publish the decision as task values.
+- Thin notebook driver: invoke `decide_retrain()`, persist decision to a Delta audit table, publish task values.
 
-Why a notebook: `dbutils.jobs.taskValues.set/get` is officially Python-notebook-only.
+Why a notebook (and not a script): `dbutils.jobs.taskValues.set/get` is officially Python-notebook-only. The notebook owns ONLY task-value publication and durability — no decision logic.
 
 Behavior:
 
-- Read current `healthcare.gold.claim_features` (table name from `base_parameters`).
-- Compute current training metadata:
-  - `training_row_count`
-  - Gold Delta table version (via `DESCRIBE HISTORY` LIMIT 1)
-  - feature column list (from `src/ml/__init__.py:FEATURE_COLUMNS`)
-  - deterministic data fingerprint from stable, non-PHI-safe identifiers and feature values (e.g. `pyspark.sql.functions.hash` over a sorted projection)
-- Fetch champion model with MLflow's alias API:
-  - `MlflowClient().get_model_version_by_alias(model_name, "champion")`
-- Read the champion run's logged metadata (`training_row_count`, `gold_table_version`, `training_data_fingerprint`, `feature_columns`).
-- Set task values:
-  - `should_retrain`: `"true"` or `"false"` (string literal — the condition_task uses string comparison)
-  - `reason`: short PHI-safe reason
-  - `current_training_row_count`
-  - `current_gold_version`
-  - `current_data_fingerprint`
+```python
+# cell 1 — params
+catalog = dbutils.widgets.get("catalog")
+gold_schema = dbutils.widgets.get("gold_schema")
+ml_schema = dbutils.widgets.get("ml_schema")
+registered_model_name = dbutils.widgets.get("registered_model_name")
+champion_alias = dbutils.widgets.get("champion_alias")
 
-Rules:
+# cell 2 — decide
+from src.ml.retrain_gate import decide_retrain
+from src.ml import FEATURE_COLUMNS
 
-- If no champion exists, retrain.
-- If current fingerprint differs from champion fingerprint, retrain.
-- If feature column list differs, retrain.
-- If current row count is zero, fail the notebook (raise) instead of skipping.
-- Do not use row count alone as the retrain signal.
+decision = decide_retrain(
+    spark=spark,
+    gold_table=f"{catalog}.{gold_schema}.claim_features",
+    feature_columns=list(FEATURE_COLUMNS),
+    registered_model_name=registered_model_name,
+    champion_alias=champion_alias,
+)
+
+# cell 3 — durable audit (decision is queryable across runs)
+spark.sql(f"""
+    INSERT INTO {catalog}.{ml_schema}.retrain_decisions
+    SELECT current_timestamp(), '{decision.should_retrain}',
+           '{decision.reason}', {decision.current_row_count},
+           {decision.current_gold_version}, '{decision.current_fingerprint}',
+           '{decision.champion_run_id or ""}'
+""")
+
+# cell 4 — publish task values for the condition_task
+dbutils.jobs.taskValues.set(key="should_retrain", value="true" if decision.should_retrain else "false")
+dbutils.jobs.taskValues.set(key="reason", value=decision.reason)
+dbutils.jobs.taskValues.set(key="current_training_row_count", value=str(decision.current_row_count))
+dbutils.jobs.taskValues.set(key="current_gold_version", value=str(decision.current_gold_version))
+dbutils.jobs.taskValues.set(key="current_data_fingerprint", value=decision.current_fingerprint)
+```
+
+`healthcare.ml.retrain_decisions` is created once by `setup_infrastructure` (DAB schema/table resource). Schema:
+
+| column | type |
+| --- | --- |
+| decided_at | timestamp |
+| should_retrain | string ("true" / "false") |
+| reason | string |
+| current_row_count | bigint |
+| current_gold_version | bigint |
+| current_fingerprint | string |
+| champion_run_id | string |
+
+The Delta audit table makes retrain decisions queryable (`SELECT * FROM healthcare.ml.retrain_decisions ORDER BY decided_at DESC LIMIT 10`) without trawling job task-value JSON.
+
+Important: the string literal `"true"` / `"false"` in the task-value `should_retrain` MUST exactly match the `condition_task` `right: "true"` literal — typo here silently routes every run to `skip_retraining`.
 
 ### `src/notebooks/skip_retraining.ipynb` (notebook — NEW)
 
@@ -637,7 +717,11 @@ The setup job runs once per environment.
   - `healthcare.ml`
 - Managed volume declared as a DAB resource in `resources/volumes/volumes.yml`:
   - `healthcare.bronze.raw_landing`
+- One audit table created by `grants.ipynb` (or a small `create_tables.ipynb` task) with `CREATE TABLE IF NOT EXISTS`:
+  - `healthcare.ml.retrain_decisions(decided_at TIMESTAMP, should_retrain STRING, reason STRING, current_row_count BIGINT, current_gold_version BIGINT, current_fingerprint STRING, champion_run_id STRING) USING DELTA` — written to by `check_new_data.ipynb` every run; read by humans to audit retrain decisions.
 - A small `src/notebooks/grants.ipynb` notebook task runs the one-time `GRANT` statements that DAB resource `permissions:` blocks cannot express directly (e.g. cross-schema grants for the cluster service principal).
+
+Idempotency note for `grants.ipynb`: SQL `GRANT` is idempotent by spec (granting the same privilege twice on the same object to the same principal is a no-op). Re-running the setup job is therefore safe. `REVOKE` of a grant that does not exist errors on some Databricks runtimes — wrap any `REVOKE` calls in `try/except` (or guard with a SHOW GRANTS check) so a partially-applied prior setup run does not block a re-run. Also: when a subsequent DAB deploy changes the `permissions:` block on a resource, DAB owns those grants and will reconcile them; only put grants that DAB **cannot** express into `grants.ipynb`.
 
 **Fallback:** if DAB-native schemas/volumes are blocked by workspace permissions, run the existing `src/notebooks/bootstrap_bronze_landing.ipynb` via a `notebook_task` in the setup job. Do not point DAB at `src/notebooks/bootstrap_bronze_landing.py` — that file does not exist.
 
@@ -821,15 +905,14 @@ services:
     manifest: services/infrastructure/load_sample_data/service.yml
 
   # ── Observability ─────────────────────────────────────────────────
-  # Observability is a registry-only "pseudo-service" (resource_type: script,
-  # entry_point.resource_key: null). It owns the `ops_*` tables but its
-  # build_observability.py is run as three parallel job tasks (one per
-  # pipeline stage) inside etl_ml_pipeline. The registry entry tracks
-  # ownership and dependencies; the DAB job owns task multiplicity.
-  observability:
-    type: script
-    manifest: services/observability/service.yml
-    depends_on: [etl_bronze, etl_silver, etl_gold]
+  # NOT a registry entry. build_observability.py is a job-task helper invoked
+  # three times in parallel (one per pipeline stage) inside etl_ml_pipeline,
+  # not an independent service with its own dependency graph. Ownership of
+  # the `ops_*` tables is tracked via TBLPROPERTIES comments on the tables
+  # themselves (set in build_observability.py at first write) and a docstring
+  # in src/scripts/build_observability.py — not in this registry. This keeps
+  # the validator from special-casing `resource_type: script` services that
+  # have no DAB resource.
 
   # ── Future Services (uncomment when implemented) ─────────────────
   # rag_indexing:
@@ -885,6 +968,7 @@ Existing service implementation files should not be modified. The registry and o
 4. **DAG check**: `services/manifest.yml` `depends_on` graph contains no cycles.
 5. **Registry vs DAB job consistency**: for each service that participates in a job's task graph, the registry's `depends_on` for that service is a **subset** of the actual DAB job task `depends_on` chain leading to it. The registry may claim fewer dependencies than the DAB job (registry is a logical view); it must never claim more.
 6. **Health-check entry point exists**: if `health_check.type == script`, the file at `health_check.entry_point` exists.
+7. **Relative paths inside resource YAMLs resolve to real files** (catches the path-rewriting tax — see **Path-rewriting checklist**). For every YAML matched by the `include:` globs, parse the file and check that every `python_file:`, `notebook_path:`, `source_code_path:`, `path:` (notebook libraries), and `libraries[].glob.include:` value, when resolved relative to the YAML file's location, points to an existing file or directory in the repo. `databricks bundle validate` does **not** flag dangling refs of this kind — only `databricks bundle deploy` does. This check fails fast locally, before a deploy attempt.
 
 The validator does not need to call out to the workspace; it operates entirely on local files plus the JSON output of `databricks bundle validate`.
 
@@ -892,7 +976,9 @@ The validator does not need to call out to the workspace; it operates entirely o
 
 ### Python Verification Contract
 
-Pipelines, apps, and serving endpoints are deployed by Databricks resources, so they should not be forced into a Python `setup -> run -> observe` base class. The Python framework only standardizes service configuration and verifier output for scripts/notebook drivers.
+Pipelines, apps, and serving endpoints are deployed by Databricks resources, so they should not be forced into a Python `setup -> run -> observe` base class. The Python framework only standardizes verifier output for scripts/notebook drivers.
+
+**Scope discipline**: ship the bare minimum (`HealthCheckResult`) now. The richer `ServiceConfig` + `ServiceVerifier` Protocol are deferred until the **second non-pipeline service type** actually exists (e.g. when ml_serving or rag_indexing lands). Designing those abstractions before any consumer drives them is speculative — the shape will likely need rework once a real second consumer arrives.
 
 ```python
 # src/framework/service.py
@@ -900,7 +986,7 @@ Pipelines, apps, and serving endpoints are deployed by Databricks resources, so 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -921,60 +1007,43 @@ class HealthCheckResult:
         """Return a single PHI-safe summary line for DAB task logs."""
         status = "OK" if self.healthy else "FAIL"
         return f"{status}: {self.service_name} - {self.message}"
-
-
-@dataclass(frozen=True, slots=True)
-class ServiceConfig:
-    """Base config loaded from a service manifest's config section."""
-
-    service_name: str
-    service_type: str
-    catalog: str = "healthcare"
-
-
-class ServiceVerifier(Protocol):
-    """Optional protocol for script/notebook health checks."""
-
-    def health_check(self) -> HealthCheckResult:
-        """Return structured health status. Must be PHI-safe."""
-
-    def verify(self) -> HealthCheckResult:
-        """Post-run verification. Must be PHI-safe."""
 ```
-
-Existing scripts adopt this contract incrementally by returning or printing `HealthCheckResult.summary_line()` while keeping their current behavior. The output matches the existing Script & Notebook Contract: a single PHI-safe line like `OK: bronze tables=5 rows={...}`.
 
 ```python
 # src/framework/__init__.py
 
-from src.framework.service import HealthCheckResult, ServiceConfig, ServiceVerifier
+from src.framework.service import HealthCheckResult
 
-__all__ = ["HealthCheckResult", "ServiceConfig", "ServiceVerifier"]
+__all__ = ["HealthCheckResult"]
 ```
+
+Existing scripts adopt this contract by printing `HealthCheckResult(...).summary_line()` and exiting non-zero on failure. The output matches the existing Script & Notebook Contract: a single PHI-safe line like `OK: bronze tables=5 rows={...}`.
+
+**Deferred (introduce when second non-pipeline service lands):**
+
+- `ServiceConfig` dataclass — base config loaded from a service manifest's `config:` block.
+- `ServiceVerifier` Protocol with `health_check()` + `verify()` methods.
+
+Both are easy to add later without breaking `HealthCheckResult` consumers.
 
 ---
 
-### Service-Aware Observability
+### Service-Aware Observability (deferred)
 
-The current `write_observability_tables()` writes per-pipeline-stage data with a `pipeline_stage` column. The framework extends this to a service-aware model:
+The Phase 1 deliverable is **stage-aware** observability: `write_observability_tables()` gains a `pipeline_stage` parameter and every persisted row carries a `pipeline_stage` column (`bronze | silver | gold`). Existing tables (`ops_pipeline_updates`, `ops_expectation_metrics`, `ops_user_actions`, `ops_latest_failures`) keep their schema and add the column.
+
+A wider **service-aware** schema (`ops_service_health`, `ops_service_metrics`, `ops_service_events`, `ops_service_failures` with `service_name`/`service_type`/`stage` columns) is **deferred** until a second non-pipeline service actually emits metrics. Designing that schema before agent/serving/app concretely produce telemetry will likely need rework. Add the wider tables when the first consumer for them appears.
+
+For now the table set stays:
 
 ```text
-Current:   pipeline_stage = 'bronze' | 'silver' | 'gold'
-Extended:  service_name   = 'etl_bronze' | 'etl_silver' | 'etl_gold' | 'rag_indexing' | 'ml_serving' | ...
-           service_type   = 'pipeline' | 'model_serving' | 'app' | ...
-           stage          = 'bronze' | 'silver' | 'gold' | 'rag' | 'inference' | ...
+healthcare.analytics.ops_pipeline_updates       (pipeline_stage column added)
+healthcare.analytics.ops_expectation_metrics    (pipeline_stage column added)
+healthcare.analytics.ops_user_actions           (pipeline_stage column added)
+healthcare.analytics.ops_latest_failures        (pipeline_stage column added)
 ```
 
-For backward compatibility, `pipeline_stage` is retained as an alias for `stage` in pipeline services. New tables use the wider schema:
-
-| Table | Purpose |
-| --- | --- |
-| `ops_service_health` | Health check results per service per run (replaces ad hoc verify outputs) |
-| `ops_service_metrics` | Numeric metrics per service (row counts, latencies, model scores) |
-| `ops_service_events` | Event records per service (pipeline event logs for pipelines; job, app, serving, or custom health events for other services) |
-| `ops_service_failures` | Unified failure tracking across service types |
-
-The existing `ops_pipeline_updates`, `ops_expectation_metrics`, `ops_user_actions`, and `ops_latest_failures` tables continue to work for pipeline services. The new `ops_service_*` tables are additive. Pipeline services are populated from Lakeflow event logs; serving, app, and agent services use their own health checks, inference tables, HTTP health endpoints, job run metadata, or application metrics.
+Non-pipeline services, when they arrive, can either extend these tables (re-using the column name `stage` if `pipeline_stage` is too narrow) or introduce service-specific tables — that decision waits until a real consumer constrains it.
 
 ---
 
@@ -1014,9 +1083,10 @@ homeprojectabacus/
         service.yml
         resources/
           training.job.yml              # The etl_ml_pipeline job with ML retrain gate
-    observability/
-      service.yml
-      resources/                         # (observability scripts are in src/scripts/)
+    # NOTE: observability is NOT a service directory. build_observability.py
+    # is a job-task helper in src/scripts/, invoked 3x in parallel by
+    # etl_ml_pipeline. Ownership of ops_* tables is tracked via
+    # TBLPROPERTIES comments + the script's module docstring.
     # ── Future: uncomment when implementing ──
     # rag/
     #   indexing/
@@ -1102,17 +1172,13 @@ variables:
   ml_schema: { default: "ml" }
   node_type_id: { default: "i3.xlarge" }
   # `model_version` is the registered-model version that ml_serving's
-  # served_entities binds to. It must be supplied at deploy time. Two options:
-  #   1. CI-resolved: a deploy script queries MLflow registry for the
-  #      `champion` alias and sets `--var=model_version=<n>` on
-  #      `databricks bundle deploy`. Recommended for prod.
-  #   2. DAB lookup variable (preview): bind to the registered model
-  #      alias if/when DAB exposes a registered_model_version lookup.
-  # No safe `default:` exists — leaving it unset forces the deploy step
-  # to provide a concrete version, preventing accidental serving of an
-  # arbitrary historical version.
+  # served_entities binds to. dev defaults to "1" so iterative deploys
+  # don't require querying MLflow each time. prod has NO default — the
+  # deploy step must resolve the champion alias and pass
+  # `--var=model_version=<n>`. This prevents accidental serving of an
+  # arbitrary historical version in production while keeping dev cheap.
   model_version:
-    description: "MLflow registered-model version backing claim_denial_model serving (champion). Required at deploy time."
+    description: "MLflow registered-model version backing claim_denial_model serving (champion). Required at deploy time for prod; defaulted in dev."
 
 targets:
   dev:
@@ -1122,12 +1188,17 @@ targets:
       profile: dev
     variables:
       catalog: "healthcare"
+      model_version: "1"          # dev shortcut — overwrite via --var if needed
   prod:
     mode: production
     workspace:
       profile: prod
     variables:
       catalog: "healthcare"
+      # model_version: REQUIRED at deploy time, no default. CI must run:
+      #   v=$(databricks api get /api/2.0/mlflow/registered-models/get-by-alias \
+      #        ... --jq '.model_version.version')
+      #   databricks bundle deploy -t prod --var=model_version=$v
 ```
 
 When a new service (e.g., RAG indexing) is added:
@@ -1363,7 +1434,7 @@ The phase order is constrained by the prerequisites above. Phase 0 establishes t
 
 - Create `services/manifest.yml` with the initial ETL + ML services registered.
 - Create `src/framework/__init__.py` and `src/framework/service.py` with `HealthCheckResult`, `ServiceConfig`, and optional `ServiceVerifier`.
-- Create service manifests: `services/etl/bronze/service.yml`, `services/etl/silver/service.yml`, `services/etl/gold/service.yml`, `services/ml/training/service.yml`, `services/infrastructure/setup/service.yml`, `services/infrastructure/load_sample_data/service.yml`, `services/observability/service.yml`.
+- Create service manifests: `services/etl/bronze/service.yml`, `services/etl/silver/service.yml`, `services/etl/gold/service.yml`, `services/ml/training/service.yml`, `services/infrastructure/setup/service.yml`, `services/infrastructure/load_sample_data/service.yml`. Observability is **not** a service — `build_observability.py` is a job-task helper.
 - Create empty `services/<group>/<name>/resources/` directories so Phase 3 can drop DAB resource YAMLs straight in.
 - Create the `src/framework/validate_manifests.py` validator script (see **Manifest Validator Contract** below).
 - Restructure `databricks.yml` to use the multi-pattern `include:` block shown in **Modular DAB Bundle Structure** (one explicit glob per depth — DAB `**` only matches a single level). Plus shared `resources/schemas/` and `resources/volumes/`.
@@ -1374,15 +1445,16 @@ The phase order is constrained by the prerequisites above. Phase 0 establishes t
 
 - `scripts/train_denial_model.py:275` argv passthrough fix.
 - MLflow training metadata logging in `src/ml/train.py` (row count, Gold version, fingerprint, feature columns, target column, release gate result).
-- `src/analytics/observability_assets.py` — add `pipeline_stage` parameter, append-mode writes, stage column; add `service_name` and `service_type` columns to new `ops_service_*` tables (existing `ops_pipeline_*` tables unchanged for backward compatibility).
-- Add unit tests for: argv passthrough; metadata logging; stage-aware observability output schema; service-aware observability schema.
+- `src/ml/retrain_gate.py` — new module exposing `decide_retrain()` returning `RetrainDecision`. Unit-tested with a fake MLflow client and an in-memory Gold table. The notebook in Phase 2 is a thin driver over this module.
+- `src/analytics/observability_assets.py` — add `pipeline_stage` parameter, append-mode writes, stage column. (Wider `ops_service_*` schema deferred until a non-pipeline service emits metrics.)
+- Add unit tests for: argv passthrough; metadata logging; stage-aware observability output schema; `decide_retrain()` decision logic across all four rule branches (no champion, fingerprint diff, column diff, zero rows raises).
 
 ### Phase 2 — Script entry points
 
-- Create `src/scripts/{load_sample_data,verify_bronze,verify_silver,build_analytics,build_observability}.py`. Verification scripts use `HealthCheckResult` and may implement the optional `ServiceVerifier` protocol.
-- Create `src/notebooks/{check_new_data,skip_retraining,grants}.ipynb`.
+- Create `src/scripts/{load_sample_data,verify_bronze,verify_silver,build_analytics,build_observability}.py`. Verification scripts print a `HealthCheckResult.summary_line()` and exit non-zero on failure.
+- Create `src/notebooks/{check_new_data,skip_retraining,grants}.ipynb`. `check_new_data.ipynb` is a thin driver over `src/ml/retrain_gate.decide_retrain()`; it persists the decision to `healthcare.ml.retrain_decisions` and publishes task values. No decision logic lives in the notebook.
 - Keep setup/reset/exploration/demo notebooks manual.
-- Add unit tests where local fakes are practical (especially for `check_new_data`'s should-retrain logic).
+- Add unit tests where local fakes are practical — `decide_retrain()` is the most valuable target since it is the one piece of non-trivial new logic.
 
 ### Phase 3 — Bundle skeleton
 
@@ -1441,7 +1513,10 @@ databricks bundle deploy -t dev
 - Bronze and Silver verification failures stop downstream tasks (real DAG gates).
 - Observability captures each pipeline stage separately: `SELECT pipeline_stage, COUNT(*) FROM healthcare.analytics.ops_pipeline_updates GROUP BY pipeline_stage` returns three rows.
 - Service-aware observability captures each active pipeline service immediately and supports non-pipeline services through service-specific health/metrics sources.
-- Verification scripts return `HealthCheckResult` with a PHI-safe summary line.
+- Verification scripts print `HealthCheckResult.summary_line()` to stdout and exit non-zero on failure.
+- `python -m src.framework.validate_manifests` check #7 catches dangling `python_file` / `notebook_path` / `source_code_path` / `libraries[].glob.include` references inside any service resource YAML — verified by deliberately breaking one path and confirming the validator fails.
+- `healthcare.ml.retrain_decisions` accumulates one row per `etl_ml_pipeline` run; `SELECT decided_at, should_retrain, reason FROM healthcare.ml.retrain_decisions ORDER BY decided_at DESC LIMIT 5` returns recent decisions.
+- `etl_ml_pipeline` job has `email_notifications.on_failure` set; a deliberate verifier failure produces an email.
 - `databricks bundle validate` reports a non-empty `Resources:` list for every target — confirms the per-depth `include:` patterns (`services/*/resources/*.yml`, `services/*/*/resources/*.yml`, `services/*/*/*/resources/*.yml`) successfully resolve every active service resource file. A single `services/**/resources/*.yml` does **not** work (DAB CLI `**` matches one directory level only — issue #4831).
 - `python -m src.framework.validate_manifests` confirms custom `service.yml` files and `services/manifest.yml` are internally consistent.
 - The dependency graph in `services/manifest.yml` matches the DAB job task `depends_on` structure.
