@@ -1,0 +1,8 @@
+service:
+  name: setup_infrastructure
+  type: job
+  version: "1.0.0"
+  description: One-time grants and ML audit table setup job.
+entry_point:
+  resource_key: setup_infrastructure
+  resource_type: jobs

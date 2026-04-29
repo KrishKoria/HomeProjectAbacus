@@ -1,0 +1,8 @@
+service:
+  name: etl_gold
+  type: pipeline
+  version: "1.0.0"
+  description: Gold claim feature engineering pipeline.
+entry_point:
+  resource_key: gold_pipeline
+  resource_type: pipelines

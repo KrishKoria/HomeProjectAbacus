@@ -1,0 +1,8 @@
+service:
+  name: load_sample_data
+  type: job
+  version: "1.0.0"
+  description: Development fixture loader for the Bronze landing volume.
+entry_point:
+  resource_key: load_sample_data
+  resource_type: jobs
