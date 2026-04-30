@@ -67,6 +67,22 @@ Output table: healthcare.bronze.policies
 Cluster by  : path (document-level lookups by file path)
 """
 
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Final
+
+_PIPELINE_PATH: Final[Path] = Path(
+    globals().get("__file__", sys._getframe().f_code.co_filename)
+).resolve()
+_ETL_ROOT: Final[Path] = _PIPELINE_PATH.parents[2]
+_PROJECT_ROOT: Final[Path] = _ETL_ROOT.parent
+for _path in (_PROJECT_ROOT, _ETL_ROOT):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+
+
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
