@@ -12,6 +12,7 @@ ANALYTICS_OBSERVABILITY_TABLES: Final[tuple[str, ...]] = (
     "ops_expectation_metrics",
     "ops_user_actions",
     "ops_latest_failures",
+    "ops_pipeline_refresh_plans",
 )
 
 FAILURE_DIAGNOSTIC_IDS: Final[dict[str, str]] = {
@@ -234,6 +235,50 @@ def build_latest_failures(dataframe):
     return failure_rows.withColumn("diagnostic_id", F.coalesce(mapping_expr[F.col("dataset")], F.lit(latest_failure_diagnostic_id("unknown"))))
 
 
+def build_refresh_plans(dataframe):
+    """Shape refresh planning telemetry from ``planning_information`` event-log rows."""
+    from pyspark.sql import functions as F
+    from pyspark.sql.types import StringType
+
+    origin_update_id = _nested_event_log_field(dataframe, "origin", "update_id")
+    origin_pipeline_id = _nested_event_log_field(dataframe, "origin", "pipeline_id")
+    details_update_id = _nested_event_log_field(dataframe, "details", "update_id")
+    planning_flow_name = _nested_event_log_path(dataframe, "details", "planning_information.flow_name")
+    planning_dataset = _nested_event_log_path(dataframe, "details", "planning_information.dataset_name")
+    planning_strategy = _nested_event_log_path(dataframe, "details", "planning_information.strategy")
+
+    _REFRESH_STRATEGY_KEYWORDS: Final[dict[str, str]] = {
+        "FULL_RECOMPUTE": "FULL_RECOMPUTE",
+        "ROW_BASED": "ROW_BASED",
+        "APPEND_ONLY": "APPEND_ONLY",
+        "GROUP_AGGREGATE": "GROUP_AGGREGATE",
+        "NO_OP": "NO_OP",
+    }
+
+    def _extract_strategy(raw_message: str | None) -> str | None:
+        if raw_message is None:
+            return None
+        upper = raw_message.upper()
+        for keyword in _REFRESH_STRATEGY_KEYWORDS:
+            if keyword in upper:
+                return keyword
+        return None
+
+    extract_udf = F.udf(_extract_strategy, StringType())
+
+    return (
+        dataframe.where(F.col("event_type") == "planning_information")
+        .select(
+            F.col("timestamp"),
+            F.coalesce(origin_update_id, details_update_id).alias("update_id"),
+            F.coalesce(origin_pipeline_id, F.lit(None).cast("string")).alias("pipeline_id"),
+            F.coalesce(planning_flow_name, planning_dataset, F.lit(None).cast("string")).alias("dataset_or_flow"),
+            extract_udf(F.col("message")).alias("refresh_technique"),
+            F.col("message").alias("planner_message"),
+        )
+    )
+
+
 def write_observability_tables(
     spark,
     pipeline_id: str | None = None,
@@ -259,6 +304,7 @@ def write_observability_tables(
         "ops_expectation_metrics": build_expectation_metrics(event_log_df),
         "ops_user_actions": build_user_actions(event_log_df),
         "ops_latest_failures": build_latest_failures(event_log_df),
+        "ops_pipeline_refresh_plans": build_refresh_plans(event_log_df),
     }
 
     def persist_one(item: tuple[str, object]) -> tuple[str, str]:
@@ -299,6 +345,7 @@ __all__ = [
     "build_expectation_metrics",
     "build_latest_failures",
     "build_pipeline_updates",
+    "build_refresh_plans",
     "build_user_actions",
     "event_log_bridge_sql",
     "latest_failure_diagnostic_id",

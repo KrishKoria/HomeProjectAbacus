@@ -37,10 +37,27 @@ def main(argv: list[str] | None = None) -> int:
         trusted = spark.table(silver_table_name(args.catalog, dataset, args.silver_schema))
         quarantined = spark.table(quarantine_table_name(args.catalog, dataset, args.quarantine_schema))
         trusted_count = int(trusted.count())
+        quarantine_count = int(quarantined.count())
+        total_count = trusted_count + quarantine_count
+
         if trusted_count <= 0 and dataset == "claims":
             print(HealthCheckResult("silver", False, "trusted_claims_empty").summary_line())
             return 1
-        trusted_counts[dataset] = trusted_count + int(quarantined.count())
+
+        if dataset == "claims" and total_count > 0:
+            quarantine_ratio = quarantine_count / total_count
+            if quarantine_ratio > 0.50:
+                print(
+                    HealthCheckResult(
+                        "silver",
+                        False,
+                        f"claims_quarantine_ratio_exceeded quarantine={quarantine_count} "
+                        f"trusted={trusted_count} ratio={quarantine_ratio:.4f}",
+                    ).summary_line()
+                )
+                return 1
+
+        trusted_counts[dataset] = total_count
 
     write_quality_assets(
         spark,

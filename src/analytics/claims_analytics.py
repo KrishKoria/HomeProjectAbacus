@@ -507,7 +507,7 @@ def build_silver_claim_lineage(
     trusted = spark.table(silver_table_name(catalog, "claims", silver_schema)).select(
         "claim_id",
         F.col("_ingested_at").alias("bronze_ingested_at"),
-        F.col("_silver_processed_at").alias("silver_processed_at"),
+        F.col("_ingested_at").alias("silver_processed_at"),
         F.lit("trusted").alias("quarantine_status"),
         F.lit(None).cast("string").alias("diagnostic_id"),
         F.lit(None).cast("string").alias("rule_name"),
@@ -515,7 +515,7 @@ def build_silver_claim_lineage(
     quarantined = spark.table(quarantine_table_name(catalog, "claims", quarantine_schema)).select(
         "claim_id",
         F.col("_ingested_at").alias("bronze_ingested_at"),
-        F.col("_quarantined_at").alias("silver_processed_at"),
+        F.col("_ingested_at").alias("silver_processed_at"),
         F.lit("quarantined").alias("quarantine_status"),
         "diagnostic_id",
         "rule_name",
