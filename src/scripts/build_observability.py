@@ -2,6 +2,17 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
+from pathlib import Path
+from typing import Final
+
+
+_SCRIPT_PATH: Final[Path] = Path(
+    globals().get("__file__", sys._getframe().f_code.co_filename)
+).resolve()
+PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.analytics.observability_assets import write_observability_tables
 from src.framework import HealthCheckResult
@@ -49,4 +60,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    _rc = main()
+    if _rc != 0:
+        raise SystemExit(_rc)
