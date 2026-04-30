@@ -11,7 +11,7 @@ resources:
 
       email_notifications:
         on_failure:
-          - krishkoria2004@gmail.com
+          - krishkoria.work@gmail.com
         no_alert_for_skipped_runs: true
 
       environments:
@@ -160,9 +160,11 @@ resources:
           spark_python_task:
             python_file: ../../../../scripts/train_denial_model.py
             parameters:
-              # Use no-tune for the first paid validation.
-              # Restore --tune only after the full deployment path works once.
               - --tune
+              - --optuna-trials
+              - "50"
+              - --random-seed
+              - "42"
               - --catalog
               - ${var.catalog}
               - --gold-table
