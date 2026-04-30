@@ -379,10 +379,17 @@ class BundleContractTests(unittest.TestCase):
             (PROJECT_ROOT / "services" / "infrastructure" / "load_sample_data" / "resources" / "load_sample_data.job.yml").exists()
         )
 
-    def test_gcp_clusters_do_not_request_local_ssd_quota(self) -> None:
-        for path in (PROJECT_ROOT / "services").rglob("*.yml"):
+    def test_gcp_clusters_attach_local_ssd_for_supported_n2_compute(self) -> None:
+        cluster_files = (
+            PROJECT_ROOT / "services" / "infrastructure" / "setup" / "resources" / "setup_infrastructure.job.yml",
+            PROJECT_ROOT / "services" / "ml" / "training" / "resources" / "training.job.yml",
+            PROJECT_ROOT / "services" / "etl" / "bronze" / "resources" / "bronze.pipeline.yml",
+            PROJECT_ROOT / "services" / "etl" / "silver" / "resources" / "silver.pipeline.yml",
+            PROJECT_ROOT / "services" / "etl" / "gold" / "resources" / "gold.pipeline.yml",
+        )
+        for path in cluster_files:
             with self.subTest(path=path.name):
-                self.assertNotIn("local_ssd_count", path.read_text(encoding="utf-8"))
+                self.assertIn("local_ssd_count: 1", path.read_text(encoding="utf-8"))
 
     def test_bundle_keeps_unity_catalog_schema_names_unprefixed(self) -> None:
         source = (PROJECT_ROOT / "databricks.yml").read_text(encoding="utf-8")
