@@ -447,26 +447,26 @@ class BundleContractTests(unittest.TestCase):
                 )
                 self.assertLess(source.index("sys.path.insert(0, str(PROJECT_ROOT))"), first_src_import)
 
-    def test_lakeflow_pipeline_entrypoints_bootstrap_etl_common_imports(self) -> None:
+    def test_lakeflow_pipelines_install_project_editable_for_common_imports(self) -> None:
+        pipeline_yml_files = (
+            PROJECT_ROOT / "services" / "etl" / "bronze" / "resources" / "bronze.pipeline.yml",
+            PROJECT_ROOT / "services" / "etl" / "silver" / "resources" / "silver.pipeline.yml",
+            PROJECT_ROOT / "services" / "etl" / "gold" / "resources" / "gold.pipeline.yml",
+        )
+        for path in pipeline_yml_files:
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertIn("environment:", source)
+                self.assertIn("dependencies:", source)
+                self.assertIn("--editable ${workspace.file_path}", source)
+
         for path in sorted((PROJECT_ROOT / "ETL" / "pipelines").rglob("*.py")):
             source = path.read_text(encoding="utf-8")
             if "from common." not in source and "import common" not in source:
                 continue
-
             with self.subTest(path=path.relative_to(PROJECT_ROOT)):
-                self.assertIn('globals().get("__file__", sys._getframe().f_code.co_filename)', source)
-                self.assertIn("_ETL_ROOT: Final[Path] = _PIPELINE_PATH.parents[2]", source)
-                self.assertIn("_PROJECT_ROOT: Final[Path] = _ETL_ROOT.parent", source)
-                self.assertIn("for _path in (_PROJECT_ROOT, _ETL_ROOT):", source)
-                first_common_import = min(
-                    index
-                    for index in (
-                        source.find("from common."),
-                        source.find("import common"),
-                    )
-                    if index != -1
-                )
-                self.assertLess(source.index("sys.path.insert(0, str(_path))"), first_common_import)
+                self.assertNotIn("sys.path.insert(0, str(_path))", source)
+                self.assertNotIn("_PIPELINE_PATH", source)
 
     def test_setup_entrypoint_supports_databricks_exec_without_file_global(self) -> None:
         path = PROJECT_ROOT / "src" / "scripts" / "setup_retrain_decisions.py"
