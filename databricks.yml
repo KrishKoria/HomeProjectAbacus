@@ -49,3 +49,68 @@ targets:
       root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     variables:
       catalog: healthcare
+    resources:
+      pipelines:
+        bronze_pipeline:
+          serverless: false
+          photon: false
+          configuration:
+            pipelines.clusterShutdown.delay: "0s"
+          clusters:
+            - label: default
+              node_type_id: ${var.node_type_id}
+              driver_node_type_id: ${var.node_type_id}
+              num_workers: 0
+              gcp_attributes:
+                availability: ON_DEMAND_GCP
+                local_ssd_count: 1
+                zone_id: AUTO
+              spark_conf:
+                spark.databricks.cluster.profile: singleNode
+                spark.master: local[*]
+              custom_tags:
+                ResourceClass: SingleNode
+                Project: homeprojectabacus
+                Environment: ${bundle.target}
+        silver_pipeline:
+          serverless: false
+          photon: false
+          configuration:
+            pipelines.clusterShutdown.delay: "0s"
+          clusters:
+            - label: default
+              node_type_id: ${var.node_type_id}
+              driver_node_type_id: ${var.node_type_id}
+              num_workers: 0
+              gcp_attributes:
+                availability: ON_DEMAND_GCP
+                local_ssd_count: 1
+                zone_id: AUTO
+              spark_conf:
+                spark.databricks.cluster.profile: singleNode
+                spark.master: local[*]
+              custom_tags:
+                ResourceClass: SingleNode
+                Project: homeprojectabacus
+                Environment: ${bundle.target}
+        gold_pipeline:
+          serverless: false
+          photon: false
+          configuration:
+            pipelines.clusterShutdown.delay: "0s"
+          clusters:
+            - label: default
+              node_type_id: ${var.node_type_id}
+              driver_node_type_id: ${var.node_type_id}
+              num_workers: 0
+              gcp_attributes:
+                availability: ON_DEMAND_GCP
+                local_ssd_count: 1
+                zone_id: AUTO
+              spark_conf:
+                spark.databricks.cluster.profile: singleNode
+                spark.master: local[*]
+              custom_tags:
+                ResourceClass: SingleNode
+                Project: homeprojectabacus
+                Environment: ${bundle.target}

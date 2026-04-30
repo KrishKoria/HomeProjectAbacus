@@ -379,17 +379,38 @@ class BundleContractTests(unittest.TestCase):
             (PROJECT_ROOT / "services" / "infrastructure" / "load_sample_data" / "resources" / "load_sample_data.job.yml").exists()
         )
 
-    def test_gcp_clusters_attach_local_ssd_for_supported_n2_compute(self) -> None:
-        cluster_files = (
+    def test_gcp_job_clusters_attach_local_ssd_for_supported_n2_compute(self) -> None:
+        job_files = (
             PROJECT_ROOT / "services" / "infrastructure" / "setup" / "resources" / "setup_infrastructure.job.yml",
             PROJECT_ROOT / "services" / "ml" / "training" / "resources" / "training.job.yml",
+        )
+        for path in job_files:
+            with self.subTest(path=path.name):
+                self.assertIn("local_ssd_count: 1", path.read_text(encoding="utf-8"))
+
+    def test_dev_lakeflow_pipelines_use_serverless_compute(self) -> None:
+        pipeline_files = (
             PROJECT_ROOT / "services" / "etl" / "bronze" / "resources" / "bronze.pipeline.yml",
             PROJECT_ROOT / "services" / "etl" / "silver" / "resources" / "silver.pipeline.yml",
             PROJECT_ROOT / "services" / "etl" / "gold" / "resources" / "gold.pipeline.yml",
         )
-        for path in cluster_files:
+        for path in pipeline_files:
+            source = path.read_text(encoding="utf-8")
             with self.subTest(path=path.name):
-                self.assertIn("local_ssd_count: 1", path.read_text(encoding="utf-8"))
+                self.assertIn("serverless: true", source)
+                self.assertNotIn("clusters:", source)
+                self.assertNotIn("local_ssd_count", source)
+
+    def test_prod_lakeflow_pipeline_overrides_keep_classic_local_ssd_compute(self) -> None:
+        source = (PROJECT_ROOT / "databricks.yml").read_text(encoding="utf-8")
+
+        self.assertIn("prod:", source)
+        self.assertIn("bronze_pipeline:", source)
+        self.assertIn("silver_pipeline:", source)
+        self.assertIn("gold_pipeline:", source)
+        self.assertEqual(source.count("serverless: false"), 3)
+        self.assertEqual(source.count("local_ssd_count: 1"), 3)
+        self.assertEqual(source.count('pipelines.clusterShutdown.delay: "0s"'), 3)
 
     def test_bundle_keeps_unity_catalog_schema_names_unprefixed(self) -> None:
         source = (PROJECT_ROOT / "databricks.yml").read_text(encoding="utf-8")
