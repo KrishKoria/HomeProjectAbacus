@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -160,7 +161,7 @@ class RetrainGateTests(unittest.TestCase):
     def test_retrain_decision_summary_line(self) -> None:
         from src.ml.retrain_gate import RetrainDecision
 
-        decision = RetrainDecision.should_retrain_true(
+        decision = RetrainDecision.retrain(
             reason="data fingerprint changed",
             current_row_count=95000,
             current_gold_version=3,
@@ -168,8 +169,13 @@ class RetrainGateTests(unittest.TestCase):
             champion_run_id="run-1",
         )
         self.assertIn("RETRAIN", decision.summary_line())
+        self.assertEqual(decision.decision_status, "retrain")
+        self.assertTrue(decision.should_retrain)
 
-    def test_decide_retrain_returns_true_when_no_champion_exists(self) -> None:
+    def test_decide_retrain_returns_retrain_when_no_champion_exists(self) -> None:
+        from mlflow.exceptions import MlflowException
+        from mlflow.protos.databricks_pb2 import RESOURCE_DOES_NOT_EXIST
+
         from src.ml.retrain_gate import decide_retrain
 
         fake_spark = mock.MagicMock()
@@ -183,9 +189,14 @@ class RetrainGateTests(unittest.TestCase):
                 feature_columns=["a", "b"],
                 registered_model_name="healthcare.ml.claim_denial_model",
                 champion_alias="champion",
-                mlflow_client=mock.MagicMock(get_model_version_by_alias=mock.MagicMock(side_effect=RuntimeError("missing"))),
+                mlflow_client=mock.MagicMock(
+                    get_model_version_by_alias=mock.MagicMock(
+                        side_effect=MlflowException("Not found", RESOURCE_DOES_NOT_EXIST)
+                    )
+                ),
             )
 
+        self.assertEqual(decision.decision_status, "retrain")
         self.assertTrue(decision.should_retrain)
         self.assertEqual(decision.reason, "no champion model found")
 
@@ -212,7 +223,7 @@ class RetrainGateTests(unittest.TestCase):
         fake_client = mock.MagicMock()
         fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
         fake_client.get_run.return_value = SimpleNamespace(
-            data=SimpleNamespace(params={"training_data_fingerprint": "old"})
+            data=SimpleNamespace(params={"training_data_fingerprint": "old", "training_row_count": "1000"})
         )
         with (
             mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="new"),
@@ -227,6 +238,7 @@ class RetrainGateTests(unittest.TestCase):
                 mlflow_client=fake_client,
             )
 
+        self.assertEqual(decision.decision_status, "retrain")
         self.assertTrue(decision.should_retrain)
         self.assertEqual(decision.reason, "data fingerprint changed")
 
@@ -237,7 +249,7 @@ class RetrainGateTests(unittest.TestCase):
         fake_client = mock.MagicMock()
         fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
         fake_client.get_run.return_value = SimpleNamespace(
-            data=SimpleNamespace(params={"training_data_fingerprint": "same"})
+            data=SimpleNamespace(params={"training_data_fingerprint": "same", "training_row_count": "1000"})
         )
         with (
             mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="same"),
@@ -252,6 +264,7 @@ class RetrainGateTests(unittest.TestCase):
                 mlflow_client=fake_client,
             )
 
+        self.assertEqual(decision.decision_status, "retrain")
         self.assertTrue(decision.should_retrain)
         self.assertEqual(decision.reason, "feature columns changed")
 
@@ -262,7 +275,7 @@ class RetrainGateTests(unittest.TestCase):
         fake_client = mock.MagicMock()
         fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
         fake_client.get_run.return_value = SimpleNamespace(
-            data=SimpleNamespace(params={"training_data_fingerprint": "same"})
+            data=SimpleNamespace(params={"training_data_fingerprint": "same", "training_row_count": "1000"})
         )
         with (
             mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="same"),
@@ -277,6 +290,7 @@ class RetrainGateTests(unittest.TestCase):
                 mlflow_client=fake_client,
             )
 
+        self.assertEqual(decision.decision_status, "retrain")
         self.assertTrue(decision.should_retrain)
         self.assertEqual(decision.reason, "champion feature_columns metadata missing")
 
@@ -287,7 +301,7 @@ class RetrainGateTests(unittest.TestCase):
         fake_client = mock.MagicMock()
         fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
         fake_client.get_run.return_value = SimpleNamespace(
-            data=SimpleNamespace(params={"training_data_fingerprint": "same"})
+            data=SimpleNamespace(params={"training_data_fingerprint": "same", "training_row_count": "1000"})
         )
         with (
             mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="same"),
@@ -302,6 +316,7 @@ class RetrainGateTests(unittest.TestCase):
                 mlflow_client=fake_client,
             )
 
+        self.assertEqual(decision.decision_status, "skip")
         self.assertFalse(decision.should_retrain)
         self.assertEqual(decision.reason, "no data changes")
 
@@ -335,6 +350,145 @@ class RetrainGateTests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertNotEqual(first, third)
+
+    def test_decide_retrain_returns_error_on_mlflow_transport_failure(self) -> None:
+        from mlflow.exceptions import MlflowException
+        from mlflow.protos.databricks_pb2 import INTERNAL_ERROR
+
+        from src.ml.retrain_gate import decide_retrain
+
+        fake_spark = mock.MagicMock()
+        fake_spark.table.return_value.count.return_value = 10
+        fake_spark.sql.return_value.collect.return_value = [{"version": 5}]
+
+        with mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="abc123"):
+            decision = decide_retrain(
+                fake_spark,
+                gold_table="healthcare.gold.claim_features",
+                feature_columns=["a"],
+                registered_model_name="healthcare.ml.claim_denial_model",
+                champion_alias="champion",
+                mlflow_client=mock.MagicMock(
+                    get_model_version_by_alias=mock.MagicMock(
+                        side_effect=MlflowException("Backend error", INTERNAL_ERROR)
+                    )
+                ),
+            )
+
+        self.assertEqual(decision.decision_status, "error")
+        self.assertIsNone(decision.should_retrain)
+        self.assertIsNotNone(decision.error_detail)
+
+    def test_decide_retrain_skips_when_fingerprint_changes_below_row_count_threshold(self) -> None:
+        from src.ml.retrain_gate import decide_retrain
+
+        # 970 rows vs 1000 previous: delta = 30 < max(100, 5% × 1000) = 100 → skip
+        fake_spark = self._FakeSpark([{"a": i} for i in range(970)])
+        fake_client = mock.MagicMock()
+        fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
+        fake_client.get_run.return_value = SimpleNamespace(
+            data=SimpleNamespace(params={"training_data_fingerprint": "old", "training_row_count": "1000"})
+        )
+        with (
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="new"),
+            mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
+        ):
+            decision = decide_retrain(
+                fake_spark,
+                gold_table="healthcare.gold.claim_features",
+                feature_columns=["a"],
+                registered_model_name="healthcare.ml.claim_denial_model",
+                champion_alias="champion",
+                mlflow_client=fake_client,
+            )
+
+        # abs(970 - 1000) = 30 < max(100, 50) = 100 → skip
+        self.assertEqual(decision.decision_status, "skip")
+        self.assertIn("row_count delta below retrain threshold", decision.reason)
+
+    def test_decide_retrain_retrains_when_fingerprint_changes_above_row_count_threshold(self) -> None:
+        from src.ml.retrain_gate import decide_retrain
+
+        fake_spark = self._FakeSpark([{"a": i} for i in range(200)])
+        fake_client = mock.MagicMock()
+        fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
+        fake_client.get_run.return_value = SimpleNamespace(
+            data=SimpleNamespace(params={"training_data_fingerprint": "old", "training_row_count": "1000"})
+        )
+        with (
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="new"),
+            mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
+        ):
+            decision = decide_retrain(
+                fake_spark,
+                gold_table="healthcare.gold.claim_features",
+                feature_columns=["a"],
+                registered_model_name="healthcare.ml.claim_denial_model",
+                champion_alias="champion",
+                mlflow_client=fake_client,
+            )
+
+        # abs(200 - 1000) = 800 >= max(100, 50) = 100 → retrain
+        self.assertEqual(decision.decision_status, "retrain")
+        self.assertTrue(decision.should_retrain)
+
+    def test_decide_retrain_retrains_when_feature_columns_changed_regardless_of_row_count(self) -> None:
+        from src.ml.retrain_gate import decide_retrain
+
+        fake_spark = self._FakeSpark([{"a": 1}])
+        fake_client = mock.MagicMock()
+        fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
+        fake_client.get_run.return_value = SimpleNamespace(
+            data=SimpleNamespace(params={"training_data_fingerprint": "same", "training_row_count": "1000"})
+        )
+        with (
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="same"),
+            mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["x", "y"]),
+        ):
+            decision = decide_retrain(
+                fake_spark,
+                gold_table="healthcare.gold.claim_features",
+                feature_columns=["a"],
+                registered_model_name="healthcare.ml.claim_denial_model",
+                champion_alias="champion",
+                mlflow_client=fake_client,
+            )
+
+        self.assertEqual(decision.decision_status, "retrain")
+        self.assertEqual(decision.reason, "feature columns changed")
+
+    def test_current_gold_object_metadata_uses_asdict_for_spark_row(self) -> None:
+        from src.ml.retrain_gate import _current_gold_object_metadata
+
+        fake_spark = mock.MagicMock()
+        fake_row = mock.MagicMock()
+        fake_row.asDict.return_value = {"table_type": "MATERIALIZED_VIEW", "last_altered": "2025-01-15T12:00:00Z"}
+        fake_result = mock.MagicMock()
+        fake_result.collect.return_value = [fake_row]
+        fake_spark.sql.return_value = fake_result
+
+        obj_type, last_altered = _current_gold_object_metadata(
+            fake_spark, "healthcare.gold.claim_features"
+        )
+
+        self.assertEqual(obj_type, "MATERIALIZED_VIEW")
+        self.assertEqual(last_altered, "2025-01-15T12:00:00Z")
+        fake_row.asDict.assert_called_once_with(recursive=True)
+
+    def test_current_gold_object_metadata_returns_fallback_on_missing_row(self) -> None:
+        from src.ml.retrain_gate import _current_gold_object_metadata
+
+        fake_spark = mock.MagicMock()
+        fake_result = mock.MagicMock()
+        fake_result.collect.return_value = []
+        fake_spark.sql.return_value = fake_result
+
+        obj_type, last_altered = _current_gold_object_metadata(
+            fake_spark, "healthcare.gold.claim_features"
+        )
+
+        self.assertEqual(obj_type, "unknown")
+        self.assertIsNone(last_altered)
 
 
 class BundleContractTests(unittest.TestCase):
@@ -424,16 +578,94 @@ class BundleContractTests(unittest.TestCase):
                 self.assertNotIn("clusters:", source)
                 self.assertNotIn("local_ssd_count", source)
 
-    def test_prod_lakeflow_pipeline_overrides_keep_classic_local_ssd_compute(self) -> None:
+    def test_prod_lakeflow_pipelines_use_serverless_compute(self) -> None:
         source = (PROJECT_ROOT / "databricks.yml").read_text(encoding="utf-8")
 
         self.assertIn("prod:", source)
-        self.assertIn("bronze_pipeline:", source)
-        self.assertIn("silver_pipeline:", source)
-        self.assertIn("gold_pipeline:", source)
-        self.assertEqual(source.count("serverless: false"), 3)
-        self.assertEqual(source.count("local_ssd_count: 1"), 3)
-        self.assertEqual(source.count('pipelines.clusterShutdown.delay: "0s"'), 3)
+        self.assertNotIn("serverless: false", source)
+        self.assertNotIn("local_ssd_count", source)
+        self.assertNotIn("pipelines.clusterShutdown.delay", source)
+
+    def test_training_job_condition_task_routes_true_into_train_model(self) -> None:
+        source = (
+            PROJECT_ROOT
+            / "services"
+            / "ml"
+            / "training"
+            / "resources"
+            / "training.job.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("condition_task:", source)
+        self.assertIn('should_retrain}}', source)
+        self.assertIn("EQUAL_TO", source)
+        self.assertIn('right: "true"', source)
+
+    def test_check_new_data_notebook_exits_nonzero_on_error_status(self) -> None:
+        source = (
+            PROJECT_ROOT / "src" / "notebooks" / "check_new_data.ipynb"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('decision.decision_status == \\"error\\"', source)
+        self.assertIn("sys.exit(1)", source)
+
+    def test_check_new_data_notebook_uses_explicit_insert_column_list(self) -> None:
+        source = (
+            PROJECT_ROOT / "src" / "notebooks" / "check_new_data.ipynb"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "decided_at, decision_status, should_retrain, reason, error_detail",
+            source,
+            "INSERT INTO must use explicit target column list to avoid "
+            "positional mismatch with migrated table schemas",
+        )
+        self.assertIn(
+            "INSERT INTO",
+            source,
+        )
+
+    def test_batch_silver_gold_outputs_use_materialized_view(self) -> None:
+        incremental_files = (
+            "ETL/pipelines/silver/silver_claims.py",
+            "ETL/pipelines/silver/silver_providers.py",
+            "ETL/pipelines/silver/silver_diagnosis.py",
+            "ETL/pipelines/silver/silver_cost.py",
+            "ETL/pipelines/gold/gold_claim_features.py",
+        )
+        for relpath in incremental_files:
+            source = (PROJECT_ROOT / relpath).read_text(encoding="utf-8")
+            with self.subTest(path=relpath):
+                self.assertIn(
+                    "@dp.materialized_view(\n",
+                    source,
+                )
+                self.assertIn('refresh_policy="incremental"', source)
+
+        # policy_chunks uses UDFs + explode — incompatible with incremental refresh.
+        policy_source = (
+            PROJECT_ROOT / "ETL/pipelines/silver/silver_policy_chunks.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("@dp.materialized_view(\n", policy_source)
+        self.assertNotIn('refresh_policy="incremental"', policy_source)
+
+    def test_no_current_timestamp_in_silver_gold_incremental_mv_rows(self) -> None:
+        for relpath in (
+            "ETL/pipelines/silver/silver_claims.py",
+            "ETL/pipelines/silver/silver_providers.py",
+            "ETL/pipelines/silver/silver_diagnosis.py",
+            "ETL/pipelines/silver/silver_cost.py",
+            "ETL/pipelines/silver/silver_policy_chunks.py",
+            "ETL/pipelines/gold/gold_claim_features.py",
+        ):
+            source = (PROJECT_ROOT / relpath).read_text(encoding="utf-8")
+            with self.subTest(path=relpath):
+                self.assertNotIn(
+                    "F.current_timestamp()",
+                    source,
+                    f"{relpath} contains current_timestamp() which is "
+                    f"non-deterministic and breaks incremental MV refresh",
+                )
 
     def test_bundle_keeps_unity_catalog_schema_names_unprefixed(self) -> None:
         source = (PROJECT_ROOT / "databricks.yml").read_text(encoding="utf-8")
@@ -504,6 +736,17 @@ class BundleContractTests(unittest.TestCase):
         path = PROJECT_ROOT / "src" / "scripts" / "setup_retrain_decisions.py"
         source = path.read_text(encoding="utf-8")
         fake_spark = mock.MagicMock()
+        # DESCRIBE TABLE returns all columns already present — no migration needed.
+        describe_result = mock.MagicMock()
+        describe_result.collect.return_value = [
+            {"col_name": col}
+            for col in ["decided_at", "decision_status", "should_retrain", "reason",
+                         "error_detail", "current_row_count", "current_gold_version",
+                         "current_gold_object_type", "current_gold_last_altered",
+                         "current_fingerprint", "champion_run_id",
+                         "previous_training_row_count", "row_count_delta", "row_count_delta_pct"]
+        ]
+        fake_spark.sql.return_value = describe_result
         fake_session = ModuleType("pyspark.sql")
         fake_session.SparkSession = SimpleNamespace(
             builder=SimpleNamespace(getOrCreate=mock.MagicMock(return_value=fake_spark))
@@ -516,7 +759,74 @@ class BundleContractTests(unittest.TestCase):
         ):
             exec(compile(source, str(path), "exec"), {"__name__": "__main__"})
 
-        fake_spark.sql.assert_called_once()
+        self.assertGreaterEqual(fake_spark.sql.call_count, 2)
+
+    def test_setup_entrypoint_migrates_missing_columns_idempotently(self) -> None:
+        path = PROJECT_ROOT / "src" / "scripts" / "setup_retrain_decisions.py"
+        source = path.read_text(encoding="utf-8")
+        fake_spark = mock.MagicMock()
+        # Old schema — missing all 7 migration columns.
+        old_schema = mock.MagicMock()
+        old_schema.collect.return_value = [
+            {"col_name": col}
+            for col in ["decided_at", "should_retrain", "reason",
+                         "current_row_count", "current_gold_version",
+                         "current_fingerprint", "champion_run_id"]
+        ]
+        fake_spark.sql.return_value = old_schema
+        fake_session = ModuleType("pyspark.sql")
+        fake_session.SparkSession = SimpleNamespace(
+            builder=SimpleNamespace(getOrCreate=mock.MagicMock(return_value=fake_spark))
+        )
+        fake_pyspark = ModuleType("pyspark")
+
+        with (
+            mock.patch.dict(sys.modules, {"pyspark": fake_pyspark, "pyspark.sql": fake_session}),
+            mock.patch.object(sys, "argv", ["setup_retrain_decisions.py"]),
+        ):
+            exec(compile(source, str(path), "exec"), {"__name__": "__main__"})
+
+        sql_calls = [call[0][0] for call in fake_spark.sql.call_args_list]
+        alter_calls = [c for c in sql_calls if "ALTER TABLE" in c]
+        self.assertEqual(len(alter_calls), 1)
+        alter_sql = alter_calls[0]
+        self.assertIn("ADD COLUMNS", alter_sql)
+        for col in ["decision_status", "error_detail", "previous_training_row_count",
+                     "row_count_delta", "row_count_delta_pct",
+                     "current_gold_object_type", "current_gold_last_altered"]:
+            with self.subTest(column=col):
+                self.assertIn(col, alter_sql)
+
+    def test_setup_entrypoint_rerun_is_idempotent_no_alter(self) -> None:
+        path = PROJECT_ROOT / "src" / "scripts" / "setup_retrain_decisions.py"
+        source = path.read_text(encoding="utf-8")
+        fake_spark = mock.MagicMock()
+        # Full schema — all columns already present.
+        full_schema = mock.MagicMock()
+        full_schema.collect.return_value = [
+            {"col_name": col}
+            for col in ["decided_at", "decision_status", "should_retrain", "reason",
+                         "error_detail", "current_row_count", "current_gold_version",
+                         "current_gold_object_type", "current_gold_last_altered",
+                         "current_fingerprint", "champion_run_id",
+                         "previous_training_row_count", "row_count_delta", "row_count_delta_pct"]
+        ]
+        fake_spark.sql.return_value = full_schema
+        fake_session = ModuleType("pyspark.sql")
+        fake_session.SparkSession = SimpleNamespace(
+            builder=SimpleNamespace(getOrCreate=mock.MagicMock(return_value=fake_spark))
+        )
+        fake_pyspark = ModuleType("pyspark")
+
+        with (
+            mock.patch.dict(sys.modules, {"pyspark": fake_pyspark, "pyspark.sql": fake_session}),
+            mock.patch.object(sys, "argv", ["setup_retrain_decisions.py"]),
+        ):
+            exec(compile(source, str(path), "exec"), {"__name__": "__main__"})
+
+        sql_calls = [call[0][0] for call in fake_spark.sql.call_args_list]
+        alter_calls = [c for c in sql_calls if "ALTER TABLE" in c]
+        self.assertEqual(len(alter_calls), 0, "Rerun with full schema must not ALTER")
 
 
 if __name__ == "__main__":
