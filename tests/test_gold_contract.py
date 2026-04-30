@@ -18,7 +18,7 @@ class GoldConfigContractTests(unittest.TestCase):
     def test_gold_audit_columns_are_stable(self):
         from src.common.gold_pipeline_config import GOLD_AUDIT_COLUMNS
 
-        self.assertEqual(GOLD_AUDIT_COLUMNS, ("_gold_processed_at",))
+        self.assertEqual(GOLD_AUDIT_COLUMNS, ())
 
     def test_gold_table_name_formats_correctly(self):
         from src.common.gold_pipeline_config import gold_table_name
@@ -63,10 +63,11 @@ class GoldPipelineContractTests(unittest.TestCase):
     def _parse_pipeline(cls):
         return ast.parse(GOLD_PIPELINE_PATH.read_text(encoding="utf-8"))
 
-    def test_gold_pipeline_defines_table_decorator(self):
+    def test_gold_pipeline_defines_materialized_view_decorator(self):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
-        self.assertIn("@dp.table", source)
+        self.assertIn("@dp.materialized_view(\n", source)
         self.assertIn("gold_claim_features", source)
+        self.assertIn('refresh_policy="incremental"', source)
 
     def test_gold_pipeline_defines_private_materialized_views(self):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
@@ -80,10 +81,10 @@ class GoldPipelineContractTests(unittest.TestCase):
         self.assertNotIn("read_bronze_snapshot", source)
         self.assertIn("SILVER_SCHEMA_DEFAULT", source)
 
-    def test_gold_feature_table_is_clustered_by_claim_id(self):
+    def test_gold_materialized_view_uses_incremental_refresh(self):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
-        self.assertIn("cluster_by", source)
-        self.assertIn('"claim_id"', source)
+        self.assertIn('refresh_policy="incremental"', source)
+        self.assertNotIn("cluster_by", source)
 
     def test_gold_pipeline_phi_safe_log_messages(self):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
@@ -95,7 +96,6 @@ class GoldPipelineContractTests(unittest.TestCase):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
         self.assertIn("is_denied", source)
         self.assertIn("denial_label", source)
-        self.assertIn("_gold_processed_at", source)
 
     def test_gold_pipeline_includes_required_features(self):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
@@ -156,16 +156,37 @@ class GoldPipelineContractTests(unittest.TestCase):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
         self.assertIn("F.broadcast", source)
 
-    def test_gold_pipeline_threshold_ratio_constant(self):
+    def test_gold_pipeline_uses_named_config_constants(self):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
-        self.assertIn("_THRESHOLD_RATIO", source)
-        self.assertIn("1.5", source)
+        self.assertIn("HIGH_COST_RATIO_THRESHOLD", source)
+        self.assertIn("HIGH_SEVERITY_EXPECTED_COST_FLOOR", source)
+        self.assertIn("MIN_PROVIDER_RISK_COUNT", source)
+        self.assertIn("PROVIDER_LOOKBACK_WINDOW_DAYS", source)
+        self.assertNotIn("_THRESHOLD_RATIO", source)
+
+    def test_gold_pipeline_provider_risk_null_below_five_claims(self):
+        source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
+        self.assertIn("MIN_PROVIDER_RISK_COUNT", source)
+        self.assertIn("provider_claim_count", source)
 
     def test_gold_config_module_exports_all_public_names(self):
         from src.common import gold_pipeline_config
 
         for name in gold_pipeline_config.__all__:
             self.assertTrue(hasattr(gold_pipeline_config, name), f"Missing export: {name}")
+
+    def test_gold_config_named_constants_are_stable(self):
+        from src.common.gold_pipeline_config import (
+            HIGH_COST_RATIO_THRESHOLD,
+            HIGH_SEVERITY_EXPECTED_COST_FLOOR,
+            MIN_PROVIDER_RISK_COUNT,
+            PROVIDER_LOOKBACK_WINDOW_DAYS,
+        )
+
+        self.assertEqual(HIGH_COST_RATIO_THRESHOLD, 1.5)
+        self.assertEqual(HIGH_SEVERITY_EXPECTED_COST_FLOOR, 5000.0)
+        self.assertEqual(MIN_PROVIDER_RISK_COUNT, 5)
+        self.assertEqual(PROVIDER_LOOKBACK_WINDOW_DAYS, 30)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,8 @@ BRONZE_VOLUME_ROOT: Final[str] = "/Volumes/healthcare/bronze/raw_landing"
 
 COMMON_DELTA_TABLE_PROPERTIES: Final[dict[str, str]] = {
     "delta.enableChangeDataFeed": "true",
+    "delta.enableDeletionVectors": "true",
+    "delta.enableRowTracking": "true",
     "delta.logRetentionDuration": "interval 2190 days",
     "delta.deletedFileRetentionDuration": "interval 2190 days",
 }

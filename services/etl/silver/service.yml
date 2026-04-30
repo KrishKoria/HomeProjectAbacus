@@ -1,0 +1,11 @@
+service:
+  name: etl_silver
+  type: pipeline
+  version: "1.0.0"
+  description: Silver Lakeflow validation pipeline.
+entry_point:
+  resource_key: silver_pipeline
+  resource_type: pipelines
+health_check:
+  type: script
+  entry_point: src/scripts/verify_silver.py

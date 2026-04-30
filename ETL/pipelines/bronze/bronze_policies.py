@@ -67,6 +67,8 @@ Output table: healthcare.bronze.policies
 Cluster by  : path (document-level lookups by file path)
 """
 
+from __future__ import annotations
+
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 

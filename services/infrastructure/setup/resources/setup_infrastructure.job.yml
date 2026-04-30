@@ -1,0 +1,58 @@
+resources:
+  jobs:
+    setup_infrastructure:
+      name: "[${bundle.target}] Setup Infrastructure"
+
+      parameters:
+        - name: load_sample_data
+          default: "false"
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+
+      tasks:
+        - task_key: apply_grants
+          notebook_task:
+            notebook_path: ../../../../src/notebooks/grants.ipynb
+            base_parameters:
+              catalog: ${var.catalog}
+              bronze_schema: ${var.bronze_schema}
+              ml_schema: ${var.ml_schema}
+
+        - task_key: create_retrain_decisions
+          depends_on:
+            - task_key: apply_grants
+          spark_python_task:
+            python_file: ../../../../src/scripts/setup_retrain_decisions.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --ml-schema
+              - ${var.ml_schema}
+          environment_key: default
+
+        - task_key: should_load_sample_data
+          depends_on:
+            - task_key: create_retrain_decisions
+          condition_task:
+            left: "{{job.parameters.load_sample_data}}"
+            op: EQUAL_TO
+            right: "true"
+
+        - task_key: load_sample_data
+          depends_on:
+            - task_key: should_load_sample_data
+              outcome: "true"
+          spark_python_task:
+            python_file: ../../../../src/scripts/load_sample_data.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.bronze_schema}
+              - --volume
+              - raw_landing
+              - --overwrite
+          environment_key: default

@@ -39,6 +39,8 @@ Output table: healthcare.bronze.providers
 Cluster by  : provider_id (join key — claims join on provider_id)
 """
 
+from __future__ import annotations
+
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 

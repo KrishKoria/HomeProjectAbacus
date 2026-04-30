@@ -45,6 +45,8 @@ Output table: healthcare.bronze.diagnosis
 Cluster by  : diagnosis_code (join key — claims join on diagnosis_code)
 """
 
+from __future__ import annotations
+
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 

@@ -5,8 +5,16 @@ import logging
 import pickle
 import sys
 from pathlib import Path
+from typing import Final
 
 import pandas as pd
+
+_SCRIPT_PATH: Final[Path] = Path(
+    globals().get("__file__", sys._getframe().f_code.co_filename)
+).resolve()
+PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.ml.evaluate import (
     compute_confusion_matrix,
@@ -14,6 +22,8 @@ from src.ml.evaluate import (
     evaluate_model,
 )
 from src.ml.features import prepare_training_data, stratified_split
+from src.ml import FEATURE_COLUMNS, TARGET_COLUMN
+from src.ml.retrain_gate import _current_gold_version, compute_fingerprint
 from src.ml.train import (
     LOGREG_DEFAULT_PARAMS,
     XGBOOST_DEFAULT_PARAMS,
@@ -25,6 +35,10 @@ from src.ml.train import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _entrypoint_argv() -> list[str]:
+    return sys.argv[1:] if len(sys.argv) > 1 else ["--tune"]
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -56,12 +70,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--tune",
         action="store_true",
-        help="Run Optuna hyperparameter tuning (50 trials)",
+        help="Run Optuna hyperparameter tuning",
     )
     parser.add_argument(
         "--no-tune",
         action="store_true",
         help="Skip Optuna tuning, use default XGBoost params",
+    )
+    parser.add_argument(
+        "--optuna-trials",
+        type=int,
+        default=50,
+        help="Number of Optuna trials when --tune is active (default: 50)",
+    )
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
     )
     parser.add_argument(
         "--mlflow-tracking-uri",
@@ -118,10 +144,13 @@ def _load_features(args: argparse.Namespace) -> pd.DataFrame:
 def train_pipeline(
     df: pd.DataFrame,
     tune: bool = False,
+    optuna_trials: int = 50,
+    random_seed: int = 42,
     mlflow_tracking_uri: str | None = None,
     registered_model_name: str | None = None,
     champion_alias: str | None = "champion",
     register_only_on_pass: bool = True,
+    gold_table_name: str = "healthcare.gold.claim_features",
 ) -> tuple:
     """Run the full LR + XGBoost training + MLflow logging pipeline.
 
@@ -132,31 +161,33 @@ def train_pipeline(
     XGBoost path and the LR baseline here.
     """
     X, y = prepare_training_data(df)
-    X_train, X_test, y_train, y_test = stratified_split(X, y)
+    X_train, X_test, y_train, y_test = stratified_split(X, y, random_state=random_seed)
 
-    logreg_raw = train_logistic_regression(X_train, y_train)
+    logreg_raw = train_logistic_regression(X_train, y_train, random_seed=random_seed)
     logreg = calibrate_classifier(logreg_raw, X_train, y_train, method="sigmoid", cv=3)
     logreg_metrics = evaluate_model(logreg, X_test, y_test)
 
     if tune:
-        xgb_model, xgb_params = tune_xgboost_optuna(X_train, y_train, n_trials=50)
+        xgb_model, xgb_params = tune_xgboost_optuna(
+            X_train, y_train, n_trials=optuna_trials, random_seed=random_seed
+        )
     else:
-        xgb_raw = train_xgboost(X_train, y_train)
+        xgb_raw = train_xgboost(X_train, y_train, random_seed=random_seed)
         xgb_model = calibrate_classifier(xgb_raw, X_train, y_train, method="sigmoid", cv=3)
         xgb_params = {
             k: v for k, v in XGBOOST_DEFAULT_PARAMS.items()
             if k != "early_stopping_rounds"
         }
+        xgb_params["random_state"] = random_seed
 
     xgb_metrics = evaluate_model(xgb_model, X_test, y_test)
 
-    # Pick the model that best matches the §13 release gate intent: a model
-    # that clears the gate is always preferred over one that doesn't, even if
-    # the failing one has higher ROC-AUC. Among same-gate-status candidates
-    # rank by Recall@HIGH (the gate metric), then ROC-AUC as final tiebreak.
+    logreg_params = dict(LOGREG_DEFAULT_PARAMS)
+    logreg_params["random_state"] = random_seed
+
     candidates = [
         ("xgboost", xgb_model, xgb_params, xgb_metrics),
-        ("logistic_regression", logreg, LOGREG_DEFAULT_PARAMS, logreg_metrics),
+        ("logistic_regression", logreg, logreg_params, logreg_metrics),
     ]
     candidates.sort(
         key=lambda c: (c[3].meets_thresholds(), c[3].recall_at_high, c[3].roc_auc),
@@ -169,14 +200,41 @@ def train_pipeline(
 
         mlflow.set_tracking_uri(mlflow_tracking_uri)
 
-    # Only register a model that clears the §13 gate (the registry should
-    # contain promotable artifacts only). The registration call also moves
-    # the ``champion`` alias so prediction callers can load the latest
-    # promoted version by alias rather than by run_id.
     should_register = bool(registered_model_name) and (
         best_metrics.meets_thresholds() or not register_only_on_pass
     )
     register_target = registered_model_name if should_register else None
+
+    try:
+        from pyspark.sql import SparkSession
+
+        spark = SparkSession.builder.getOrCreate()
+        gold_version = _current_gold_version(spark, gold_table_name)
+        fingerprint = compute_fingerprint(spark, gold_table_name, list(FEATURE_COLUMNS))
+    except Exception as exc:
+        logger.error(
+            "Cannot compute Gold-table metadata required for MLflow logging: %s",
+            str(exc),
+        )
+        raise RuntimeError(
+            f"Gold metadata computation failed for {gold_table_name}: {exc}"
+        ) from exc
+
+    if not fingerprint:
+        raise RuntimeError(
+            f"Empty/None fingerprint computed for {gold_table_name}. "
+            f"Training cannot proceed without a valid data fingerprint."
+        )
+
+    training_metadata = {
+        "training_row_count": len(df),
+        "gold_table_name": gold_table_name,
+        "gold_table_version": gold_version,
+        "training_data_fingerprint": fingerprint,
+        "feature_columns": list(FEATURE_COLUMNS),
+        "target_column": TARGET_COLUMN,
+        "release_gate_passed": best_metrics.meets_thresholds(),
+    }
 
     try:
         train_with_mlflow(
@@ -193,6 +251,7 @@ def train_pipeline(
             },
             registered_model_name=register_target,
             champion_alias=champion_alias or None,
+            training_metadata=training_metadata,
         )
     except Exception:
         logger.warning("MLflow logging failed, continuing without tracking", exc_info=True)
@@ -210,9 +269,12 @@ def main(argv: list[str] | None = None) -> int:
     model, name, best_metrics, logreg_metrics, xgb_metrics = train_pipeline(
         df,
         tune=tune,
+        optuna_trials=args.optuna_trials,
+        random_seed=args.random_seed,
         mlflow_tracking_uri=args.mlflow_tracking_uri,
         registered_model_name=args.registered_model_name or None,
         champion_alias=args.champion_alias or None,
+        gold_table_name=args.gold_table,
     )
 
     print(f"Model: {name}")
@@ -242,10 +304,6 @@ def main(argv: list[str] | None = None) -> int:
             failures.append(f"precision={best_metrics.precision:.4f} < 0.70")
         if best_metrics.roc_auc < 0.85:
             failures.append(f"roc_auc={best_metrics.roc_auc:.4f} < 0.85")
-        # Release gate per ARCHITECTURE.md §13: a failing model must not be
-        # persisted under the production artifact path, otherwise downstream
-        # serving could pick it up. Print the failures and exit non-zero so
-        # CI/CD blocks promotion.
         print(f"FAIL: Threshold misses: {', '.join(failures)}")
         print("Model NOT saved (release gate blocked promotion).")
         return 1
@@ -267,11 +325,6 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    # Databricks runs .py files as notebooks with ``__name__ == "__main__"``;
-    # raising SystemExit(0) there fires IPython's "use 'exit', 'quit', or
-    # Ctrl-D" warning even on a clean pass. Only escalate non-zero exits via
-    # sys.exit so CI/CD still sees the failure code, while a passing notebook
-    # run terminates silently.
-    _rc = main(["--tune"])
+    _rc = main(_entrypoint_argv())
     if _rc != 0:
         sys.exit(_rc)

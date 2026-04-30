@@ -1,33 +1,6 @@
-# Project Context for Claude
+## Deferred decisions ledger
 
-## ⚠️ TOP-OF-MIND: Deferred decision — `claim_type` feature
-
-**Status:** intentionally NOT implemented in Week 4 (deferred 2026-04-28).
-
-**What WEEK4.md asked for:** under §4 Step 2 → "Claim Features", `claim_type` is listed as a bullet alongside `claim_frequency`. WEEK4 provides **no semantic definition** for it (Inpatient vs Outpatient? Routine vs Emergency? Professional vs Institutional?), no derivation rule, and no business justification.
-
-**Why we deferred:**
-- The Bronze claims dataset (`datasets/claims_1000.csv`) has no `claim_type` column — adding it would require regenerating the dataset, evolving the Bronze schema, updating Silver pass-through, extending Gold feature engineering, and bumping `FEATURE_COLUMNS` from 13 → 14 with retraining of the registered model.
-- That cascade touches ~11 files for a feature with no defined semantics. The current model already clears the §13 release gate (Recall@HIGH ≥ 0.80, Precision ≥ 0.70, ROC-AUC ≥ 0.85) without it.
-- We do not yet know whether subsequent Week 5+ implementations (Model Serving, RAG remediation, dashboard) will actually need `claim_type`.
-
-**What to do if a future week reveals it IS needed:**
-This becomes the **first task of that week**. The full waterfall is:
-
-1. Define `claim_type` semantics in `scripts/generate_synthetic_claim_labels.py` (categorical with documented values, e.g. `INPATIENT | OUTPATIENT | EMERGENCY | ROUTINE`).
-2. Regenerate `datasets/claims_1000.csv` — `uv run python scripts/generate_synthetic_claim_labels.py`.
-3. Add `claim_type` to `src/common/bronze_sources.py` schema (operational, not PHI).
-4. Update Bronze pipeline + tests (`tests/test_dataset_contract.py`).
-5. Pass through Silver (`ETL/pipelines/silver/silver_claims.py`); update `tests/test_silver_contract.py`.
-6. Carry into Gold (`ETL/pipelines/gold/gold_claim_features.py`); encode (one-hot or ordinal); update `tests/test_gold_contract.py`.
-7. Add to `src/ml/__init__.py:FEATURE_COLUMNS` and `src/ml/features.py:DEFAULT_FILL_VALUES`; update sample DataFrames in `tests/test_ml_contract.py` (4 test classes).
-8. Retrain via `scripts/train_denial_model.py --tune` — registers a new `champion` version under `healthcare.ml.claim_denial_model`.
-9. Update ARCHITECTURE.md §9.3 features table.
-10. Remove this deferral notice from CLAUDE.md.
-
-**Do not implement this feature speculatively.** It has explicit "deferred until proven necessary" status. If you find yourself thinking "maybe I should add `claim_type` now" — re-read the paragraphs above and confirm a concrete downstream consumer needs it.
-
----
+All "deliberately not implemented" decisions live in [`docs/deferred.md`](docs/deferred.md) — `claim_type`, `ServiceVerifier` Protocol, `ops_service_*` tables, `verify_gold.py`, ETL constant parameterization, `build_analytics` CLI args, DAB `model_version` lookup variable. Read that file before proposing any of those features; each entry names the trigger that justifies reviving it. The `claim_type` block above is the most load-bearing; everything else is in `docs/deferred.md`.
 
 ## Project quick-reference
 
@@ -38,25 +11,6 @@ This becomes the **first task of that week**. The full waterfall is:
 - **Load champion (anywhere):** `from src.ml.predict import load_from_registry; model = load_from_registry()`.
 - **Test command:** `uv run pytest -q` (94 passed, 1 skipped baseline).
 - **ML deps install:** `uv sync --group ml`.
-
-## Cluster prerequisites (Databricks)
-
-- **Runtime: DBR 14.3 LTS ML or later.** Older runtimes ship with an MLflow client that returns the raw `s3://dbstorage-*` URI to the artifact downloader for UC-registered models, which then 400s on HEAD because the cluster lacks raw S3 credentials. DBR 14.3 ML+ routes through `DatabricksArtifactRepository` which uses workspace REST credentials.
-- **Quick fix without runtime change:** in any notebook that loads from the registry, first cell installs the upgraded MLflow client AND the model's runtime deps (`mlflow.pyfunc.load_model` refuses to load a model whose `requirements.txt` references a missing package — e.g. xgboost, scikit-learn, shap):
-  ```python
-  %pip install -q -U mlflow databricks-sdk xgboost scikit-learn shap
-  dbutils.library.restartPython()
-  ```
-  If you need to match the trained model's exact pinned versions, the canonical Databricks pattern is:
-  ```python
-  deps = mlflow.pyfunc.get_model_dependencies("models:/healthcare.ml.claim_denial_model@champion")
-  %pip install -r {deps}
-  dbutils.library.restartPython()
-  ```
-- **UC permissions:** the cluster service principal needs `USE CATALOG` + `USE SCHEMA` on `healthcare.ml` and `EXECUTE` on the registered model.
-- **One-time schema setup:** `CREATE SCHEMA IF NOT EXISTS healthcare.ml;` before the first registration.
-
-If `load_from_registry` ever 400s on `s3://dbstorage-*` again, the diagnosis is always one of the four bullets above — never a code change to `src/ml/predict.py`.
 
 ## Hard rules (already in place)
 

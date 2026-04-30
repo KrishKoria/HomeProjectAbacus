@@ -1,0 +1,18 @@
+resources:
+  pipelines:
+    gold_pipeline:
+      name: "[${bundle.target}] Healthcare Gold Features"
+      catalog: ${var.catalog}
+      target: ${var.gold_schema}
+      serverless: true
+      channel: current
+      libraries:
+        - glob:
+            include: ../../../../ETL/pipelines/gold/**
+      environment:
+        dependencies:
+          - --editable ${workspace.file_path}
+      event_log:
+        catalog: ${var.catalog}
+        schema: ${var.analytics_schema}
+        name: gold_pipeline_event_log

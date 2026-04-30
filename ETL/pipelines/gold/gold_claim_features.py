@@ -7,7 +7,11 @@ from pyspark.sql import functions as F
 from common.bronze_pipeline_config import CATALOG_DEFAULT
 from common.gold_pipeline_config import (
     GOLD_SCHEMA_DEFAULT,
+    HIGH_COST_RATIO_THRESHOLD,
+    HIGH_SEVERITY_EXPECTED_COST_FLOOR,
+    MIN_PROVIDER_RISK_COUNT,
     PHI_COLUMNS_GOLD,
+    PROVIDER_LOOKBACK_WINDOW_DAYS,
     gold_table_name,
     gold_table_properties,
     read_silver_snapshot,
@@ -22,8 +26,6 @@ from common.silver_pipeline_config import SILVER_SCHEMA_DEFAULT
 GOLD_CLAIM_FEATURES_TABLE = gold_table_name(CATALOG_DEFAULT, "claim_features", GOLD_SCHEMA_DEFAULT)
 
 CLAIMS_PHI_COLUMNS = PHI_COLUMNS_GOLD
-
-_THRESHOLD_RATIO: float = 1.5
 
 _GOLD_TABLE_READY_COMMENT = MESSAGE_TEMPLATE_GOLD_TABLE_READY.format(
     table_name=GOLD_CLAIM_FEATURES_TABLE,
@@ -103,7 +105,7 @@ def _claims_feature_base():
             "high_cost_flag",
             F.when(
                 F.col("amount_to_benchmark_ratio").isNotNull()
-                & (F.col("amount_to_benchmark_ratio") >= F.lit(_THRESHOLD_RATIO)),
+                & (F.col("amount_to_benchmark_ratio") >= F.lit(HIGH_COST_RATIO_THRESHOLD)),
                 F.lit(True),
             ).otherwise(F.lit(False)),
         )
@@ -112,7 +114,7 @@ def _claims_feature_base():
             F.when(
                 (F.col("severity") == F.lit("High"))
                 & (F.col("expected_cost").isNotNull())
-                & (F.col("expected_cost").cast("double") < F.lit(5000.0)),
+                & (F.col("expected_cost").cast("double") < F.lit(HIGH_SEVERITY_EXPECTED_COST_FLOOR)),
                 F.lit(True),
             ).otherwise(F.lit(False)),
         )
@@ -136,7 +138,6 @@ def _claims_feature_base():
             "denial_label",
             F.when(F.col("is_denied") == F.lit(True), F.lit(1)).otherwise(F.lit(0)),
         )
-        .withColumn("_gold_processed_at", F.current_timestamp())
     ).drop(
         "cost_procedure_code",
         "cost_region",
@@ -174,7 +175,7 @@ def _provider_aggregations():
         .withColumn(
             "provider_risk_score",
             F.when(
-                F.col("provider_claim_count") > 0,
+                F.col("provider_claim_count") >= MIN_PROVIDER_RISK_COUNT,
                 F.col("provider_denied_count").cast("double") / F.col("provider_claim_count").cast("double"),
             ).otherwise(F.lit(None).cast("double")),
         )
@@ -182,9 +183,9 @@ def _provider_aggregations():
     )
 
 
-@dp.table(
+@dp.materialized_view(
     name=GOLD_CLAIM_FEATURES_TABLE,
-    cluster_by=["claim_id"],
+    refresh_policy="incremental",
     comment=(
         _GOLD_TABLE_READY_COMMENT
         + " Gold claim features table: 13 engineered risk features joined from "
@@ -202,7 +203,7 @@ def gold_claim_features():
     claim_window_30d = (
         Window.partitionBy("provider_id")
         .orderBy(F.col("date").cast("timestamp").cast("long"))
-        .rangeBetween(-30 * 86400, 0)
+        .rangeBetween(-PROVIDER_LOOKBACK_WINDOW_DAYS * 86400, 0)
     )
 
     # `diagnosis_count` per ARCHITECTURE.md §9.3 is "distinct diagnoses per
@@ -261,10 +262,8 @@ def gold_claim_features():
         "provider_claim_count_30d",
         "provider_risk_score",
         "denial_label",
-        "_gold_processed_at",
         "_ingested_at",
         "_source_file",
         "_pipeline_run_id",
-        "_silver_processed_at",
         "_data_quality_flags",
     )

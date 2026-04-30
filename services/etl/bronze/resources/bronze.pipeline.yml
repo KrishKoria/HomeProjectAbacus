@@ -1,0 +1,18 @@
+resources:
+  pipelines:
+    bronze_pipeline:
+      name: "[${bundle.target}] Healthcare Bronze Ingestion"
+      catalog: ${var.catalog}
+      target: ${var.bronze_schema}
+      serverless: true
+      channel: current
+      libraries:
+        - glob:
+            include: ../../../../ETL/pipelines/bronze/**
+      environment:
+        dependencies:
+          - --editable ${workspace.file_path}
+      event_log:
+        catalog: ${var.catalog}
+        schema: ${var.analytics_schema}
+        name: bronze_pipeline_event_log
