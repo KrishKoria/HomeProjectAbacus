@@ -7,29 +7,6 @@ resources:
         - name: load_sample_data
           default: "false"
 
-      job_clusters:
-        - job_cluster_key: shared_cluster
-          new_cluster:
-            spark_version: ${var.spark_version}
-            node_type_id: ${var.node_type_id}
-            driver_node_type_id: ${var.node_type_id}
-            num_workers: 0
-            enable_elastic_disk: false
-            data_security_mode: SINGLE_USER
-            single_user_name: ${workspace.current_user.userName}
-            gcp_attributes:
-              availability: ON_DEMAND_GCP
-              local_ssd_count: 1
-              zone_id: AUTO
-            spark_conf:
-              spark.databricks.cluster.profile: singleNode
-              spark.master: local[*]
-
-            custom_tags:
-              ResourceClass: SingleNode
-              Project: homeprojectabacus
-              Environment: ${bundle.target}
-
       tasks:
         - task_key: apply_grants
           notebook_task:
@@ -74,4 +51,3 @@ resources:
               - --volume
               - raw_landing
               - --overwrite
-          job_cluster_key: shared_cluster
