@@ -26,6 +26,28 @@ ml = [
     "optuna>=3.6,<4.0",
 ]
 
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = [
+    "common",
+    "src.analytics",
+    "src.common",
+    "src.framework",
+    "src.ml",
+    "src.scripts",
+]
+
+[tool.setuptools.package-dir]
+"common" = "ETL/common"
+"src.analytics" = "src/analytics"
+"src.common" = "src/common"
+"src.framework" = "src/framework"
+"src.ml" = "src/ml"
+"src.scripts" = "src/scripts"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

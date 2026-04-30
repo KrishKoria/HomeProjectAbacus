@@ -11,6 +11,7 @@
 .venv/
 .opencode/
 graphify-out/
+*.egg-info/
 data/
 openspec/
 __pycache__/

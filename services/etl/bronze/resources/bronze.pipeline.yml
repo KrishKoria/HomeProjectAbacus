@@ -9,6 +9,9 @@ resources:
       libraries:
         - glob:
             include: ../../../../ETL/pipelines/bronze/**
+      environment:
+        dependencies:
+          - --editable ${workspace.file_path}
       event_log:
         catalog: ${var.catalog}
         schema: ${var.analytics_schema}
