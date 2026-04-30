@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from types import ModuleType
 from types import SimpleNamespace
 from unittest import mock
 
@@ -33,7 +34,6 @@ class FrameworkContractTests(unittest.TestCase):
             PROJECT_ROOT / "services" / "etl" / "gold" / "service.yml",
             PROJECT_ROOT / "services" / "ml" / "training" / "service.yml",
             PROJECT_ROOT / "services" / "infrastructure" / "setup" / "service.yml",
-            PROJECT_ROOT / "services" / "infrastructure" / "load_sample_data" / "service.yml",
         )
         for path in expected_paths:
             with self.subTest(path=path):
@@ -348,6 +348,48 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn("observe_silver", source)
         self.assertIn("observe_gold", source)
 
+    def test_job_clusters_use_unity_catalog_access_mode(self) -> None:
+        job_files = (
+            PROJECT_ROOT / "services" / "infrastructure" / "setup" / "resources" / "setup_infrastructure.job.yml",
+            PROJECT_ROOT / "services" / "ml" / "training" / "resources" / "training.job.yml",
+        )
+        for path in job_files:
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertIn("data_security_mode: SINGLE_USER", source)
+                self.assertIn("single_user_name: ${workspace.current_user.userName}", source)
+
+    def test_sample_data_load_is_optional_setup_task_not_separate_job(self) -> None:
+        manifest = (PROJECT_ROOT / "services" / "manifest.yml").read_text(encoding="utf-8")
+        setup_job = (
+            PROJECT_ROOT
+            / "services"
+            / "infrastructure"
+            / "setup"
+            / "resources"
+            / "setup_infrastructure.job.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("load_sample_data:", manifest)
+        self.assertIn("name: load_sample_data", setup_job)
+        self.assertIn('default: "false"', setup_job)
+        self.assertIn("{{job.parameters.load_sample_data}}", setup_job)
+        self.assertIn("task_key: load_sample_data", setup_job)
+        self.assertFalse(
+            (PROJECT_ROOT / "services" / "infrastructure" / "load_sample_data" / "resources" / "load_sample_data.job.yml").exists()
+        )
+
+    def test_gcp_clusters_do_not_request_local_ssd_quota(self) -> None:
+        for path in (PROJECT_ROOT / "services").rglob("*.yml"):
+            with self.subTest(path=path.name):
+                self.assertNotIn("local_ssd_count", path.read_text(encoding="utf-8"))
+
+    def test_bundle_keeps_unity_catalog_schema_names_unprefixed(self) -> None:
+        source = (PROJECT_ROOT / "databricks.yml").read_text(encoding="utf-8")
+
+        self.assertIn("experimental:", source)
+        self.assertIn("skip_name_prefix_for_schema: true", source)
+
     def test_observability_source_supports_pipeline_stage_append_mode(self) -> None:
         source = (
             PROJECT_ROOT / "src" / "analytics" / "observability_assets.py"
@@ -356,6 +398,53 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn("pipeline_stage: str | None = None", source)
         self.assertIn('dataframe.write.mode("append")', source)
         self.assertIn('withColumn("pipeline_stage"', source)
+
+    def test_spark_python_entrypoints_bootstrap_project_root_before_src_imports(self) -> None:
+        for path in sorted((PROJECT_ROOT / "src" / "scripts").glob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            if "from src." not in source and "import src" not in source:
+                continue
+
+            with self.subTest(path=path.name):
+                self.assertIn('globals().get("__file__", sys._getframe().f_code.co_filename)', source)
+                self.assertIn("PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]", source)
+                self.assertIn("sys.path.insert(0, str(PROJECT_ROOT))", source)
+                first_src_import = min(
+                    index
+                    for index in (
+                        source.find("from src."),
+                        source.find("import src"),
+                    )
+                    if index != -1
+                )
+                self.assertLess(source.index("sys.path.insert(0, str(PROJECT_ROOT))"), first_src_import)
+
+    def test_setup_entrypoint_supports_databricks_exec_without_file_global(self) -> None:
+        path = PROJECT_ROOT / "src" / "scripts" / "setup_retrain_decisions.py"
+        source = path.read_text(encoding="utf-8")
+        namespace: dict[str, object] = {"__name__": "databricks_exec_test"}
+
+        exec(compile(source, str(path), "exec"), namespace)
+
+        self.assertEqual(namespace["PROJECT_ROOT"], PROJECT_ROOT)
+
+    def test_setup_entrypoint_does_not_raise_system_exit_on_success(self) -> None:
+        path = PROJECT_ROOT / "src" / "scripts" / "setup_retrain_decisions.py"
+        source = path.read_text(encoding="utf-8")
+        fake_spark = mock.MagicMock()
+        fake_session = ModuleType("pyspark.sql")
+        fake_session.SparkSession = SimpleNamespace(
+            builder=SimpleNamespace(getOrCreate=mock.MagicMock(return_value=fake_spark))
+        )
+        fake_pyspark = ModuleType("pyspark")
+
+        with (
+            mock.patch.dict(sys.modules, {"pyspark": fake_pyspark, "pyspark.sql": fake_session}),
+            mock.patch.object(sys, "argv", ["setup_retrain_decisions.py"]),
+        ):
+            exec(compile(source, str(path), "exec"), {"__name__": "__main__"})
+
+        fake_spark.sql.assert_called_once()
 
 
 if __name__ == "__main__":
