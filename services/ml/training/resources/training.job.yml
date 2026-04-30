@@ -11,7 +11,7 @@ resources:
 
       email_notifications:
         on_failure:
-          - data-eng-oncall@example.com
+          - krishkoria2004@gmail.com
         no_alert_for_skipped_runs: true
 
       job_clusters:
