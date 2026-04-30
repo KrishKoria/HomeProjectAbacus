@@ -52,7 +52,6 @@ def _cost_stream():
         .withColumn("average_cost", spark_decimal_or_null(F.col("average_cost"), MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE))
         .withColumn("expected_cost", spark_decimal_or_null(F.col("expected_cost"), MONEY_DECIMAL_PRECISION, MONEY_DECIMAL_SCALE))
         .withColumn("region", spark_normalize_title(F.col("region")))
-        .withColumn("_silver_processed_at", F.current_timestamp())
         .withColumn("_data_quality_flags", spark_quality_flags({}))
         .withColumn("_row_priority", F.row_number().over(duplicate_window))
         .withColumn("missing_procedure_code", F.col("procedure_code").isNull())
@@ -62,9 +61,9 @@ def _cost_stream():
     )
 
 
-@dp.table(
+@dp.materialized_view(
     name=SILVER_COST_TABLE,
-    cluster_by=["procedure_code", "region"],
+    refresh_policy="incremental",
     comment=(
         MESSAGE_TEMPLATE_SILVER_TABLE_READY.format(
             table_name=SILVER_COST_TABLE,
@@ -93,9 +92,9 @@ def silver_cost():
     )
 
 
-@dp.table(
+@dp.materialized_view(
     name=QUARANTINE_COST_TABLE,
-    cluster_by=["procedure_code", "diagnostic_id"],
+    refresh_policy="incremental",
     comment=(
         MESSAGE_TEMPLATE_QUARANTINE_SUMMARY.format(
             dataset="cost",
@@ -154,6 +153,5 @@ def quarantine_cost():
             .when(F.col("invalid_expected_cost"), F.lit("expected_cost must parse to a positive decimal"))
             .otherwise(F.lit("duplicate procedure_code + region observed in the silver stream")),
         )
-        .withColumn("_quarantined_at", F.current_timestamp())
     )
     return quarantined.drop("_row_priority")
