@@ -373,6 +373,7 @@ class AnalyticsContractTests(unittest.TestCase):
                 "ops_expectation_metrics",
                 "ops_user_actions",
                 "ops_latest_failures",
+                "ops_pipeline_refresh_plans",
             ),
         )
         self.assertEqual(
@@ -404,6 +405,17 @@ class AnalyticsContractTests(unittest.TestCase):
         self.assertIn("_cache_if_available", source)
         self.assertIn("parallel_writes", source)
         self.assertIn("ThreadPoolExecutor", source)
+
+    def test_refresh_plans_parser_extracts_technique_from_planning_information(self) -> None:
+        source = _read_text("src/analytics/observability_assets.py")
+
+        self.assertIn("build_refresh_plans", source)
+        self.assertIn("planning_information", source)
+        self.assertIn("refresh_technique", source)
+        for keyword in ("FULL_RECOMPUTE", "ROW_BASED", "APPEND_ONLY", "GROUP_AGGREGATE", "NO_OP"):
+            with self.subTest(keyword=keyword):
+                self.assertIn(keyword, source)
+        self.assertIn("planner_message", source)
 
 
 class QualityAssetsContractTests(unittest.TestCase):

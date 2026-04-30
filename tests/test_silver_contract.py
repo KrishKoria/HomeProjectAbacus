@@ -204,10 +204,10 @@ class PolicyChunkingTests(unittest.TestCase):
 
 class SilverContractTests(unittest.TestCase):
     def test_silver_and_quarantine_contract_constants_are_stable(self) -> None:
-        self.assertEqual(SILVER_AUDIT_COLUMNS, ("_silver_processed_at", "_data_quality_flags"))
+        self.assertEqual(SILVER_AUDIT_COLUMNS, ("_data_quality_flags",))
         self.assertEqual(
             QUARANTINE_AUDIT_COLUMNS,
-            ("_quarantined_at", "diagnostic_id", "rule_name", "quarantine_reason"),
+            ("diagnostic_id", "rule_name", "quarantine_reason"),
         )
         self.assertEqual(silver_table_name("healthcare", "claims"), "healthcare.silver.claims")
         self.assertEqual(

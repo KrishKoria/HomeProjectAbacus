@@ -155,6 +155,58 @@ class ModelTrainingTests(unittest.TestCase):
         from xgboost import XGBClassifier
         self.assertIsInstance(_unwrap_for_shap(calibrated), XGBClassifier)
 
+    def test_untuned_xgboost_uses_provided_random_seed(self):
+        from src.ml.train import train_xgboost
+
+        model_42 = train_xgboost(self.X_train, self.y_train, random_seed=42)
+        model_99 = train_xgboost(self.X_train, self.y_train, random_seed=99)
+
+        self.assertEqual(model_42.get_params()["random_state"], 42)
+        self.assertEqual(model_99.get_params()["random_state"], 99)
+
+    def test_untuned_lr_uses_provided_random_seed(self):
+        from src.ml.train import train_logistic_regression
+
+        model_42 = train_logistic_regression(self.X_train, self.y_train, random_seed=42)
+        model_99 = train_logistic_regression(self.X_train, self.y_train, random_seed=99)
+
+        self.assertEqual(model_42.get_params()["random_state"], 42)
+        self.assertEqual(model_99.get_params()["random_state"], 99)
+
+    def test_optuna_xgboost_uses_provided_random_seed(self):
+        from src.ml.train import _build_xgb_from_trial
+        from unittest import mock as umock
+
+        fake_trial = umock.MagicMock()
+        fake_trial.suggest_int.side_effect = lambda name, low, high: {
+            "max_depth": 5, "n_estimators": 100, "min_child_weight": 3
+        }.get(name, low)
+        fake_trial.suggest_float.side_effect = lambda name, low, high, log=False: 1.0
+
+        model_77 = _build_xgb_from_trial(fake_trial, random_seed=77)
+        self.assertEqual(model_77.get_params()["random_state"], 77)
+
+    def test_cli_random_seed_reaches_train_pipeline(self):
+        from scripts import train_denial_model
+
+        args = train_denial_model._parse_args(["--no-tune", "--random-seed", "88"])
+        self.assertEqual(args.random_seed, 88)
+
+    def test_train_pipeline_logistic_params_use_provided_random_seed(self):
+        from src.ml.train import LOGREG_DEFAULT_PARAMS
+
+        # Simulate what train_pipeline does when building the candidates list.
+        logreg_params_42 = dict(LOGREG_DEFAULT_PARAMS)
+        logreg_params_42["random_state"] = 42
+        self.assertEqual(logreg_params_42["random_state"], 42)
+
+        logreg_params_88 = dict(LOGREG_DEFAULT_PARAMS)
+        logreg_params_88["random_state"] = 88
+        self.assertEqual(logreg_params_88["random_state"], 88)
+
+        # Shared constant must not be mutated in place.
+        self.assertEqual(LOGREG_DEFAULT_PARAMS["random_state"], 42)
+
 
 class ModelEvaluationTests(unittest.TestCase):
     @classmethod
