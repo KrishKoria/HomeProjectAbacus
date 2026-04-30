@@ -7,6 +7,11 @@ resources:
         - name: load_sample_data
           default: "false"
 
+    environments:
+      - environment_key: default
+
+    spec:
+      environment_version: "5"
       tasks:
         - task_key: apply_grants
           notebook_task:
@@ -15,7 +20,6 @@ resources:
               catalog: ${var.catalog}
               bronze_schema: ${var.bronze_schema}
               ml_schema: ${var.ml_schema}
-          job_cluster_key: shared_cluster
 
         - task_key: create_retrain_decisions
           depends_on:
@@ -27,7 +31,7 @@ resources:
               - ${var.catalog}
               - --ml-schema
               - ${var.ml_schema}
-          job_cluster_key: shared_cluster
+          environment_key: default
 
         - task_key: should_load_sample_data
           depends_on:
@@ -51,3 +55,4 @@ resources:
               - --volume
               - raw_landing
               - --overwrite
+          environment_key: default
