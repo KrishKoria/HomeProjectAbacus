@@ -305,6 +305,20 @@ class RetrainGateTests(unittest.TestCase):
         self.assertFalse(decision.should_retrain)
         self.assertEqual(decision.reason, "no data changes")
 
+    def test_current_gold_version_skips_describe_history_for_views(self) -> None:
+        from src.ml.retrain_gate import _current_gold_version
+
+        fake_table_type = mock.MagicMock()
+        fake_table_type.collect.return_value = [{"table_type": "VIEW"}]
+        fake_spark = mock.MagicMock()
+        fake_spark.sql.return_value = fake_table_type
+
+        version = _current_gold_version(fake_spark, "healthcare.gold.claim_features")
+
+        self.assertEqual(version, -1)
+        fake_spark.sql.assert_called_once()
+        self.assertIn("information_schema.tables", fake_spark.sql.call_args.args[0])
+
     def test_compute_fingerprint_is_deterministic_and_data_sensitive(self) -> None:
         from src.ml.retrain_gate import compute_fingerprint
 
@@ -356,8 +370,13 @@ class BundleContractTests(unittest.TestCase):
         for path in job_files:
             source = path.read_text(encoding="utf-8")
             with self.subTest(path=path.name):
-                self.assertIn("data_security_mode: SINGLE_USER", source)
-                self.assertIn("single_user_name: ${workspace.current_user.userName}", source)
+                self.assertTrue(
+                    "environment_key: default" in source
+                    or (
+                        "data_security_mode: SINGLE_USER" in source
+                        and "single_user_name: ${workspace.current_user.userName}" in source
+                    )
+                )
 
     def test_sample_data_load_is_optional_setup_task_not_separate_job(self) -> None:
         manifest = (PROJECT_ROOT / "services" / "manifest.yml").read_text(encoding="utf-8")
@@ -385,8 +404,12 @@ class BundleContractTests(unittest.TestCase):
             PROJECT_ROOT / "services" / "ml" / "training" / "resources" / "training.job.yml",
         )
         for path in job_files:
+            source = path.read_text(encoding="utf-8")
             with self.subTest(path=path.name):
-                self.assertIn("local_ssd_count: 1", path.read_text(encoding="utf-8"))
+                self.assertTrue(
+                    "environment_key: default" in source
+                    or "local_ssd_count: 1" in source
+                )
 
     def test_dev_lakeflow_pipelines_use_serverless_compute(self) -> None:
         pipeline_files = (

@@ -69,6 +69,8 @@ class BronzePipelineConfigTests(unittest.TestCase):
             COMMON_DELTA_TABLE_PROPERTIES,
             {
                 "delta.enableChangeDataFeed": "true",
+                "delta.enableDeletionVectors": "true",
+                "delta.enableRowTracking": "true",
                 "delta.logRetentionDuration": "interval 2190 days",
                 "delta.deletedFileRetentionDuration": "interval 2190 days",
             },
@@ -210,6 +212,8 @@ class BronzePipelineConfigTests(unittest.TestCase):
             table_properties_for_sensitivity("PHI", ("patient_id", "date")),
             {
                 "delta.enableChangeDataFeed": "true",
+                "delta.enableDeletionVectors": "true",
+                "delta.enableRowTracking": "true",
                 "delta.logRetentionDuration": "interval 2190 days",
                 "delta.deletedFileRetentionDuration": "interval 2190 days",
                 "hipaa.phi_columns": "patient_id,date",
@@ -220,6 +224,8 @@ class BronzePipelineConfigTests(unittest.TestCase):
             table_properties_for_sensitivity("NON-PHI", ()),
             {
                 "delta.enableChangeDataFeed": "true",
+                "delta.enableDeletionVectors": "true",
+                "delta.enableRowTracking": "true",
                 "delta.logRetentionDuration": "interval 2190 days",
                 "delta.deletedFileRetentionDuration": "interval 2190 days",
                 "hipaa.phi_columns": "",

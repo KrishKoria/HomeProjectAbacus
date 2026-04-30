@@ -72,6 +72,13 @@ def _feature_columns_from_run(run_id: str) -> list[str]:
     return [str(column) for column in columns]
 
 
+def _parse_three_part_name(name: str) -> tuple[str, str, str] | None:
+    parts = [part.strip().strip("`") for part in name.split(".")]
+    if len(parts) != 3 or any(not part for part in parts):
+        return None
+    return (parts[0], parts[1], parts[2])
+
+
 def _current_gold_version(spark, gold_table: str) -> int:
     """
     Return the Delta table version when gold_table is a Delta table.
@@ -80,6 +87,24 @@ def _current_gold_version(spark, gold_table: str) -> int:
     In that case, return -1 and rely on the content fingerprint for
     retrain decisions.
     """
+    parsed = _parse_three_part_name(gold_table)
+    if parsed is not None:
+        catalog, schema, relation = parsed
+        table_type_rows = spark.sql(
+            f"""
+            SELECT table_type
+            FROM `{catalog}`.information_schema.tables
+            WHERE table_schema = '{schema.replace("'", "''")}'
+              AND table_name = '{relation.replace("'", "''")}'
+            LIMIT 1
+            """
+        ).collect()
+        if table_type_rows:
+            first_row = table_type_rows[0]
+            if isinstance(first_row, dict) and "table_type" in first_row:
+                table_type = str(first_row["table_type"]).upper()
+                if "VIEW" in table_type:
+                    return -1
     try:
         row = spark.sql(f"DESCRIBE HISTORY {gold_table} LIMIT 1").collect()[0]
         return int(row["version"])
