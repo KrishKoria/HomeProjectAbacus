@@ -9,10 +9,6 @@ resources:
       libraries:
         - glob:
             include: ../../../../ETL/pipelines/silver/**
-        - glob:
-            include: ../../../../ETL/common/**
-        - glob:
-            include: ../../../../src/common/**
       event_log:
         catalog: ${var.catalog}
         schema: ${var.analytics_schema}

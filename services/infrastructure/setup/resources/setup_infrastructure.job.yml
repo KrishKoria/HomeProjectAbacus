@@ -7,11 +7,11 @@ resources:
         - name: load_sample_data
           default: "false"
 
-      environments:
-        - environment_key: default
-          spec:
-            environment_version: "5"
+    environments:
+      - environment_key: default
 
+    spec:
+      environment_version: "5"
       tasks:
         - task_key: apply_grants
           notebook_task:
