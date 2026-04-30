@@ -78,9 +78,10 @@ def train_logistic_regression(
     X_train: Any,
     y_train: Any,
     params: dict[str, Any] | None = None,
+    random_seed: int = 42,
 ) -> LogisticRegression:
     """Fit the baseline logistic-regression model using class-balanced weights."""
-    training_params = {**LOGREG_DEFAULT_PARAMS, **(params or {})}
+    training_params = {**LOGREG_DEFAULT_PARAMS, **(params or {}), "random_state": random_seed}
     model = LogisticRegression(**training_params)
     model.fit(X_train, y_train)
     return model
@@ -92,9 +93,10 @@ def train_xgboost(
     X_val: Any = None,
     y_val: Any = None,
     params: dict[str, Any] | None = None,
+    random_seed: int = 42,
 ) -> XGBClassifier:
     """Fit the primary XGBoost classifier with optional early-stopping eval set."""
-    training_params = {**XGBOOST_DEFAULT_PARAMS, **(params or {})}
+    training_params = {**XGBOOST_DEFAULT_PARAMS, **(params or {}), "random_state": random_seed}
     training_params.pop("early_stopping_rounds", 50)
     model = XGBClassifier(**training_params)
     fit_kwargs: dict[str, Any] = {}
@@ -133,7 +135,7 @@ def calibrate_classifier(
     return calibrator
 
 
-def _build_xgb_from_trial(trial: Any) -> XGBClassifier:
+def _build_xgb_from_trial(trial: Any, random_seed: int = 42) -> XGBClassifier:
     params = {
         "max_depth": trial.suggest_int("max_depth", 3, 10),
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
@@ -147,7 +149,7 @@ def _build_xgb_from_trial(trial: Any) -> XGBClassifier:
         "scale_pos_weight": trial.suggest_float("scale_pos_weight", 1.0, 15.0),
         "objective": "binary:logistic",
         "eval_metric": "logloss",
-        "random_state": 42,
+        "random_state": random_seed,
     }
     return XGBClassifier(**params)
 
@@ -156,6 +158,7 @@ def _optuna_objective(
     trial: Any,
     X_train: Any,
     y_train: Any,
+    random_seed: int = 42,
 ) -> float:
     """Objective: maximise mean Recall@HIGH under a soft Precision floor.
 
@@ -166,8 +169,8 @@ def _optuna_objective(
     fold's classifier in Platt calibration (the same wrapping used in
     production) so trial-time scores match the deployed model's behaviour.
     """
-    base_estimator = _build_xgb_from_trial(trial)
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    base_estimator = _build_xgb_from_trial(trial, random_seed=random_seed)
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_seed)
     fold_recalls: list[float] = []
     fold_precisions: list[float] = []
     for tr_idx, va_idx in skf.split(X_train, y_train):
@@ -195,6 +198,7 @@ def tune_xgboost_optuna(
     X_train: Any,
     y_train: Any,
     n_trials: int = 50,
+    random_seed: int = 42,
 ) -> tuple[CalibratedClassifierCV, dict[str, Any]]:
     """Run Optuna hyperparameter tuning, then refit + calibrate the best model."""
     import optuna
@@ -202,7 +206,7 @@ def tune_xgboost_optuna(
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     study = optuna.create_study(direction="maximize")
     study.optimize(
-        lambda trial: _optuna_objective(trial, X_train, y_train),
+        lambda trial: _optuna_objective(trial, X_train, y_train, random_seed=random_seed),
         n_trials=n_trials,
         show_progress_bar=False,
     )
@@ -210,7 +214,7 @@ def tune_xgboost_optuna(
     best_params.update({
         "objective": "binary:logistic",
         "eval_metric": "logloss",
-        "random_state": 42,
+        "random_state": random_seed,
     })
     logger.info(
         "Optuna best Recall@HIGH (penalised): %.4f, params: %s",
@@ -309,30 +313,31 @@ def train_with_mlflow(
         run_id = mlflow.active_run().info.run_id
 
     if registered_model_name and champion_alias:
-        try:
-            client = mlflow.tracking.MlflowClient()
-            version = getattr(logged, "registered_model_version", None)
-            if version is None:
-                # Fallback: look up the latest version registered against this run.
-                versions = client.search_model_versions(
-                    f"name='{registered_model_name}' and run_id='{run_id}'"
-                )
-                if versions:
-                    version = max(int(v.version) for v in versions)
-            if version is not None:
-                client.set_registered_model_alias(
-                    name=registered_model_name,
-                    alias=champion_alias,
-                    version=str(version),
-                )
-                logger.info(
-                    "Registered %s version %s and moved alias '%s'",
-                    registered_model_name,
-                    version,
-                    champion_alias,
-                )
-        except Exception:
-            logger.warning("Setting champion alias failed", exc_info=True)
+        client = mlflow.tracking.MlflowClient()
+        version = getattr(logged, "registered_model_version", None)
+        if version is None:
+            versions = client.search_model_versions(
+                f"name='{registered_model_name}' and run_id='{run_id}'"
+            )
+            if versions:
+                version = max(int(v.version) for v in versions)
+        if version is None:
+            raise RuntimeError(
+                f"Registered model {registered_model_name} under run {run_id} "
+                f"but could not resolve version. Champion alias '{champion_alias}' "
+                f"cannot be set."
+            )
+        client.set_registered_model_alias(
+            name=registered_model_name,
+            alias=champion_alias,
+            version=str(version),
+        )
+        logger.info(
+            "Registered %s version %s and moved alias '%s'",
+            registered_model_name,
+            version,
+            champion_alias,
+        )
 
     return run_id
 
