@@ -2,88 +2,148 @@ resources:
   jobs:
     etl_ml_pipeline:
       name: "[${bundle.target}] Healthcare ETL + ML Pipeline"
+
       trigger:
         file_arrival:
           url: /Volumes/healthcare/bronze/raw_landing/
           min_time_between_triggers_seconds: 300
           wait_after_last_change_seconds: 60
+
       email_notifications:
         on_failure:
           - data-eng-oncall@example.com
         no_alert_for_skipped_runs: true
+
       job_clusters:
         - job_cluster_key: shared_cluster
           new_cluster:
             spark_version: ${var.spark_version}
             node_type_id: ${var.node_type_id}
-            autoscale:
-              min_workers: 1
-              max_workers: 4
+            driver_node_type_id: ${var.node_type_id}
+            num_workers: 0
+            enable_elastic_disk: false
+            data_security_mode: SINGLE_USER
+            single_user_name: ${workspace.current_user.userName}
+            gcp_attributes:
+              availability: ON_DEMAND_GCP
+              local_ssd_count: 1
+              zone_id: AUTO
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: local[*]
+
+            custom_tags:
+              ResourceClass: SingleNode
+              Project: homeprojectabacus
+              Environment: ${bundle.target}
+
       tasks:
         - task_key: run_bronze_pipeline
           pipeline_task:
             pipeline_id: ${resources.pipelines.bronze_pipeline.id}
+
         - task_key: verify_bronze
           depends_on:
             - task_key: run_bronze_pipeline
           spark_python_task:
             python_file: ../../../../src/scripts/verify_bronze.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.bronze_schema}
           job_cluster_key: shared_cluster
+
         - task_key: observe_bronze
           depends_on:
             - task_key: run_bronze_pipeline
           spark_python_task:
             python_file: ../../../../src/scripts/build_observability.py
             parameters:
+              - --catalog
+              - ${var.catalog}
+              - --analytics-schema
+              - ${var.analytics_schema}
               - --published-event-log-table
               - ${var.catalog}.${var.analytics_schema}.bronze_pipeline_event_log
               - --pipeline-stage
               - bronze
           job_cluster_key: shared_cluster
+
         - task_key: run_silver_pipeline
           depends_on:
             - task_key: verify_bronze
           pipeline_task:
             pipeline_id: ${resources.pipelines.silver_pipeline.id}
+
         - task_key: verify_silver
           depends_on:
             - task_key: run_silver_pipeline
           spark_python_task:
             python_file: ../../../../src/scripts/verify_silver.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --silver-schema
+              - ${var.silver_schema}
+              - --quarantine-schema
+              - quarantine
+              - --analytics-schema
+              - ${var.analytics_schema}
           job_cluster_key: shared_cluster
+
         - task_key: observe_silver
           depends_on:
             - task_key: run_silver_pipeline
           spark_python_task:
             python_file: ../../../../src/scripts/build_observability.py
             parameters:
+              - --catalog
+              - ${var.catalog}
+              - --analytics-schema
+              - ${var.analytics_schema}
               - --published-event-log-table
               - ${var.catalog}.${var.analytics_schema}.silver_pipeline_event_log
               - --pipeline-stage
               - silver
           job_cluster_key: shared_cluster
+
         - task_key: build_analytics
           depends_on:
             - task_key: verify_silver
           spark_python_task:
             python_file: ../../../../src/scripts/build_analytics.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --bronze-schema
+              - ${var.bronze_schema}
+              - --analytics-schema
+              - ${var.analytics_schema}
           job_cluster_key: shared_cluster
+
         - task_key: run_gold_pipeline
           depends_on:
             - task_key: verify_silver
           pipeline_task:
             pipeline_id: ${resources.pipelines.gold_pipeline.id}
+
         - task_key: observe_gold
           depends_on:
             - task_key: run_gold_pipeline
           spark_python_task:
             python_file: ../../../../src/scripts/build_observability.py
             parameters:
+              - --catalog
+              - ${var.catalog}
+              - --analytics-schema
+              - ${var.analytics_schema}
               - --published-event-log-table
               - ${var.catalog}.${var.analytics_schema}.gold_pipeline_event_log
               - --pipeline-stage
               - gold
           job_cluster_key: shared_cluster
+
         - task_key: check_new_data
           depends_on:
             - task_key: run_gold_pipeline
@@ -96,6 +156,7 @@ resources:
               registered_model_name: ${var.catalog}.${var.ml_schema}.claim_denial_model
               champion_alias: champion
           job_cluster_key: shared_cluster
+
         - task_key: should_retrain
           depends_on:
             - task_key: check_new_data
@@ -103,6 +164,7 @@ resources:
             left: "{{tasks.check_new_data.values.should_retrain}}"
             op: EQUAL_TO
             right: "true"
+
         - task_key: train_model
           depends_on:
             - task_key: should_retrain
@@ -110,7 +172,9 @@ resources:
           spark_python_task:
             python_file: ../../../../scripts/train_denial_model.py
             parameters:
-              - --tune
+              # Use no-tune for the first paid validation.
+              # Restore --tune only after the full deployment path works once.
+              - --no-tune
               - --catalog
               - ${var.catalog}
               - --gold-table
@@ -131,6 +195,7 @@ resources:
             - pypi:
                 package: mlflow>=3.0,<4.0
           job_cluster_key: shared_cluster
+
         - task_key: skip_retraining
           depends_on:
             - task_key: should_retrain

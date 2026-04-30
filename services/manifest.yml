@@ -12,11 +12,6 @@ services:
     manifest: services/etl/silver/service.yml
     depends_on:
       - etl_bronze
-  load_sample_data:
-    type: job
-    manifest: services/infrastructure/load_sample_data/service.yml
-    depends_on:
-      - setup_infrastructure
   ml_training:
     type: job
     manifest: services/ml/training/service.yml

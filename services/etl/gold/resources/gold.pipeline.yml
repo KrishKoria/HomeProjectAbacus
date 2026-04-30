@@ -4,8 +4,10 @@ resources:
       name: "[${bundle.target}] Healthcare Gold Features"
       catalog: ${var.catalog}
       target: ${var.gold_schema}
-      photon: true
+      photon: false
       channel: current
+      configuration:
+        pipelines.clusterShutdown.delay: "300s"
       libraries:
         - glob:
             include: ../../../../ETL/pipelines/gold/**
@@ -15,9 +17,17 @@ resources:
         name: gold_pipeline_event_log
       clusters:
         - label: default
+          node_type_id: ${var.node_type_id}
+          driver_node_type_id: ${var.node_type_id}
+          num_workers: 0
           gcp_attributes:
-            availability: PREEMPTIBLE_WITH_FALLBACK_GCP
-          autoscale:
-            min_workers: 1
-            max_workers: 4
-            mode: ENHANCED
+            availability: ON_DEMAND_GCP
+            local_ssd_count: 1
+            zone_id: AUTO
+          spark_conf:
+            spark.databricks.cluster.profile: singleNode
+            spark.master: local[*]
+          custom_tags:
+            ResourceClass: SingleNode
+            Project: homeprojectabacus
+            Environment: ${bundle.target}

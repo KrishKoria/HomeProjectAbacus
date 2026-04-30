@@ -2,12 +2,34 @@ resources:
   jobs:
     setup_infrastructure:
       name: "[${bundle.target}] Setup Infrastructure"
+
+      parameters:
+        - name: load_sample_data
+          default: "false"
+
       job_clusters:
         - job_cluster_key: shared_cluster
           new_cluster:
             spark_version: ${var.spark_version}
             node_type_id: ${var.node_type_id}
-            num_workers: 1
+            driver_node_type_id: ${var.node_type_id}
+            num_workers: 0
+            enable_elastic_disk: false
+            data_security_mode: SINGLE_USER
+            single_user_name: ${workspace.current_user.userName}
+            gcp_attributes:
+              availability: ON_DEMAND_GCP
+              local_ssd_count: 1
+              zone_id: AUTO
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: local[*]
+
+            custom_tags:
+              ResourceClass: SingleNode
+              Project: homeprojectabacus
+              Environment: ${bundle.target}
+
       tasks:
         - task_key: apply_grants
           notebook_task:
@@ -17,6 +39,7 @@ resources:
               bronze_schema: ${var.bronze_schema}
               ml_schema: ${var.ml_schema}
           job_cluster_key: shared_cluster
+
         - task_key: create_retrain_decisions
           depends_on:
             - task_key: apply_grants
@@ -27,4 +50,28 @@ resources:
               - ${var.catalog}
               - --ml-schema
               - ${var.ml_schema}
+          job_cluster_key: shared_cluster
+
+        - task_key: should_load_sample_data
+          depends_on:
+            - task_key: create_retrain_decisions
+          condition_task:
+            left: "{{job.parameters.load_sample_data}}"
+            op: EQUAL_TO
+            right: "true"
+
+        - task_key: load_sample_data
+          depends_on:
+            - task_key: should_load_sample_data
+              outcome: "true"
+          spark_python_task:
+            python_file: ../../../../src/scripts/load_sample_data.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.bronze_schema}
+              - --volume
+              - raw_landing
+              - --overwrite
           job_cluster_key: shared_cluster
