@@ -29,7 +29,6 @@ resources:
         - task_key: run_bronze_pipeline
           pipeline_task:
             pipeline_id: ${resources.pipelines.bronze_pipeline.id}
-            environment_key: default
 
         - task_key: verify_bronze
           depends_on:
@@ -41,7 +40,7 @@ resources:
               - ${var.catalog}
               - --schema
               - ${var.bronze_schema}
-            environment_key: default
+          environment_key: default
 
         - task_key: observe_bronze
           depends_on:
@@ -57,13 +56,13 @@ resources:
               - ${var.catalog}.${var.analytics_schema}.bronze_pipeline_event_log
               - --pipeline-stage
               - bronze
-            environment_key: default
+          environment_key: default
+
         - task_key: run_silver_pipeline
           depends_on:
             - task_key: verify_bronze
           pipeline_task:
             pipeline_id: ${resources.pipelines.silver_pipeline.id}
-          environment_key: default
 
         - task_key: verify_silver
           depends_on:
@@ -79,7 +78,7 @@ resources:
               - quarantine
               - --analytics-schema
               - ${var.analytics_schema}
-            environment_key: default
+          environment_key: default
 
         - task_key: observe_silver
           depends_on:
@@ -95,13 +94,13 @@ resources:
               - ${var.catalog}.${var.analytics_schema}.silver_pipeline_event_log
               - --pipeline-stage
               - silver
-            environment_key: default
+          environment_key: default
+
         - task_key: build_analytics
           depends_on:
             - task_key: verify_silver
           spark_python_task:
             python_file: ../../../../src/scripts/build_analytics.py
-            environment_key: default
             parameters:
               - --catalog
               - ${var.catalog}
@@ -109,13 +108,13 @@ resources:
               - ${var.bronze_schema}
               - --analytics-schema
               - ${var.analytics_schema}
+          environment_key: default
 
         - task_key: run_gold_pipeline
           depends_on:
             - task_key: verify_silver
           pipeline_task:
             pipeline_id: ${resources.pipelines.gold_pipeline.id}
-            environment_key: default
 
         - task_key: observe_gold
           depends_on:
@@ -131,20 +130,20 @@ resources:
               - ${var.catalog}.${var.analytics_schema}.gold_pipeline_event_log
               - --pipeline-stage
               - gold
-            environment_key: default
+          environment_key: default
 
         - task_key: check_new_data
           depends_on:
             - task_key: run_gold_pipeline
           notebook_task:
             notebook_path: ../../../../src/notebooks/check_new_data.ipynb
-            environment_key: default
             base_parameters:
               catalog: ${var.catalog}
               gold_schema: ${var.gold_schema}
               ml_schema: ${var.ml_schema}
               registered_model_name: ${var.catalog}.${var.ml_schema}.claim_denial_model
               champion_alias: champion
+          environment_key: default
 
         - task_key: should_retrain
           depends_on:
@@ -160,7 +159,6 @@ resources:
               outcome: "true"
           spark_python_task:
             python_file: ../../../../scripts/train_denial_model.py
-            environment_key: default
             parameters:
               # Use no-tune for the first paid validation.
               # Restore --tune only after the full deployment path works once.
@@ -173,17 +171,7 @@ resources:
               - ${var.catalog}.${var.ml_schema}.claim_denial_model
               - --champion-alias
               - champion
-          libraries:
-            - pypi:
-                package: xgboost>=2.0,<3.0
-            - pypi:
-                package: scikit-learn>=1.5,<2.0
-            - pypi:
-                package: shap>=0.44,<1.0
-            - pypi:
-                package: optuna>=3.6,<4.0
-            - pypi:
-                package: mlflow>=3.0,<4.0
+          environment_key: default
 
         - task_key: skip_retraining
           depends_on:
@@ -191,4 +179,4 @@ resources:
               outcome: "false"
           notebook_task:
             notebook_path: ../../../../src/notebooks/skip_retraining.ipynb
-            environment_key: default
+          environment_key: default
