@@ -7,9 +7,7 @@ from src.common.bronze_pipeline_config import COMMON_DELTA_TABLE_PROPERTIES, tab
 
 GOLD_SCHEMA_DEFAULT: Final[str] = "gold"
 
-GOLD_AUDIT_COLUMNS: Final[tuple[str, ...]] = (
-    "_gold_processed_at",
-)
+GOLD_AUDIT_COLUMNS: Final[tuple[str, ...]] = ()
 
 PHI_COLUMNS_GOLD: Final[tuple[str, ...]] = (
     "billed_amount",
@@ -18,6 +16,11 @@ PHI_COLUMNS_GOLD: Final[tuple[str, ...]] = (
     "is_denied",
     "patient_id",
 )
+
+HIGH_COST_RATIO_THRESHOLD: Final[float] = 1.5
+HIGH_SEVERITY_EXPECTED_COST_FLOOR: Final[float] = 5000.0
+PROVIDER_LOOKBACK_WINDOW_DAYS: Final[int] = 30
+MIN_PROVIDER_RISK_COUNT: Final[int] = 5
 
 
 def gold_table_name(catalog: str, table_name: str, schema: str = GOLD_SCHEMA_DEFAULT) -> str:
@@ -54,7 +57,11 @@ def read_silver_snapshot(spark, table_name: str):
 __all__ = [
     "GOLD_AUDIT_COLUMNS",
     "GOLD_SCHEMA_DEFAULT",
+    "HIGH_COST_RATIO_THRESHOLD",
+    "HIGH_SEVERITY_EXPECTED_COST_FLOOR",
+    "MIN_PROVIDER_RISK_COUNT",
     "PHI_COLUMNS_GOLD",
+    "PROVIDER_LOOKBACK_WINDOW_DAYS",
     "gold_table_name",
     "gold_table_properties",
     "read_silver_snapshot",
