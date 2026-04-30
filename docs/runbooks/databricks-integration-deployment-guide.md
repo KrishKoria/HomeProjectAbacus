@@ -295,23 +295,16 @@ The training script now accepts Databricks-passed CLI args instead of hardcoding
 
 ## Jobs in this repo
 
-There are three distinct operational entry points.
+There are two distinct operational entry points.
 
 ### `setup_infrastructure`
 
 Use this once per workspace or when permissions/base objects need to be re-established.
+For dev/demo/bootstrap scenarios, run it with the `load_sample_data` job parameter set to `"true"` to copy checked-in fixture data into the Bronze landing volume. Leave the parameter at its default `"false"` for prod.
 
 Definition:
 
 - [services/infrastructure/setup/resources/setup_infrastructure.job.yml](/C:/Users/Krish/Desktop/projects/homeprojectabacus/services/infrastructure/setup/resources/setup_infrastructure.job.yml)
-
-### `load_sample_data`
-
-Use this only for dev/demo/bootstrap scenarios. It copies the checked-in fixture data into the Bronze landing volume.
-
-Definition:
-
-- [services/infrastructure/load_sample_data/resources/load_sample_data.job.yml](/C:/Users/Krish/Desktop/projects/homeprojectabacus/services/infrastructure/load_sample_data/resources/load_sample_data.job.yml)
 
 ### `etl_ml_pipeline`
 

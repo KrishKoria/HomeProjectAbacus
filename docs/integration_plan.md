@@ -59,7 +59,7 @@ Use Databricks Asset Bundles to define:
 
 - One-time infrastructure setup using DAB-native resources (`schemas:`, `volumes:`) plus a small grants notebook task.
 - Three Lakeflow Declarative Pipeline resources: Bronze, Silver, Gold. Each publishes its event log to UC.
-- One dev/manual fixture-loading job.
+- An optional dev/manual fixture-loading task inside `setup_infrastructure`.
 - One production ingestion-to-ML job triggered by file arrival on `/Volumes/healthcare/bronze/raw_landing/`.
 - A small set of Python script entrypoints for recurring verification, analytics, and observability; two notebook entrypoints for the retrain gate (because they need to set/read task values).
 
@@ -72,8 +72,7 @@ homeprojectabacus/
       silver.pipeline.yml
       gold.pipeline.yml
     jobs/
-      setup_infrastructure.job.yml
-      load_sample_data.job.yml
+      setup_infrastructure.job.yml      # includes optional load_sample_data task
       etl_ml_pipeline.job.yml
     schemas/
       schemas.yml                     # DAB-native schema resources
@@ -152,14 +151,17 @@ Failure semantics (explicit):
 - `check_new_data` raises on **zero-row Gold** → `should_retrain` and everything below it never evaluate; the job ends in failure. **Zero-row Gold is a pipeline failure, not a "skip retraining" scenario** — silent skip would mask data loss upstream.
 - `observe_*` task failures do **not** gate anything (intentional — observability is best-effort). However, an `observe_*` failure during a run that otherwise succeeded means you have lost diagnostic data for that run; surface it via job-level `email_notifications.on_failure`.
 
-### Dev Fixture Loading Job (`load_sample_data`)
+### Optional Dev Fixture Loading Task (`load_sample_data`)
 
 ```text
-load_sample_data
-  -> optional manual run of etl_ml_pipeline
+setup_infrastructure(load_sample_data=false)
+  -> apply_grants
+  -> create_retrain_decisions
+  -> should_load_sample_data
+  -> load_sample_data only when load_sample_data == "true"
 ```
 
-This avoids a circular pattern where the file-arrival job writes files into the path that triggers itself.
+This avoids a separate cluster startup for dev/demo data seeding and keeps sample-data movement classified as environment bootstrap, not production ingestion. The default remains `false` so production setup does not copy repository fixtures into the landing volume.
 
 ### Setup Job (`setup_infrastructure`)
 
@@ -744,7 +746,7 @@ Important limitations:
 - The path must not contain external tables or managed locations of catalogs and schemas.
 - Keep incoming files immutable.
 - In production, upstream systems should land new files with unique names.
-- For dev fixture refreshes, use the manual `load_sample_data` job and then manually run the pipeline job if needed.
+- For dev fixture refreshes, run `setup_infrastructure` with its `load_sample_data` job parameter set to `"true"` and then manually run the pipeline job if needed.
 
 Operational recommendation:
 
@@ -815,10 +817,7 @@ service:
                                              # resource (e.g. observability scripts run as job tasks).
 
   dependencies:
-    upstream:
-      - name: load_sample_data
-        type: service
-        required: false
+    upstream: []
     gates:
       - name: verify_bronze
         type: service
@@ -899,10 +898,6 @@ services:
   setup_infrastructure:
     type: job
     manifest: services/infrastructure/setup/service.yml
-
-  load_sample_data:
-    type: job
-    manifest: services/infrastructure/load_sample_data/service.yml
 
   # ── Observability ─────────────────────────────────────────────────
   # NOT a registry entry. build_observability.py is a job-task helper invoked
@@ -1060,11 +1055,7 @@ homeprojectabacus/
       setup/
         service.yml
         resources/
-          setup_infrastructure.job.yml
-      load_sample_data/
-        service.yml
-        resources/
-          load_sample_data.job.yml
+          setup_infrastructure.job.yml  # includes optional load_sample_data task
     etl/
       bronze/
         service.yml
@@ -1434,7 +1425,7 @@ The phase order is constrained by the prerequisites above. Phase 0 establishes t
 
 - Create `services/manifest.yml` with the initial ETL + ML services registered.
 - Create `src/framework/__init__.py` and `src/framework/service.py` with `HealthCheckResult`, `ServiceConfig`, and optional `ServiceVerifier`.
-- Create service manifests: `services/etl/bronze/service.yml`, `services/etl/silver/service.yml`, `services/etl/gold/service.yml`, `services/ml/training/service.yml`, `services/infrastructure/setup/service.yml`, `services/infrastructure/load_sample_data/service.yml`. Observability is **not** a service — `build_observability.py` is a job-task helper.
+- Create service manifests: `services/etl/bronze/service.yml`, `services/etl/silver/service.yml`, `services/etl/gold/service.yml`, `services/ml/training/service.yml`, `services/infrastructure/setup/service.yml`. Observability is **not** a service — `build_observability.py` is a job-task helper. Dev fixture loading is an optional setup task, not its own service.
 - Create empty `services/<group>/<name>/resources/` directories so Phase 3 can drop DAB resource YAMLs straight in.
 - Create the `src/framework/validate_manifests.py` validator script (see **Manifest Validator Contract** below).
 - Restructure `databricks.yml` to use the multi-pattern `include:` block shown in **Modular DAB Bundle Structure** (one explicit glob per depth — DAB `**` only matches a single level). Plus shared `resources/schemas/` and `resources/volumes/`.
@@ -1461,7 +1452,7 @@ The phase order is constrained by the prerequisites above. Phase 0 establishes t
 - Add `databricks.yml` with bundle variables (`catalog`, `bronze_schema`, `silver_schema`, `gold_schema`, `analytics_schema`, `ml_schema`, `node_type_id`, `model_version`) and per-target overrides for `dev`/`prod`. Use the explicit multi-depth `include:` block shown in **Modular DAB Bundle Structure** — single `services/**/resources/*.yml` does not work because DAB CLI's `**` only matches one directory level (issue #4831).
 - Service pipeline resources are in `services/etl/*/resources/*.pipeline.yml` (with `event_log:` configured, classic clusters with `SPOT_WITH_FALLBACK`).
 - Add `resources/schemas/schemas.yml` and `resources/volumes/volumes.yml` (DAB-native infra, stays central).
-- Job resources are in `services/*/resources/*.job.yml` (the `etl_ml_pipeline` job in `services/ml/training/resources/training.job.yml`, the setup job in `services/infrastructure/setup/resources/setup_infrastructure.job.yml`, the data loader in `services/infrastructure/load_sample_data/resources/load_sample_data.job.yml`).
+- Job resources are in `services/*/resources/*.job.yml` (the `etl_ml_pipeline` job in `services/ml/training/resources/training.job.yml`, and the setup job in `services/infrastructure/setup/resources/setup_infrastructure.job.yml`; dev fixture loading is an optional task in setup).
 
 ### Phase 4 — Observability integration
 
