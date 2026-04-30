@@ -162,7 +162,7 @@ resources:
             parameters:
               # Use no-tune for the first paid validation.
               # Restore --tune only after the full deployment path works once.
-              - --no-tune
+              - --tune
               - --catalog
               - ${var.catalog}
               - --gold-table
