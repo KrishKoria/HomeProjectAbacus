@@ -64,7 +64,8 @@ class RetrainDecision:
 
 def _feature_columns_from_run(run_id: str) -> list[str]:
     try:
-        payload = mlflow.artifacts.load_dict(f"runs:/{run_id}/feature_columns.json")
+        payload = mlflow.artifacts.load_dict(
+            f"runs:/{run_id}/feature_columns.json")
     except Exception:
         return []
     columns = payload.get("columns", []) if isinstance(payload, dict) else []
@@ -72,8 +73,25 @@ def _feature_columns_from_run(run_id: str) -> list[str]:
 
 
 def _current_gold_version(spark, gold_table: str) -> int:
-    row = spark.sql(f"DESCRIBE HISTORY {gold_table} LIMIT 1").collect()[0]
-    return int(row["version"])
+    """
+    Return the Delta table version when gold_table is a Delta table.
+
+    Lakeflow materialized views/views do not support DESCRIBE HISTORY.
+    In that case, return -1 and rely on the content fingerprint for
+    retrain decisions.
+    """
+    try:
+        row = spark.sql(f"DESCRIBE HISTORY {gold_table} LIMIT 1").collect()[0]
+        return int(row["version"])
+    except Exception as exc:
+        message = str(exc)
+        if (
+            "EXPECT_TABLE_NOT_VIEW" in message
+            or "expects a table" in message
+            or "is a view" in message
+        ):
+            return -1
+        raise
 
 
 def compute_fingerprint(spark, gold_table: str, feature_columns: list[str]) -> str:
@@ -91,7 +109,8 @@ def compute_fingerprint(spark, gold_table: str, feature_columns: list[str]) -> s
                 F.sha2(
                     F.concat_ws(
                         "||",
-                        *[F.coalesce(F.col(column).cast("string"), F.lit("<NULL>")) for column in columns],
+                        *[F.coalesce(F.col(column).cast("string"),
+                                     F.lit("<NULL>")) for column in columns],
                     ),
                     256,
                 ),
@@ -125,10 +144,12 @@ def decide_retrain(
         raise ValueError(f"{gold_table} has zero rows")
 
     current_gold_version = _current_gold_version(spark, gold_table)
-    current_fingerprint = compute_fingerprint(spark, gold_table, feature_columns)
+    current_fingerprint = compute_fingerprint(
+        spark, gold_table, feature_columns)
 
     try:
-        champion = client.get_model_version_by_alias(registered_model_name, champion_alias)
+        champion = client.get_model_version_by_alias(
+            registered_model_name, champion_alias)
     except Exception:
         return RetrainDecision.should_retrain_true(
             reason="no champion model found",

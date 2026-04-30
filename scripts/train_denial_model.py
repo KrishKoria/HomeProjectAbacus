@@ -5,8 +5,16 @@ import logging
 import pickle
 import sys
 from pathlib import Path
+from typing import Final
 
 import pandas as pd
+
+_SCRIPT_PATH: Final[Path] = Path(
+    globals().get("__file__", sys._getframe().f_code.co_filename)
+).resolve()
+PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.ml.evaluate import (
     compute_confusion_matrix,
@@ -121,6 +129,46 @@ def _load_features(args: argparse.Namespace) -> pd.DataFrame:
     sys.exit(1)
 
 
+def _parse_three_part_name(name: str) -> tuple[str, str, str] | None:
+    parts = [part.strip().strip("`") for part in name.split(".")]
+    if len(parts) != 3 or any(not part for part in parts):
+        return None
+    return (parts[0], parts[1], parts[2])
+
+
+def _current_gold_version(spark, gold_table: str) -> int:
+    """Return Delta table version, or -1 when Gold is a view/materialized view."""
+    parsed = _parse_three_part_name(gold_table)
+    if parsed is not None:
+        catalog, schema, relation = parsed
+        table_type_rows = spark.sql(
+            f"""
+            SELECT table_type
+            FROM `{catalog}`.information_schema.tables
+            WHERE table_schema = '{schema.replace("'", "''")}'
+              AND table_name = '{relation.replace("'", "''")}'
+            LIMIT 1
+            """
+        ).collect()
+        if table_type_rows:
+            table_type = str(table_type_rows[0]["table_type"]).upper()
+            if "VIEW" in table_type:
+                return -1
+
+    try:
+        row = spark.sql(f"DESCRIBE HISTORY {gold_table} LIMIT 1").collect()[0]
+        return int(row["version"])
+    except Exception as exc:
+        message = str(exc)
+        if (
+            "EXPECT_TABLE_NOT_VIEW" in message
+            or "expects a table" in message
+            or "is a view" in message
+        ):
+            return -1
+        raise
+
+
 def train_pipeline(
     df: pd.DataFrame,
     tune: bool = False,
@@ -197,8 +245,9 @@ def train_pipeline(
         from pyspark.sql import SparkSession
 
         spark = SparkSession.builder.getOrCreate()
-        training_metadata["gold_table_version"] = int(
-            spark.sql(f"DESCRIBE HISTORY {gold_table_name} LIMIT 1").collect()[0]["version"]
+        training_metadata["gold_table_version"] = _current_gold_version(
+            spark,
+            gold_table_name,
         )
         training_metadata["training_data_fingerprint"] = compute_fingerprint(
             spark,
