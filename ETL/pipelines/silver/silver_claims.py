@@ -148,8 +148,7 @@ def _claims_validated_rows():
     )
 
     with_flags = (
-        cleaned.withColumn("_silver_processed_at", F.current_timestamp())
-        .withColumn("_data_quality_flags", spark_quality_flags(quality_flags))
+        cleaned.withColumn("_data_quality_flags", spark_quality_flags(quality_flags))
         .withColumn("_row_priority", F.row_number().over(duplicate_window))
         .withColumn("missing_claim_id", F.col("claim_id").isNull())
         .withColumn("missing_patient_id", F.col("patient_id").isNull())
@@ -223,9 +222,9 @@ def _claims_validated_rows():
     )
 
 
-@dp.table(
+@dp.materialized_view(
     name=SILVER_CLAIMS_TABLE,
-    cluster_by=["claim_id", "date"],
+    refresh_policy="incremental",
     comment=(
         f"{_TRUSTED_COMMENT} "
         "Trusted Silver claims retain nullable procedure_code and billed_amount as quality flags, "
@@ -263,9 +262,9 @@ def silver_claims():
     )
 
 
-@dp.table(
+@dp.materialized_view(
     name=QUARANTINE_CLAIMS_TABLE,
-    cluster_by=["claim_id", "diagnostic_id"],
+    refresh_policy="incremental",
     comment=(
         f"{_QUARANTINE_COMMENT} "
         "PHI-safe quarantine stream for claim rows that cannot enter trusted silver. "
@@ -288,7 +287,7 @@ def quarantine_claims():
             F.col("diagnostic_id"),
             F.lit(" quarantined_records=1"),
         ),
-    ).withColumn("_quarantined_at", F.current_timestamp()).drop(
+    ).drop(
         "_row_priority",
         "missing_claim_id",
         "missing_patient_id",

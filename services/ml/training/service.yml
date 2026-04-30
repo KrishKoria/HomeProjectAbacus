@@ -1,0 +1,8 @@
+service:
+  name: ml_training
+  type: job
+  version: "1.0.0"
+  description: Production ETL-to-ML orchestration job.
+entry_point:
+  resource_key: etl_ml_pipeline
+  resource_type: jobs

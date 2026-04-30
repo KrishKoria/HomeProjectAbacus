@@ -67,6 +67,8 @@ Output table: healthcare.bronze.claims
 Cluster by  : claim_id (point lookups), date (time-range scans)
 """
 
+from __future__ import annotations
+
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 

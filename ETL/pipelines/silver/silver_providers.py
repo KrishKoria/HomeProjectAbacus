@@ -44,7 +44,6 @@ def _providers_stream():
         .withColumn("doctor_name", spark_normalize_title(F.col("doctor_name")))
         .withColumn("specialty", spark_normalize_title(F.col("specialty")))
         .withColumn("location", spark_normalize_title(F.col("location")))
-        .withColumn("_silver_processed_at", F.current_timestamp())
         .withColumn(
             "_data_quality_flags",
             spark_quality_flags({"provider_location_unknown": F.col("location").isNull()}),
@@ -58,9 +57,9 @@ def _providers_stream():
     return cleaned.withColumn("location", F.coalesce(F.col("location"), F.lit("Unknown")))
 
 
-@dp.table(
+@dp.materialized_view(
     name=SILVER_PROVIDERS_TABLE,
-    cluster_by=["provider_id", "specialty"],
+    refresh_policy="incremental",
     comment=(
         MESSAGE_TEMPLATE_SILVER_TABLE_READY.format(
             table_name=SILVER_PROVIDERS_TABLE,
@@ -85,9 +84,9 @@ def silver_providers():
     )
 
 
-@dp.table(
+@dp.materialized_view(
     name=QUARANTINE_PROVIDERS_TABLE,
-    cluster_by=["provider_id", "diagnostic_id"],
+    refresh_policy="incremental",
     comment=(
         MESSAGE_TEMPLATE_QUARANTINE_SUMMARY.format(
             dataset="providers",
@@ -132,6 +131,5 @@ def quarantine_providers():
             .when(F.col("missing_doctor_name"), F.lit("doctor_name is required for credential verification"))
             .otherwise(F.lit("duplicate provider_id observed in the silver stream")),
         )
-        .withColumn("_quarantined_at", F.current_timestamp())
     )
     return diagnostics.drop("_row_priority")

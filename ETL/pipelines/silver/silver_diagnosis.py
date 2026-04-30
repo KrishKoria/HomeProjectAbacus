@@ -48,7 +48,6 @@ def _diagnosis_stream():
         .withColumn("diagnosis_code", spark_normalize_code(F.col("diagnosis_code")))
         .withColumn("category", spark_normalize_title(F.col("category")))
         .withColumn("severity", spark_normalize_severity(F.col("severity")))
-        .withColumn("_silver_processed_at", F.current_timestamp())
         .withColumn("_data_quality_flags", spark_quality_flags({}))
         .withColumn("_row_priority", F.row_number().over(duplicate_window))
         .withColumn("missing_diagnosis_code", F.col("diagnosis_code").isNull())
@@ -58,9 +57,9 @@ def _diagnosis_stream():
     )
 
 
-@dp.table(
+@dp.materialized_view(
     name=SILVER_DIAGNOSIS_TABLE,
-    cluster_by=["diagnosis_code", "severity"],
+    refresh_policy="incremental",
     comment=(
         MESSAGE_TEMPLATE_SILVER_TABLE_READY.format(
             table_name=SILVER_DIAGNOSIS_TABLE,
@@ -89,9 +88,9 @@ def silver_diagnosis():
     )
 
 
-@dp.table(
+@dp.materialized_view(
     name=QUARANTINE_DIAGNOSIS_TABLE,
-    cluster_by=["diagnosis_code", "diagnostic_id"],
+    refresh_policy="incremental",
     comment=(
         MESSAGE_TEMPLATE_QUARANTINE_SUMMARY.format(
             dataset="diagnosis",
@@ -150,6 +149,5 @@ def quarantine_diagnosis():
             .when(F.col("invalid_severity"), F.lit("severity must normalize to High or Low"))
             .otherwise(F.lit("duplicate diagnosis_code observed in the silver stream")),
         )
-        .withColumn("_quarantined_at", F.current_timestamp())
     )
     return quarantined.drop("_row_priority")

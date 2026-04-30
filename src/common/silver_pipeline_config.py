@@ -9,12 +9,10 @@ SILVER_SCHEMA_DEFAULT: Final[str] = "silver"
 QUARANTINE_SCHEMA_DEFAULT: Final[str] = "quarantine"
 ANALYTICS_SCHEMA_DEFAULT: Final[str] = "analytics"
 
-SILVER_AUDIT_COLUMNS: Final[tuple[str, str]] = (
-    "_silver_processed_at",
+SILVER_AUDIT_COLUMNS: Final[tuple[str, ...]] = (
     "_data_quality_flags",
 )
-QUARANTINE_AUDIT_COLUMNS: Final[tuple[str, str, str, str]] = (
-    "_quarantined_at",
+QUARANTINE_AUDIT_COLUMNS: Final[tuple[str, ...]] = (
     "diagnostic_id",
     "rule_name",
     "quarantine_reason",

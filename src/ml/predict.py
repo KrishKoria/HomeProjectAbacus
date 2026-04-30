@@ -94,10 +94,9 @@ def load_from_registry(
 
     **Cluster prerequisites** (one-time, not a code concern):
 
-    - Databricks Runtime **14.3 LTS ML** or later (UC model artifact
-      credential-vending is fixed there). Older runtimes return the raw
-      ``s3://dbstorage-*`` URI to the artifact downloader, which then
-      tries anonymous HEAD requests and fails with 400 Bad Request.
+    - Databricks Runtime **17.3 LTS ML** for current deployments. Older
+      LTS ML clusters can still be supported by Databricks, but this repo
+      targets the current long-lived ML runtime for UC model artifact access.
     - Quick fix without changing runtime: install latest MLflow in the
       notebook session::
 

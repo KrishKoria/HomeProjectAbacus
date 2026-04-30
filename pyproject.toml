@@ -8,6 +8,7 @@ dependencies = [
     "altair>=6.0.0,<7.0.0",
     "pandas>=2.2.3,<3.0.0",
     "pdfplumber>=0.11,<1.0",
+    "pyyaml>=6.0.2,<7.0.0",
     "pyarrow>=23.0.0,<24.0.0",
     "streamlit>=1.50.0,<2.0.0",
 ]
@@ -24,6 +25,28 @@ ml = [
     "mlflow>=3.0,<4.0",
     "optuna>=3.6,<4.0",
 ]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = [
+    "common",
+    "src.analytics",
+    "src.common",
+    "src.framework",
+    "src.ml",
+    "src.scripts",
+]
+
+[tool.setuptools.package-dir]
+"common" = "ETL/common"
+"src.analytics" = "src/analytics"
+"src.common" = "src/common"
+"src.framework" = "src/framework"
+"src.ml" = "src/ml"
+"src.scripts" = "src/scripts"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -42,6 +42,8 @@ Output table: healthcare.bronze.cost
 Cluster by  : procedure_code, region (composite join key — claims+providers join on both)
 """
 
+from __future__ import annotations
+
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 

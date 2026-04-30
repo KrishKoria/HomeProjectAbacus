@@ -124,7 +124,6 @@ def _policy_documents_stream():
     )
     extracted = (
         read_bronze_snapshot(spark, BRONZE_POLICIES_TABLE)
-        .withColumn("_silver_processed_at", F.current_timestamp())
         .withColumn("_row_priority", F.row_number().over(duplicate_window))
         .withColumn("extract_result", _extract_policy_text_udf(F.col("content")))
         .withColumn("policy_text", F.col("extract_result.policy_text"))
@@ -144,9 +143,8 @@ def _policy_documents_stream():
     return extracted.drop("extract_result")
 
 
-@dp.table(
+@dp.materialized_view(
     name=SILVER_POLICY_CHUNKS_TABLE,
-    cluster_by=["document_path", "chunk_id"],
     comment=(
         MESSAGE_TEMPLATE_SILVER_TABLE_READY.format(
             table_name=SILVER_POLICY_CHUNKS_TABLE,
@@ -186,16 +184,14 @@ def silver_policy_chunks():
         "token_count",
         "embedding_vector",
         "embedding_status",
-        "_silver_processed_at",
         "_data_quality_flags",
         "_source_file",
         "_pipeline_run_id",
     )
 
 
-@dp.table(
+@dp.materialized_view(
     name=QUARANTINE_POLICY_CHUNKS_TABLE,
-    cluster_by=["path", "diagnostic_id"],
     comment=(
         MESSAGE_TEMPLATE_QUARANTINE_SUMMARY.format(
             dataset="policy_chunks",
@@ -245,6 +241,5 @@ def quarantine_policy_chunks():
                 F.col("diagnostic_id"),
             ),
         )
-        .withColumn("_quarantined_at", F.current_timestamp())
     )
     return quarantined.drop("_row_priority")
