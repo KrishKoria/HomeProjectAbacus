@@ -23,11 +23,14 @@ variables:
   ml_schema:
     default: ml
   node_type_id:
-    default: n1-standard-4
+    default: n2-highmem-2
   spark_version:
     default: 17.3.x-cpu-ml-scala2.13
   model_version:
     description: MLflow registered model version for production serving.
+
+experimental:
+  skip_name_prefix_for_schema: true
 
 targets:
   dev:
