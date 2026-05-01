@@ -43,13 +43,13 @@ class FrameworkContractTests(unittest.TestCase):
 
 class TrainingContractTests(unittest.TestCase):
     def test_entrypoint_argv_defaults_to_tune(self) -> None:
-        from scripts import train_denial_model
+        from src.scripts import train_denial_model
 
         with mock.patch.object(sys, "argv", ["train_denial_model.py"]):
             self.assertEqual(train_denial_model._entrypoint_argv(), ["--tune"])
 
     def test_entrypoint_argv_passes_through_databricks_parameters(self) -> None:
-        from scripts import train_denial_model
+        from src.scripts import train_denial_model
 
         argv = [
             "train_denial_model.py",
@@ -682,25 +682,24 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn('dataframe.write.mode("append")', source)
         self.assertIn('withColumn("pipeline_stage"', source)
 
-    def test_spark_python_entrypoints_bootstrap_project_root_before_src_imports(self) -> None:
+    def test_spark_python_entrypoints_rely_on_editable_install_not_sys_path(self) -> None:
+        """Scripts under src/scripts/ must NOT manually inject PROJECT_ROOT into
+        sys.path.  Package resolution is handled uniformly by the editable install
+        (``--editable ${workspace.file_path}``) declared in every job/pipeline
+        environment spec, so the old boilerplate is both redundant and inconsistent.
+
+        Note: load_sample_data.py is exempt from the _SCRIPT_PATH check because it
+        legitimately uses PROJECT_ROOT to locate fixture dataset files on disk, not
+        for sys.path manipulation."""
         for path in sorted((PROJECT_ROOT / "src" / "scripts").glob("*.py")):
             source = path.read_text(encoding="utf-8")
             if "from src." not in source and "import src" not in source:
                 continue
 
             with self.subTest(path=path.name):
-                self.assertIn('globals().get("__file__", sys._getframe().f_code.co_filename)', source)
-                self.assertIn("PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]", source)
-                self.assertIn("sys.path.insert(0, str(PROJECT_ROOT))", source)
-                first_src_import = min(
-                    index
-                    for index in (
-                        source.find("from src."),
-                        source.find("import src"),
-                    )
-                    if index != -1
-                )
-                self.assertLess(source.index("sys.path.insert(0, str(PROJECT_ROOT))"), first_src_import)
+                self.assertNotIn("sys.path.insert(0, str(PROJECT_ROOT))", source)
+                if path.name != "load_sample_data.py":
+                    self.assertNotIn("_SCRIPT_PATH.parents[2]", source)
 
     def test_lakeflow_pipelines_install_project_editable_for_common_imports(self) -> None:
         pipeline_yml_files = (
@@ -723,14 +722,32 @@ class BundleContractTests(unittest.TestCase):
                 self.assertNotIn("sys.path.insert(0, str(_path))", source)
                 self.assertNotIn("_PIPELINE_PATH", source)
 
-    def test_setup_entrypoint_supports_databricks_exec_without_file_global(self) -> None:
+    def test_job_environments_install_project_editable(self) -> None:
+        """Every job YAML with a serverless environment spec must declare
+        ``--editable ${workspace.file_path}`` so spark_python_task scripts can
+        import ``src.*`` packages without manual sys.path manipulation."""
+        job_yml_files = (
+            PROJECT_ROOT / "services" / "ml" / "training" / "resources" / "training.job.yml",
+            PROJECT_ROOT / "services" / "infrastructure" / "setup" / "resources" / "setup_infrastructure.job.yml",
+        )
+        for path in job_yml_files:
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertIn("dependencies:", source)
+                self.assertIn("--editable ${workspace.file_path}", source)
+
+    def test_setup_entrypoint_imports_cleanly_without_file_global(self) -> None:
+        """setup_retrain_decisions.py must not rely on __file__ for sys.path
+        manipulation.  The editable install provides the package resolution, so
+        exec'ing the source without __file__ in the namespace must succeed and
+        make HealthCheckResult importable."""
         path = PROJECT_ROOT / "src" / "scripts" / "setup_retrain_decisions.py"
         source = path.read_text(encoding="utf-8")
         namespace: dict[str, object] = {"__name__": "databricks_exec_test"}
 
         exec(compile(source, str(path), "exec"), namespace)
 
-        self.assertEqual(namespace["PROJECT_ROOT"], PROJECT_ROOT)
+        self.assertIn("HealthCheckResult", namespace)
 
     def test_setup_entrypoint_does_not_raise_system_exit_on_success(self) -> None:
         path = PROJECT_ROOT / "src" / "scripts" / "setup_retrain_decisions.py"

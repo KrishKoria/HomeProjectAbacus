@@ -187,7 +187,7 @@ class ModelTrainingTests(unittest.TestCase):
         self.assertEqual(model_77.get_params()["random_state"], 77)
 
     def test_cli_random_seed_reaches_train_pipeline(self):
-        from scripts import train_denial_model
+        from src.scripts import train_denial_model
 
         args = train_denial_model._parse_args(["--no-tune", "--random-seed", "88"])
         self.assertEqual(args.random_seed, 88)
@@ -477,7 +477,7 @@ class ReleaseGateTests(unittest.TestCase):
     def test_main_exits_nonzero_and_skips_save_when_metrics_fail(self):
         from unittest import mock
 
-        from scripts import train_denial_model
+        from src.scripts import train_denial_model
         from src.ml.evaluate import EvaluationMetrics
 
         failing_metrics = EvaluationMetrics(
