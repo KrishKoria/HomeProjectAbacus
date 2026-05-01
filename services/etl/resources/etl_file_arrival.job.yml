@@ -1,0 +1,74 @@
+resources:
+  jobs:
+    etl_file_arrival_job:
+      name: "[${bundle.target}] Healthcare ETL File Arrival"
+
+      trigger:
+        file_arrival:
+          url: /Volumes/healthcare/bronze/raw_landing/
+          min_time_between_triggers_seconds: 300
+          wait_after_last_change_seconds: 60
+
+      email_notifications:
+        on_failure:
+          - krishkoria.work@gmail.com
+        no_alert_for_skipped_runs: true
+
+      tasks:
+        - task_key: run_etl_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.healthcare_etl_pipeline.id}
+
+        - task_key: verify_etl_light
+          depends_on:
+            - task_key: run_etl_pipeline
+          run_if: ALL_DONE
+          spark_python_task:
+            python_file: ../../../src/scripts/verify_etl_light.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --bronze-schema
+              - ${var.bronze_schema}
+              - --silver-schema
+              - ${var.silver_schema}
+              - --gold-schema
+              - ${var.gold_schema}
+              - --quarantine-schema
+              - quarantine
+              - --pipeline-result
+              - "{{tasks.run_etl_pipeline.result_state}}"
+          environment_key: default
+
+        - task_key: launch_analytics_observability
+          depends_on:
+            - task_key: verify_etl_light
+          run_if: ALL_DONE
+          spark_python_task:
+            python_file: ../../../src/scripts/launch_analytics_observability.py
+            parameters:
+              - --parent-job-name
+              - "{{job.name}}"
+              - --parent-run-id
+              - "{{job.run_id}}"
+              - --pipeline-stage
+              - etl
+              - --pipeline-result
+              - "{{tasks.run_etl_pipeline.result_state}}"
+              - --verify-result
+              - "{{tasks.verify_etl_light.result_state}}"
+              - --analytics-job-id
+              - ${resources.jobs.analytics_observability_job.id}
+          environment_key: default
+
+        - task_key: launch_ml_retrain
+          depends_on:
+            - task_key: run_etl_pipeline
+          run_job_task:
+            job_id: ${resources.jobs.ml_retrain_job.id}
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+            dependencies:
+              - --editable ${workspace.file_path}
