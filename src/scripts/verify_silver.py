@@ -1,17 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
-from pathlib import Path
-from typing import Final
-
-
-_SCRIPT_PATH: Final[Path] = Path(
-    globals().get("__file__", sys._getframe().f_code.co_filename)
-).resolve()
-PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.analytics.quality_assets import WEEK3_DATASETS, write_quality_assets
 from src.common.silver_pipeline_config import quarantine_table_name, silver_table_name
