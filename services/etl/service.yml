@@ -1,0 +1,11 @@
+service:
+  name: etl_pipeline
+  type: pipeline
+  version: "1.0.0"
+  description: Consolidated Bronze-Silver-Gold Lakeflow ETL pipeline.
+entry_point:
+  resource_key: healthcare_etl_pipeline
+  resource_type: pipelines
+health_check:
+  type: script
+  entry_point: src/scripts/verify_etl_light.py

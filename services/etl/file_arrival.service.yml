@@ -1,0 +1,8 @@
+service:
+  name: etl_file_arrival
+  type: job
+  version: "1.0.0"
+  description: File-arrival ETL hot path job (pipeline + light verification).
+entry_point:
+  resource_key: etl_file_arrival_job
+  resource_type: jobs
