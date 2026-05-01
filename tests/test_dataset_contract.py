@@ -59,7 +59,7 @@ class DatasetContractTests(unittest.TestCase):
         self.assertEqual(BRONZE_SOURCES["claims"].phi_columns, documented_phi_columns)
 
     def test_synthetic_claim_label_regenerator_is_present(self) -> None:
-        script_path = PROJECT_ROOT / "scripts" / "generate_synthetic_claim_labels.py"
+        script_path = PROJECT_ROOT / "tools" / "generate_synthetic_claim_labels.py"
 
         self.assertTrue(script_path.exists())
         result = subprocess.run(
@@ -72,7 +72,7 @@ class DatasetContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_synthetic_claim_label_generator_treats_zero_expected_cost_as_missing(self) -> None:
-        from scripts.generate_synthetic_claim_labels import classify_claim
+        from tools.generate_synthetic_claim_labels import classify_claim
 
         reason, allowed_amount = classify_claim(
             {
