@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from typing import Final
 
 from src.common.bronze_pipeline_config import format_claimops_diagnostic_id
@@ -286,8 +285,6 @@ def write_observability_tables(
     catalog: str = "healthcare",
     analytics_schema: str = "analytics",
     pipeline_stage: str | None = None,
-    parallel_writes: bool = True,
-    max_parallel_writes: int = 4,
 ) -> dict[str, str]:
     """Build and persist Databricks-native observability tables."""
     event_log_df = _cache_if_available(
@@ -326,12 +323,7 @@ def write_observability_tables(
         return table_name, MESSAGE_EVENT_LOG_SQL_BRIDGE if not published_event_log_table else table_fqn
 
     try:
-        if parallel_writes and len(outputs) > 1:
-            worker_count = max(1, min(max_parallel_writes, len(outputs)))
-            with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                persisted = dict(executor.map(persist_one, outputs.items()))
-        else:
-            persisted = dict(persist_one(item) for item in outputs.items())
+        persisted = dict(persist_one(item) for item in outputs.items())
     finally:
         _unpersist_if_available(event_log_df)
 
