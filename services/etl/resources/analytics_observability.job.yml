@@ -1,0 +1,70 @@
+resources:
+  jobs:
+    analytics_observability_job:
+      name: "[${bundle.target}] Healthcare Analytics + Observability"
+
+      parameters:
+        - name: upstream_status
+          default: success
+        - name: parent_job_name
+          default: manual
+        - name: parent_run_id
+          default: "0"
+        - name: pipeline_stage
+          default: etl
+
+      tasks:
+        - task_key: build_observability
+          spark_python_task:
+            python_file: ../../../src/scripts/build_observability.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --analytics-schema
+              - ${var.analytics_schema}
+              - --published-event-log-table
+              - ${var.catalog}.${var.analytics_schema}.etl_pipeline_event_log
+              - --pipeline-stage
+              - "{{job.parameters.pipeline_stage}}"
+          environment_key: default
+
+        - task_key: build_analytics
+          depends_on:
+            - task_key: build_observability
+          spark_python_task:
+            python_file: ../../../src/scripts/build_analytics.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --bronze-schema
+              - ${var.bronze_schema}
+              - --analytics-schema
+              - ${var.analytics_schema}
+              - --upstream-status
+              - "{{job.parameters.upstream_status}}"
+          environment_key: default
+
+        - task_key: build_quality_assets
+          depends_on:
+            - task_key: build_analytics
+          spark_python_task:
+            python_file: ../../../src/scripts/verify_silver.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --silver-schema
+              - ${var.silver_schema}
+              - --quarantine-schema
+              - quarantine
+              - --analytics-schema
+              - ${var.analytics_schema}
+              - --emit-quality-assets
+              - --upstream-status
+              - "{{job.parameters.upstream_status}}"
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+            dependencies:
+              - --editable ${workspace.file_path}

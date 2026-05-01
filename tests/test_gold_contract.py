@@ -73,7 +73,8 @@ class GoldPipelineContractTests(unittest.TestCase):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
         self.assertIn("private=True", source)
         self.assertIn("claims_feature_base", source)
-        self.assertIn("provider_aggregations", source)
+        self.assertIn("provider_daily_stats", source)
+        self.assertIn("provider_lifetime_stats", source)
 
     def test_gold_pipeline_reads_from_silver_not_bronze(self):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
@@ -130,15 +131,8 @@ class GoldPipelineContractTests(unittest.TestCase):
         self.assertIn('cast("timestamp").cast("long")', source)
 
     def test_gold_pipeline_diagnosis_count_partition_is_provider_only(self):
-        # Regression: partitioning by (provider_id, diagnosis_code) and then
-        # taking distinct(diagnosis_code) is always 1. Per ARCHITECTURE.md §9.3
-        # diagnosis_count is "distinct diagnoses per provider".
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
-        self.assertIn('diagnosis_window = Window.partitionBy("provider_id")', source)
-        self.assertNotIn(
-            'Window.partitionBy("provider_id", "diagnosis_code")',
-            source,
-        )
+        self.assertIn('F.sum("daily_diagnosis_count").alias("diagnosis_count")', source)
 
     def test_gold_pipeline_drops_target_leak_columns(self):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")

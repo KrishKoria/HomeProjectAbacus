@@ -1,0 +1,8 @@
+service:
+  name: analytics_observability
+  type: job
+  version: "1.0.0"
+  description: Post-ETL analytics, quality assets, and observability job.
+entry_point:
+  resource_key: analytics_observability_job
+  resource_type: jobs

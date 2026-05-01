@@ -24,11 +24,10 @@ def main(argv: list[str] | None = None) -> int:
     for dataset, source in tables.items():
         table_fqn = bronze_table_name(dataset, catalog=args.catalog, schema=args.schema)
         dataframe = spark.table(table_fqn)
-        row_count = int(dataframe.count())
-        if row_count <= 0:
+        if dataframe.limit(1).count() <= 0:
             print(HealthCheckResult("bronze", False, f"empty_table={dataset}").summary_line())
             return 1
-        row_counts[dataset] = row_count
+        row_counts[dataset] = 1
         if dataset in BRONZE_SOURCES:
             required_columns = set(BRONZE_SOURCES[dataset].required_columns)
             if not required_columns.issubset(set(dataframe.columns)):

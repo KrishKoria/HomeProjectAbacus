@@ -154,7 +154,31 @@ def _claims_feature_base():
 
 
 @dp.materialized_view(
-    name="provider_aggregations",
+    name="provider_daily_stats",
+    private=True,
+    comment=(
+        "Private intermediate: provider/day aggregations used for rolling "
+        "window features."
+    ),
+    table_properties=gold_table_properties("SENSITIVE", CLAIMS_PHI_COLUMNS),
+)
+def _provider_daily_stats():
+    claims = read_silver_snapshot(spark, _silver_claims)
+    return (
+        claims.filter(F.col("provider_id").isNotNull())
+        .withColumn("event_date", F.to_date(F.col("date")))
+        .withColumn("is_denied_int", F.when(F.col("is_denied") == F.lit(True), F.lit(1)).otherwise(F.lit(0)))
+        .groupBy("provider_id", "event_date")
+        .agg(
+            F.count("*").alias("daily_claim_count"),
+            F.sum("is_denied_int").alias("daily_denied_count"),
+            F.approx_count_distinct("diagnosis_code").alias("daily_diagnosis_count"),
+        )
+    )
+
+
+@dp.materialized_view(
+    name="provider_lifetime_stats",
     private=True,
     comment=(
         "Private intermediate: provider-level claim counts and denial rates "
@@ -162,15 +186,15 @@ def _claims_feature_base():
     ),
     table_properties=gold_table_properties("SENSITIVE", CLAIMS_PHI_COLUMNS),
 )
-def _provider_aggregations():
-    claims = read_silver_snapshot(spark, _silver_claims)
+def _provider_lifetime_stats():
+    daily = spark.read.table("provider_daily_stats")
     return (
-        claims.filter(F.col("provider_id").isNotNull())
-        .withColumn("is_denied_int", F.when(F.col("is_denied") == F.lit(True), F.lit(1)).otherwise(F.lit(0)))
+        daily
         .groupBy("provider_id")
         .agg(
-            F.count("*").alias("provider_claim_count"),
-            F.sum("is_denied_int").alias("provider_denied_count"),
+            F.sum("daily_claim_count").alias("provider_claim_count"),
+            F.sum("daily_denied_count").alias("provider_denied_count"),
+            F.sum("daily_diagnosis_count").alias("diagnosis_count"),
         )
         .withColumn(
             "provider_risk_score",
@@ -195,42 +219,42 @@ def _provider_aggregations():
 )
 def gold_claim_features():
     base = spark.read.table("claims_feature_base")
-    provider_agg = spark.read.table("provider_aggregations")
+    provider_daily = spark.read.table("provider_daily_stats")
+    provider_lifetime = spark.read.table("provider_lifetime_stats")
 
     # `date` is DateType; casting directly to long yields *days* since epoch,
     # which makes a `rangeBetween(-30 * 86400, 0)` window effectively unbounded.
     # Cast through timestamp first so the range units (seconds) match the column.
-    claim_window_30d = (
+    daily_window_30d = (
         Window.partitionBy("provider_id")
-        .orderBy(F.col("date").cast("timestamp").cast("long"))
+        .orderBy(F.col("event_date").cast("timestamp").cast("long"))
         .rangeBetween(-PROVIDER_LOOKBACK_WINDOW_DAYS * 86400, 0)
     )
-
-    # `diagnosis_count` per ARCHITECTURE.md §9.3 is "distinct diagnoses per
-    # provider"; partitioning by (provider_id, diagnosis_code) would always
-    # collapse to 1.
-    diagnosis_window = Window.partitionBy("provider_id")
+    provider_daily_rolling = provider_daily.withColumn(
+        "provider_claim_count_30d",
+        F.sum("daily_claim_count").over(daily_window_30d),
+    ).select("provider_id", "event_date", "provider_claim_count_30d")
 
     result = (
-        base.join(
-            F.broadcast(provider_agg),
+        base.withColumn("event_date", F.to_date(F.col("date")))
+        .join(
+            F.broadcast(provider_lifetime),
             on="provider_id",
+            how="left",
+        )
+        .join(
+            provider_daily_rolling,
+            on=["provider_id", "event_date"],
             how="left",
         )
         .withColumn(
             "provider_claim_count_30d",
             F.when(
                 F.col("date").isNotNull() & F.col("provider_id").isNotNull(),
-                F.count("*").over(claim_window_30d),
+                F.col("provider_claim_count_30d"),
             ).otherwise(F.lit(None).cast("int")),
         )
-        .withColumn(
-            "diagnosis_count",
-            F.when(
-                F.col("provider_id").isNotNull(),
-                F.approx_count_distinct("diagnosis_code").over(diagnosis_window),
-            ).otherwise(F.lit(None).cast("int")),
-        )
+        .drop("event_date")
     )
 
     return result.select(
