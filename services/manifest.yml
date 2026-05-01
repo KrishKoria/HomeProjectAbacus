@@ -1,22 +1,27 @@
 services:
-  etl_bronze:
+  etl_pipeline:
     type: pipeline
-    manifest: services/etl/bronze/service.yml
-  etl_gold:
-    type: pipeline
-    manifest: services/etl/gold/service.yml
+    manifest: services/etl/service.yml
+  etl_file_arrival:
+    type: job
+    manifest: services/etl/file_arrival.service.yml
     depends_on:
-      - etl_silver
-  etl_silver:
-    type: pipeline
-    manifest: services/etl/silver/service.yml
+      - etl_pipeline
+  etl_fast_dev:
+    type: job
+    manifest: services/etl/fast_dev.service.yml
     depends_on:
-      - etl_bronze
+      - etl_pipeline
+  analytics_observability:
+    type: job
+    manifest: services/etl/analytics_observability.service.yml
+    depends_on:
+      - etl_pipeline
   ml_training:
     type: job
     manifest: services/ml/training/service.yml
     depends_on:
-      - etl_gold
+      - etl_pipeline
   setup_infrastructure:
     type: job
     manifest: services/infrastructure/setup/service.yml

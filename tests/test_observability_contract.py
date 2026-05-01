@@ -399,12 +399,12 @@ class AnalyticsContractTests(unittest.TestCase):
         self.assertIn("if pipeline_id and published_event_log_table:", source)
         self.assertIn("Provide only one", source)
 
-    def test_observability_writes_support_cached_event_log_and_parallel_persistence(self) -> None:
+    def test_observability_writes_use_cached_event_log_and_sequential_persistence(self) -> None:
         source = _read_text("src/analytics/observability_assets.py")
 
         self.assertIn("_cache_if_available", source)
-        self.assertIn("parallel_writes", source)
-        self.assertIn("ThreadPoolExecutor", source)
+        self.assertIn("persisted = dict(persist_one(item) for item in outputs.items())", source)
+        self.assertNotIn("ThreadPoolExecutor", source)
 
     def test_refresh_plans_parser_extracts_technique_from_planning_information(self) -> None:
         source = _read_text("src/analytics/observability_assets.py")

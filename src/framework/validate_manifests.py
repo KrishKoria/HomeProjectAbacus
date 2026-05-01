@@ -33,28 +33,28 @@ ENTRY_PATH_KEYS: Final[tuple[str, ...]] = (
 )
 GLOB_INCLUDE_KEY: Final[str] = "include"
 JOB_TASK_EXPECTATIONS: Final[dict[str, tuple[str, ...]]] = {
-    "load_sample_data": ("load_sample_data",),
-    "ml_training": (
-        "run_bronze_pipeline",
-        "verify_bronze",
-        "observe_bronze",
-        "run_silver_pipeline",
-        "verify_silver",
-        "observe_silver",
+    "analytics_observability": (
         "build_analytics",
-        "run_gold_pipeline",
-        "observe_gold",
-        "check_new_data",
-        "should_retrain",
-        "train_model",
-        "skip_retraining",
+        "build_quality_assets",
+        "build_observability",
+    ),
+    "etl_fast_dev": (
+        "run_etl_pipeline",
+        "verify_etl_light",
+    ),
+    "etl_file_arrival": (
+        "run_etl_pipeline",
+        "verify_etl_light",
+        "launch_analytics_observability",
+    ),
+    "ml_training": (
+        "maybe_retrain_model",
     ),
     "setup_infrastructure": ("apply_grants", "create_retrain_decisions"),
 }
-PIPELINE_SERVICE_TO_TASK: Final[dict[str, str]] = {
-    "etl_bronze": "run_bronze_pipeline",
-    "etl_silver": "run_silver_pipeline",
-    "etl_gold": "run_gold_pipeline",
+JOB_SERVICE_TO_TASK: Final[dict[str, tuple[str, ...]]] = {
+    "etl_fast_dev": ("verify_etl_light",),
+    "etl_file_arrival": ("verify_etl_light",),
 }
 
 
@@ -231,38 +231,33 @@ def _validate_job_task_consistency(entries: dict[str, dict], resource_files: lis
         if missing:
             errors.append(f"{job_file}: missing expected tasks for {service_name}: {missing}")
 
-    training_entry = entries.get("ml_training")
-    if training_entry:
-        manifest = _read_yaml((PROJECT_ROOT / training_entry["manifest"]).resolve())
+    for service_name, task_keys in JOB_SERVICE_TO_TASK.items():
+        service_entry = entries.get(service_name)
+        if not service_entry:
+            continue
+        manifest = _read_yaml((PROJECT_ROOT / service_entry["manifest"]).resolve())
         job_key = _get_path(manifest, "entry_point.resource_key")
         job_file = jobs.get(job_key)
-        if job_file is not None:
-            payload = _read_yaml(job_file)
-            job_resource = payload["resources"]["jobs"][job_key]
-            depends_map = {
-                task["task_key"]: [
-                    dependency["task_key"]
-                    for dependency in task.get("depends_on", [])
-                    if isinstance(dependency, dict) and "task_key" in dependency
-                ]
-                for task in job_resource.get("tasks", [])
-                if isinstance(task, dict) and "task_key" in task
-            }
-            if "run_silver_pipeline" in depends_map and "verify_bronze" not in depends_map["run_silver_pipeline"]:
-                errors.append(f"{job_file}: run_silver_pipeline must depend on verify_bronze")
-            for task_key in ("run_gold_pipeline", "build_analytics"):
-                if task_key in depends_map and "verify_silver" not in depends_map[task_key]:
-                    errors.append(f"{job_file}: {task_key} must depend on verify_silver")
-            for service_name, task_key in PIPELINE_SERVICE_TO_TASK.items():
-                depends_on = set(entries.get(service_name, {}).get("depends_on", []))
-                if service_name == "etl_bronze":
-                    continue
-                parent_service = "etl_bronze" if service_name == "etl_silver" else "etl_silver"
-                parent_task = "verify_bronze" if service_name == "etl_silver" else "verify_silver"
-                if parent_service in depends_on and parent_task not in depends_map.get(task_key, []):
-                    errors.append(
-                        f"{job_file}: registry dependency {parent_service}->{service_name} is not reflected by {task_key}"
-                    )
+        if job_file is None:
+            continue
+        payload = _read_yaml(job_file)
+        job_resource = payload["resources"]["jobs"][job_key]
+        depends_map = {
+            task["task_key"]: [
+                dependency["task_key"]
+                for dependency in task.get("depends_on", [])
+                if isinstance(dependency, dict) and "task_key" in dependency
+            ]
+            for task in job_resource.get("tasks", [])
+            if isinstance(task, dict) and "task_key" in task
+        }
+        if "etl_pipeline" in set(service_entry.get("depends_on", [])):
+            for task_key in task_keys:
+                if "run_etl_pipeline" in depends_map and task_key != "run_etl_pipeline":
+                    if "run_etl_pipeline" not in depends_map.get(task_key, []):
+                        errors.append(
+                            f"{job_file}: {task_key} must depend on run_etl_pipeline when {service_name} depends on etl_pipeline"
+                        )
     return errors
 
 
@@ -305,7 +300,12 @@ def _validate_local_paths(resource_files: list[Path]) -> list[str]:
 
 
 def _resource_files() -> list[Path]:
-    return sorted(SERVICES_ROOT.glob("*/*/resources/*.yml"))
+    return sorted(
+        {
+            *SERVICES_ROOT.glob("*/resources/*.yml"),
+            *SERVICES_ROOT.glob("*/*/resources/*.yml"),
+        }
+    )
 
 
 def validate_manifests() -> list[str]:

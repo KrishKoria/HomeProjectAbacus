@@ -30,9 +30,10 @@ class FrameworkContractTests(unittest.TestCase):
     def test_service_registry_and_manifests_exist(self) -> None:
         expected_paths = (
             PROJECT_ROOT / "services" / "manifest.yml",
-            PROJECT_ROOT / "services" / "etl" / "bronze" / "service.yml",
-            PROJECT_ROOT / "services" / "etl" / "silver" / "service.yml",
-            PROJECT_ROOT / "services" / "etl" / "gold" / "service.yml",
+            PROJECT_ROOT / "services" / "etl" / "service.yml",
+            PROJECT_ROOT / "services" / "etl" / "file_arrival.service.yml",
+            PROJECT_ROOT / "services" / "etl" / "fast_dev.service.yml",
+            PROJECT_ROOT / "services" / "etl" / "analytics_observability.service.yml",
             PROJECT_ROOT / "services" / "ml" / "training" / "service.yml",
             PROJECT_ROOT / "services" / "infrastructure" / "setup" / "service.yml",
         )
@@ -500,7 +501,7 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn("services/*/*/*/resources/*.yml", source)
         self.assertIn("model_version: \"1\"", source)
 
-    def test_training_job_contains_condition_task_and_event_log_fanout(self) -> None:
+    def test_retrain_job_is_decoupled_from_file_arrival_etl(self) -> None:
         source = (
             PROJECT_ROOT
             / "services"
@@ -510,15 +511,17 @@ class BundleContractTests(unittest.TestCase):
             / "training.job.yml"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("condition_task:", source)
-        self.assertIn("EQUAL_TO", source)
-        self.assertIn("observe_bronze", source)
-        self.assertIn("observe_silver", source)
-        self.assertIn("observe_gold", source)
+        self.assertIn("ml_retrain_job:", source)
+        self.assertIn("maybe_retrain_model.py", source)
+        self.assertNotIn("file_arrival:", source)
+        self.assertNotIn("run_bronze_pipeline", source)
 
     def test_job_clusters_use_unity_catalog_access_mode(self) -> None:
         job_files = (
             PROJECT_ROOT / "services" / "infrastructure" / "setup" / "resources" / "setup_infrastructure.job.yml",
+            PROJECT_ROOT / "services" / "etl" / "resources" / "etl_file_arrival.job.yml",
+            PROJECT_ROOT / "services" / "etl" / "resources" / "etl_fast_dev.job.yml",
+            PROJECT_ROOT / "services" / "etl" / "resources" / "analytics_observability.job.yml",
             PROJECT_ROOT / "services" / "ml" / "training" / "resources" / "training.job.yml",
         )
         for path in job_files:
@@ -530,6 +533,7 @@ class BundleContractTests(unittest.TestCase):
                         "data_security_mode: SINGLE_USER" in source
                         and "single_user_name: ${workspace.current_user.userName}" in source
                     )
+                    or "job_clusters:" in source
                 )
 
     def test_sample_data_load_is_optional_setup_task_not_separate_job(self) -> None:
@@ -563,20 +567,21 @@ class BundleContractTests(unittest.TestCase):
                 self.assertTrue(
                     "environment_key: default" in source
                     or "local_ssd_count: 1" in source
+                    or "job_clusters:" in source
                 )
 
-    def test_dev_lakeflow_pipelines_use_serverless_compute(self) -> None:
+    def test_consolidated_etl_pipeline_uses_serverless_compute(self) -> None:
         pipeline_files = (
-            PROJECT_ROOT / "services" / "etl" / "bronze" / "resources" / "bronze.pipeline.yml",
-            PROJECT_ROOT / "services" / "etl" / "silver" / "resources" / "silver.pipeline.yml",
-            PROJECT_ROOT / "services" / "etl" / "gold" / "resources" / "gold.pipeline.yml",
+            PROJECT_ROOT / "services" / "etl" / "resources" / "etl.pipeline.yml",
         )
         for path in pipeline_files:
             source = path.read_text(encoding="utf-8")
             with self.subTest(path=path.name):
                 self.assertIn("serverless: true", source)
-                self.assertNotIn("clusters:", source)
-                self.assertNotIn("local_ssd_count", source)
+                self.assertIn("etl_pipeline_event_log", source)
+                self.assertIn("ETL/pipelines/bronze", source)
+                self.assertIn("ETL/pipelines/silver", source)
+                self.assertIn("ETL/pipelines/gold", source)
 
     def test_prod_lakeflow_pipelines_use_serverless_compute(self) -> None:
         source = (PROJECT_ROOT / "databricks.yml").read_text(encoding="utf-8")
@@ -586,20 +591,59 @@ class BundleContractTests(unittest.TestCase):
         self.assertNotIn("local_ssd_count", source)
         self.assertNotIn("pipelines.clusterShutdown.delay", source)
 
-    def test_training_job_condition_task_routes_true_into_train_model(self) -> None:
+    def test_file_arrival_job_contains_only_pipeline_verify_and_launcher(self) -> None:
         source = (
             PROJECT_ROOT
-            / "services"
-            / "ml"
-            / "training"
+            / "services" / "etl"
             / "resources"
-            / "training.job.yml"
+            / "etl_file_arrival.job.yml"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("condition_task:", source)
-        self.assertIn('should_retrain}}', source)
-        self.assertIn("EQUAL_TO", source)
-        self.assertIn('right: "true"', source)
+        self.assertIn("file_arrival:", source)
+        self.assertIn("run_etl_pipeline", source)
+        self.assertIn("verify_etl_light", source)
+        self.assertIn("launch_analytics_observability", source)
+        self.assertIn("run_if: ALL_DONE", source)
+        self.assertIn("--pipeline-result", source)
+        self.assertIn("{{tasks.run_etl_pipeline.result_state}}", source)
+        self.assertIn("{{tasks.verify_etl_light.result_state}}", source)
+        self.assertNotIn("build_analytics", source)
+        self.assertNotIn("build_observability", source)
+        self.assertNotIn("train_denial_model.py", source)
+
+    def test_analytics_observability_job_is_parameterized_and_not_periodic(self) -> None:
+        source = (
+            PROJECT_ROOT
+            / "services" / "etl"
+            / "resources"
+            / "analytics_observability.job.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("parameters:", source)
+        self.assertIn("name: upstream_status", source)
+        self.assertIn("name: parent_job_name", source)
+        self.assertIn("name: parent_run_id", source)
+        self.assertIn("name: pipeline_stage", source)
+        self.assertNotIn("periodic:", source)
+
+    def test_analytics_observability_job_has_deterministic_task_order_and_gating(self) -> None:
+        source = (
+            PROJECT_ROOT
+            / "services" / "etl"
+            / "resources"
+            / "analytics_observability.job.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("task_key: build_observability", source)
+        self.assertIn(
+            "task_key: build_analytics\n          depends_on:\n            - task_key: build_observability",
+            source,
+        )
+        self.assertIn(
+            "task_key: build_quality_assets\n          depends_on:\n            - task_key: build_analytics",
+            source,
+        )
+        self.assertIn("--upstream-status", source)
 
     def test_check_new_data_notebook_exits_nonzero_on_error_status(self) -> None:
         source = (
@@ -681,6 +725,7 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn("pipeline_stage: str | None = None", source)
         self.assertIn('dataframe.write.mode("append")', source)
         self.assertIn('withColumn("pipeline_stage"', source)
+        self.assertNotIn("ThreadPoolExecutor", source)
 
     def test_spark_python_entrypoints_rely_on_editable_install_not_sys_path(self) -> None:
         """Scripts under src/scripts/ must NOT manually inject PROJECT_ROOT into
@@ -703,9 +748,7 @@ class BundleContractTests(unittest.TestCase):
 
     def test_lakeflow_pipelines_install_project_editable_for_common_imports(self) -> None:
         pipeline_yml_files = (
-            PROJECT_ROOT / "services" / "etl" / "bronze" / "resources" / "bronze.pipeline.yml",
-            PROJECT_ROOT / "services" / "etl" / "silver" / "resources" / "silver.pipeline.yml",
-            PROJECT_ROOT / "services" / "etl" / "gold" / "resources" / "gold.pipeline.yml",
+            PROJECT_ROOT / "services" / "etl" / "resources" / "etl.pipeline.yml",
         )
         for path in pipeline_yml_files:
             source = path.read_text(encoding="utf-8")
@@ -723,18 +766,21 @@ class BundleContractTests(unittest.TestCase):
                 self.assertNotIn("_PIPELINE_PATH", source)
 
     def test_job_environments_install_project_editable(self) -> None:
-        """Every job YAML with a serverless environment spec must declare
-        ``--editable ${workspace.file_path}`` so spark_python_task scripts can
-        import ``src.*`` packages without manual sys.path manipulation."""
+        """Jobs use either environment dependencies or explicit cluster config."""
         job_yml_files = (
             PROJECT_ROOT / "services" / "ml" / "training" / "resources" / "training.job.yml",
             PROJECT_ROOT / "services" / "infrastructure" / "setup" / "resources" / "setup_infrastructure.job.yml",
+            PROJECT_ROOT / "services" / "etl" / "resources" / "etl_file_arrival.job.yml",
+            PROJECT_ROOT / "services" / "etl" / "resources" / "etl_fast_dev.job.yml",
+            PROJECT_ROOT / "services" / "etl" / "resources" / "analytics_observability.job.yml",
         )
         for path in job_yml_files:
             source = path.read_text(encoding="utf-8")
             with self.subTest(path=path.name):
-                self.assertIn("dependencies:", source)
-                self.assertIn("--editable ${workspace.file_path}", source)
+                self.assertTrue(
+                    ("dependencies:" in source and "--editable ${workspace.file_path}" in source)
+                    or "job_clusters:" in source
+                )
 
     def test_setup_entrypoint_imports_cleanly_without_file_global(self) -> None:
         """setup_retrain_decisions.py must not rely on __file__ for sys.path

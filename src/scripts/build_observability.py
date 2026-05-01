@@ -16,7 +16,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--analytics-schema", default="analytics")
     parser.add_argument("--pipeline-id", default=None)
     parser.add_argument("--published-event-log-table", default=None)
-    parser.add_argument("--pipeline-stage", choices=("bronze", "silver", "gold"), required=True)
+    parser.add_argument("--pipeline-stage", choices=("bronze", "silver", "gold", "etl"), required=True)
     return parser.parse_args(argv)
 
 
