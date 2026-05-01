@@ -5,16 +5,8 @@ import logging
 import pickle
 import sys
 from pathlib import Path
-from typing import Final
 
 import pandas as pd
-
-_SCRIPT_PATH: Final[Path] = Path(
-    globals().get("__file__", sys._getframe().f_code.co_filename)
-).resolve()
-PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.ml.evaluate import (
     compute_confusion_matrix,
