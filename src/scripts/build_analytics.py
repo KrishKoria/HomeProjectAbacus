@@ -14,13 +14,31 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--catalog", default="healthcare")
     parser.add_argument("--bronze-schema", default="bronze")
     parser.add_argument("--analytics-schema", default="analytics")
+    parser.add_argument("--upstream-status", default="success")
     return parser.parse_args(argv)
+
+
+def _normalize_state(value: str | None) -> str:
+    return (value or "").strip().lower()
 
 
 def main(argv: list[str] | None = None) -> int:
     from pyspark.sql import SparkSession
 
     args = _parse_args(argv)
+    if _normalize_state(args.upstream_status) != "success":
+        print(
+            HealthCheckResult(
+                service_name="analytics",
+                healthy=True,
+                message=(
+                    "skipped_due_upstream_status "
+                    f"upstream_status={_normalize_state(args.upstream_status) or 'unknown'}"
+                ),
+            ).summary_line()
+        )
+        return 0
+
     spark = SparkSession.builder.getOrCreate()
     try:
         persisted = build_and_persist_claims_assets(
