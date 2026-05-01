@@ -1,0 +1,33 @@
+resources:
+  jobs:
+    etl_fast_dev_job:
+      name: "[${bundle.target}] Healthcare ETL Fast Dev"
+
+      tasks:
+        - task_key: run_etl_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.healthcare_etl_pipeline.id}
+
+        - task_key: verify_etl_light
+          depends_on:
+            - task_key: run_etl_pipeline
+          spark_python_task:
+            python_file: ../../../src/scripts/verify_etl_light.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --bronze-schema
+              - ${var.bronze_schema}
+              - --silver-schema
+              - ${var.silver_schema}
+              - --gold-schema
+              - ${var.gold_schema}
+              - --quarantine-schema
+              - quarantine
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+            dependencies:
+              - --editable ${workspace.file_path}
