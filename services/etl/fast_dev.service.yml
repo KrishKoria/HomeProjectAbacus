@@ -1,0 +1,8 @@
+service:
+  name: etl_fast_dev
+  type: job
+  version: "1.0.0"
+  description: Fast developer ETL job for iterative validation.
+entry_point:
+  resource_key: etl_fast_dev_job
+  resource_type: jobs
