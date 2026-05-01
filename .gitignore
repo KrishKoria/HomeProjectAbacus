@@ -1,6 +1,5 @@
 .agents/
 .claude/
-
 .codex/
 
 .firecrawl/
@@ -17,7 +16,7 @@ graphify-out/
 data/
 
 openspec/
-
+build/
 __pycache__/
 *.pyc
 AGENTS.md
