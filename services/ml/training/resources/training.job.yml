@@ -19,6 +19,7 @@ resources:
           spec:
             environment_version: "5"
             dependencies:
+              - --editable ${workspace.file_path}
               - xgboost>=2.0,<3.0
               - scikit-learn>=1.5,<2.0
               - shap>=0.44,<1.0
@@ -158,7 +159,7 @@ resources:
             - task_key: should_retrain
               outcome: "true"
           spark_python_task:
-            python_file: ../../../../scripts/train_denial_model.py
+            python_file: ../../../../src/scripts/train_denial_model.py
             parameters:
               - --tune
               - --optuna-trials
