@@ -35,7 +35,14 @@ class FeaturePreparationTests(unittest.TestCase):
                 "diagnosis_count": np.random.randint(1, 10, 200),
                 "provider_claim_count": np.random.randint(1, 50, 200),
                 "provider_claim_count_30d": np.random.randint(0, 20, 200),
+                "provider_claim_count_60d": np.random.randint(0, 30, 200),
+                "provider_claim_count_90d": np.random.randint(0, 50, 200),
                 "provider_risk_score": np.random.uniform(0.0, 0.8, 200),
+                "cost_overbenchmark_and_highseverity": np.random.uniform(0.0, 3.0, 200),
+                "mismatch_and_overbenchmark": np.random.uniform(0.0, 4.0, 200),
+                "provider_30d_denial_rate": np.random.uniform(0.0, 0.6, 200),
+                "missing_fields_count": np.random.randint(0, 4, 200),
+                "low_volume_provider_risk": np.random.choice([None, 0.2, 0.4, 0.6], 200, p=[0.6, 0.2, 0.1, 0.1]),
                 "denial_label": np.random.choice([0, 1], 200, p=[0.7, 0.3]),
             }
         )
@@ -66,7 +73,7 @@ class FeaturePreparationTests(unittest.TestCase):
     def test_feature_columns_constant_is_stable(self):
         from src.ml import FEATURE_COLUMNS
 
-        self.assertEqual(len(FEATURE_COLUMNS), 13)
+        self.assertEqual(len(FEATURE_COLUMNS), 20)
         self.assertIn("denial_label", ["denial_label"])
         expected_features = {
             "is_procedure_missing",
@@ -81,7 +88,14 @@ class FeaturePreparationTests(unittest.TestCase):
             "diagnosis_count",
             "provider_claim_count",
             "provider_claim_count_30d",
+            "provider_claim_count_60d",
+            "provider_claim_count_90d",
             "provider_risk_score",
+            "cost_overbenchmark_and_highseverity",
+            "mismatch_and_overbenchmark",
+            "provider_30d_denial_rate",
+            "missing_fields_count",
+            "low_volume_provider_risk",
         }
         self.assertEqual(set(FEATURE_COLUMNS), expected_features)
 
@@ -230,7 +244,14 @@ class ModelEvaluationTests(unittest.TestCase):
                 "diagnosis_count": np.random.randint(1, 10, n),
                 "provider_claim_count": np.random.randint(1, 50, n),
                 "provider_claim_count_30d": np.random.randint(0, 20, n),
+                "provider_claim_count_60d": np.random.randint(0, 30, n),
+                "provider_claim_count_90d": np.random.randint(0, 50, n),
                 "provider_risk_score": np.random.uniform(0.0, 0.8, n),
+                "cost_overbenchmark_and_highseverity": np.random.uniform(0.0, 3.0, n),
+                "mismatch_and_overbenchmark": np.random.uniform(0.0, 4.0, n),
+                "provider_30d_denial_rate": np.random.uniform(0.0, 0.6, n),
+                "missing_fields_count": np.random.randint(0, 4, n),
+                "low_volume_provider_risk": np.random.choice([0.0, 0.2, 0.4, 0.6], n),
             }
         )
         labels = pd.Series(np.random.choice([0, 1], n, p=[0.7, 0.3]))
@@ -336,7 +357,14 @@ class PredictionTests(unittest.TestCase):
                 "diagnosis_count": np.random.randint(1, 10, n),
                 "provider_claim_count": np.random.randint(1, 50, n),
                 "provider_claim_count_30d": np.random.randint(0, 20, n),
+                "provider_claim_count_60d": np.random.randint(0, 30, n),
+                "provider_claim_count_90d": np.random.randint(0, 50, n),
                 "provider_risk_score": np.random.uniform(0.0, 0.8, n),
+                "cost_overbenchmark_and_highseverity": np.random.uniform(0.0, 3.0, n),
+                "mismatch_and_overbenchmark": np.random.uniform(0.0, 4.0, n),
+                "provider_30d_denial_rate": np.random.uniform(0.0, 0.6, n),
+                "missing_fields_count": np.random.randint(0, 4, n),
+                "low_volume_provider_risk": np.random.choice([0.0, 0.2, 0.4, 0.6], n),
             }
         )
         labels = pd.Series(np.random.choice([0, 1], n, p=[0.7, 0.3]))
@@ -427,7 +455,14 @@ class PredictionTests(unittest.TestCase):
                     "diagnosis_count": 4,
                     "provider_claim_count": 25,
                     "provider_claim_count_30d": 3,
+                    "provider_claim_count_60d": 5,
+                    "provider_claim_count_90d": 12,
                     "provider_risk_score": 0.45,
+                    "cost_overbenchmark_and_highseverity": 1.2,
+                    "mismatch_and_overbenchmark": 0.0,
+                    "provider_30d_denial_rate": 0.33,
+                    "missing_fields_count": 1,
+                    "low_volume_provider_risk": 0.0,
                 }
             ]
         )
@@ -498,7 +533,7 @@ class ReleaseGateTests(unittest.TestCase):
             ), mock.patch.object(
                 train_denial_model,
                 "train_pipeline",
-                return_value=(object(), "xgboost", failing_metrics, failing_metrics, failing_metrics),
+                return_value=(object(), "xgboost", failing_metrics, failing_metrics, failing_metrics, failing_metrics, failing_metrics, failing_metrics, failing_metrics),
             ):
                 rc = train_denial_model.main(
                     [
