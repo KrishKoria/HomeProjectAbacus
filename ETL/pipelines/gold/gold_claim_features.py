@@ -205,7 +205,6 @@ def _provider_lifetime_stats():
                 F.col("provider_denied_count").cast("double") / F.col("provider_claim_count").cast("double"),
             ).otherwise(F.lit(None).cast("double")),
         )
-        .drop("provider_denied_count")
     )
 
 
@@ -315,11 +314,13 @@ def gold_claim_features():
         .withColumn(
             "low_volume_provider_risk",
             F.when(
-                F.col("provider_claim_count") < F.lit(MIN_PROVIDER_RISK_COUNT),
-                F.col("provider_risk_score"),
+                F.col("provider_claim_count").isNotNull()
+                & (F.col("provider_claim_count") > 0)
+                & (F.col("provider_claim_count") < F.lit(MIN_PROVIDER_RISK_COUNT)),
+                F.col("provider_denied_count").cast("double") / F.col("provider_claim_count").cast("double"),
             ).otherwise(F.lit(None).cast("double")),
         )
-        .drop("event_date", "provider_30d_denial_rate_raw")
+        .drop("event_date", "provider_30d_denial_rate_raw", "provider_denied_count")
     )
 
     return result.select(
