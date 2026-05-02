@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 import numpy as np
 from sklearn.metrics import (
@@ -77,6 +77,41 @@ def recall_at_high(
     return float(high_and_positive) / float(total_positives)
 
 
+def find_optimal_threshold(
+    y_true: Any,
+    y_prob: Any,
+    metric: Literal["youden_j", "f1", "recall_at_high"] = "youden_j",
+) -> float:
+    """Find the decision threshold that maximises the chosen metric on validation data.
+
+    Youden's J statistic (sensitivity + specificity - 1) gives equal weight to
+    both classes and is robust for imbalanced data. The returned threshold is
+    used for binary ``predict()`` calls and does NOT change the
+    ``HIGH_RISK_PROBABILITY_THRESHOLD`` used for risk tiering.
+    """
+    y_true_arr = np.asarray(y_true)
+    y_prob_arr = np.asarray(y_prob)
+    thresholds = np.linspace(0.1, 0.9, 161)
+    best_threshold = 0.5
+    best_score = -np.inf
+    for t in thresholds:
+        pred = (y_prob_arr >= t).astype(int)
+        if metric == "youden_j":
+            sensitivity = float(recall_score(y_true_arr, pred, zero_division=0))
+            specificity = float(recall_score(1 - y_true_arr, 1 - pred, zero_division=0))
+            score = sensitivity + specificity - 1.0
+        elif metric == "f1":
+            score = float(f1_score(y_true_arr, pred, zero_division=0))
+        elif metric == "recall_at_high":
+            score = recall_at_high(y_true_arr, y_prob_arr, threshold=t)
+        else:
+            raise ValueError(f"Unknown metric: {metric}")
+        if score > best_score:
+            best_score = score
+            best_threshold = t
+    return float(best_threshold)
+
+
 def evaluate_model(
     model: Any,
     X_test: Any,
@@ -150,6 +185,59 @@ def compute_confusion_matrix(
     return int(tn), int(fp), int(fn), int(tp)
 
 
+def compute_psi(
+    expected: Any,
+    actual: Any,
+    bins: int = 10,
+) -> float:
+    """Population Stability Index between training (expected) and production (actual).
+
+    PSI = sum((actual_i - expected_i) * ln(actual_i / expected_i))
+    PSI < 0.1: no significant change
+    0.1 <= PSI < 0.2: moderate change
+    PSI >= 0.2: significant shift, retrain recommended
+    """
+    expected_arr = np.asarray(expected, dtype=float)
+    actual_arr = np.asarray(actual, dtype=float)
+    percentiles = np.percentile(expected_arr, np.linspace(0, 100, bins + 1))
+    expected_binned = np.digitize(expected_arr, percentiles[1:-1])
+    actual_binned = np.digitize(actual_arr, percentiles[1:-1])
+
+    psi = 0.0
+    for i in range(bins):
+        expected_pct = float(np.mean(expected_binned == i))
+        actual_pct = float(np.mean(actual_binned == i))
+        expected_pct = max(expected_pct, 1e-4)
+        actual_pct = max(actual_pct, 1e-4)
+        psi += (actual_pct - expected_pct) * np.log(actual_pct / expected_pct)
+    return float(psi)
+
+
+def get_top_features(
+    model: Any,
+    feature_names: list[str],
+    n: int = 5,
+) -> list[tuple[str, float]]:
+    """Extract top-N feature importances from a fitted tree-based model.
+
+    Handles CalibratedClassifierCV unwrapping, and works with XGBoost,
+    LightGBM, CatBoost, and sklearn ensemble feature_importances_.
+    Returns list of (feature_name, importance) sorted descending.
+    """
+    inner = _unwrap_for_shap(model)
+    if hasattr(inner, "feature_importances_"):
+        importances = inner.feature_importances_
+    elif hasattr(inner, "get_score"):
+        raw = inner.get_score(importance_type="gain")
+        importances = np.array([raw.get(f, 0.0) for f in feature_names])
+    else:
+        return []
+
+    paired = list(zip(feature_names, importances))
+    paired.sort(key=lambda x: x[1], reverse=True)
+    return paired[:n]
+
+
 def generate_evaluation_report(
     metrics: EvaluationMetrics,
     confusion: tuple[int, int, int, int],
@@ -187,8 +275,11 @@ __all__ = [
     "EvaluationMetrics",
     "HIGH_RISK_PROBABILITY_THRESHOLD",
     "compute_confusion_matrix",
+    "compute_psi",
     "compute_shap_values",
     "evaluate_model",
+    "find_optimal_threshold",
     "generate_evaluation_report",
+    "get_top_features",
     "recall_at_high",
 ]
