@@ -11,13 +11,18 @@
 .streamlit/
 .venv/
 .opencode/
-graphify-out/
+.databricks/
+.code-review-graph/
 *.egg-info/
-data/
+*.pyc
 
+data/
+graphify-out/
 openspec/
 build/
 __pycache__/
-*.pyc
 AGENTS.md
 local_dev/
+CLAUDE.md
+# Added by code-review-graph
+
