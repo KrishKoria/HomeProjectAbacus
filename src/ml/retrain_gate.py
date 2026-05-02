@@ -148,33 +148,48 @@ def _parse_three_part_name(name: str) -> tuple[str, str, str] | None:
 
 def _current_gold_version(spark, gold_table: str) -> int:
     """
-    Return the Delta table version when gold_table is a Delta table.
+    Return a version identifier for the Gold table.
 
-    Lakeflow materialized views/views do not support DESCRIBE HISTORY.
-    In that case, return -1 and rely on the content fingerprint for
-    retrain decisions.
+    - Delta tables: ``DESCRIBE HISTORY`` version number.
+    - Materialized views: ``last_altered`` timestamp converted to epoch
+      seconds, which acts as a monotonically increasing refresh version.
+    - Fallback: -1 when neither source is available.
     """
     parsed = _parse_three_part_name(gold_table)
     if parsed is not None:
         catalog, schema, relation = parsed
-        table_type_rows = spark.sql(
-            f"""
-            SELECT table_type
-            FROM `{catalog}`.information_schema.tables
-            WHERE table_schema = '{schema.replace("'", "''")}'
-              AND table_name = '{relation.replace("'", "''")}'
-            LIMIT 1
-            """
-        ).collect()
-        if table_type_rows:
-            first_row = table_type_rows[0]
-            if isinstance(first_row, dict) and "table_type" in first_row:
-                table_type = str(first_row["table_type"]).upper()
+        try:
+            meta_rows = spark.sql(
+                f"""
+                SELECT table_type, last_altered
+                FROM `{catalog}`.information_schema.tables
+                WHERE table_schema = '{schema.replace("'", "''")}'
+                  AND table_name = '{relation.replace("'", "''")}'
+                LIMIT 1
+                """
+            ).collect()
+            if meta_rows:
+                first = meta_rows[0]
+                row_dict = first if isinstance(first, dict) else first.asDict(recursive=True)
+                table_type = str(row_dict.get("table_type", "")).upper()
+                last_altered = row_dict.get("last_altered")
                 if "VIEW" in table_type:
-                    return -1
+                    if last_altered is not None:
+                        import datetime
+
+                        if hasattr(last_altered, "timestamp"):
+                            return int(last_altered.timestamp())
+                        if isinstance(last_altered, datetime.datetime):
+                            return int(last_altered.timestamp())
+                        if isinstance(last_altered, str):
+                            return int(datetime.datetime.fromisoformat(last_altered.replace("Z", "+00:00")).timestamp())
+                    return -1  # view, but no last_altered available
+                # Not a view — fall through to DESCRIBE HISTORY
+        except Exception:
+            pass  # fall through to DESCRIBE HISTORY
     try:
         row = spark.sql(f"DESCRIBE HISTORY {gold_table} LIMIT 1").collect()[0]
-        return int(row["version"])
+        return int(row["version"] if isinstance(row, dict) else row.version)
     except Exception as exc:
         message = str(exc)
         if (

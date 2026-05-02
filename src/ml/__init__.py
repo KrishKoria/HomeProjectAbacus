@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 FEATURE_COLUMNS = (
+    # Original 13 features
     "is_procedure_missing",
     "is_amount_missing",
     "amount_to_benchmark_ratio",
@@ -14,6 +15,15 @@ FEATURE_COLUMNS = (
     "provider_claim_count",
     "provider_claim_count_30d",
     "provider_risk_score",
+    # New temporal windows (Phase 1.4)
+    "provider_claim_count_60d",
+    "provider_claim_count_90d",
+    # New interaction / derived features (Phase 1.3)
+    "cost_overbenchmark_and_highseverity",
+    "mismatch_and_overbenchmark",
+    "provider_30d_denial_rate",
+    "missing_fields_count",
+    "low_volume_provider_risk",
 )
 
 TARGET_COLUMN = "denial_label"
