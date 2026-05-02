@@ -67,6 +67,31 @@ XGBOOST_DEFAULT_PARAMS: Final[dict[str, Any]] = {
     "random_state": 42,
 }
 
+LIGHTGBM_DEFAULT_PARAMS: Final[dict[str, Any]] = {
+    "objective": "binary",
+    "metric": "binary_logloss",
+    "boosting_type": "gbdt",
+    "num_leaves": 31,
+    "learning_rate": 0.1,
+    "n_estimators": 100,
+    "scale_pos_weight": 2.5,
+    "class_weight": "balanced",
+    "random_state": 42,
+    "verbose": -1,
+}
+
+CATBOOST_DEFAULT_PARAMS: Final[dict[str, Any]] = {
+    "objective": "Logloss",
+    "eval_metric": "Logloss",
+    "learning_rate": 0.1,
+    "depth": 6,
+    "iterations": 100,
+    "scale_pos_weight": 2.5,
+    "random_seed": 42,
+    "verbose": False,
+    "allow_writing_files": False,
+}
+
 LOGREG_DEFAULT_PARAMS: Final[dict[str, Any]] = {
     "max_iter": 1000,
     "class_weight": "balanced",
@@ -94,6 +119,7 @@ def train_xgboost(
     y_val: Any = None,
     params: dict[str, Any] | None = None,
     random_seed: int = 42,
+    sample_weight: Any = None,
 ) -> XGBClassifier:
     """Fit the primary XGBoost classifier with optional early-stopping eval set."""
     training_params = {**XGBOOST_DEFAULT_PARAMS, **(params or {}), "random_state": random_seed}
@@ -103,6 +129,54 @@ def train_xgboost(
     if X_val is not None and y_val is not None:
         fit_kwargs["eval_set"] = [(X_val, y_val)]
         fit_kwargs["verbose"] = False
+    if sample_weight is not None:
+        fit_kwargs["sample_weight"] = sample_weight
+    model.fit(X_train, y_train, **fit_kwargs)
+    return model
+
+
+def train_lightgbm(
+    X_train: Any,
+    y_train: Any,
+    X_val: Any = None,
+    y_val: Any = None,
+    params: dict[str, Any] | None = None,
+    random_seed: int = 42,
+    sample_weight: Any = None,
+) -> Any:
+    """Fit a LightGBM classifier with optional early-stopping eval set."""
+    import lightgbm as lgb
+
+    training_params = {**LIGHTGBM_DEFAULT_PARAMS, **(params or {}), "random_state": random_seed}
+    model = lgb.LGBMClassifier(**training_params)
+    fit_kwargs: dict[str, Any] = {}
+    if X_val is not None and y_val is not None:
+        fit_kwargs["eval_set"] = [(X_val, y_val)]
+    if sample_weight is not None:
+        fit_kwargs["sample_weight"] = sample_weight
+    model.fit(X_train, y_train, **fit_kwargs)
+    return model
+
+
+def train_catboost(
+    X_train: Any,
+    y_train: Any,
+    X_val: Any = None,
+    y_val: Any = None,
+    params: dict[str, Any] | None = None,
+    random_seed: int = 42,
+    sample_weight: Any = None,
+) -> Any:
+    """Fit a CatBoost classifier with optional early-stopping eval set."""
+    from catboost import CatBoostClassifier
+
+    training_params = {**CATBOOST_DEFAULT_PARAMS, **(params or {}), "random_seed": random_seed}
+    model = CatBoostClassifier(**training_params)
+    fit_kwargs: dict[str, Any] = {}
+    if X_val is not None and y_val is not None:
+        fit_kwargs["eval_set"] = [(X_val, y_val)]
+    if sample_weight is not None:
+        fit_kwargs["sample_weight"] = sample_weight
     model.fit(X_train, y_train, **fit_kwargs)
     return model
 
@@ -135,6 +209,92 @@ def calibrate_classifier(
     return calibrator
 
 
+def train_voting_ensemble(
+    estimators: list[tuple[str, ClassifierMixin]],
+    X_train: Any,
+    y_train: Any,
+    voting: str = "soft",
+) -> Any:
+    """Soft-voting ensemble of calibrated base estimators.
+
+    Each base estimator should already be calibrated via
+    ``CalibratedClassifierCV`` so that soft voting combines
+    meaningful probability distributions.
+    """
+    from sklearn.ensemble import VotingClassifier
+
+    ensemble = VotingClassifier(estimators=estimators, voting=voting)
+    ensemble.fit(X_train, y_train)
+    return ensemble
+
+
+def train_stacking_ensemble(
+    estimators: list[tuple[str, ClassifierMixin]],
+    X_train: Any,
+    y_train: Any,
+    final_estimator: Any = None,
+    cv: int = 5,
+) -> Any:
+    """Stacking ensemble with a logistic regression meta-learner.
+
+    ``cv=5`` means each base estimator is refit on 4/5 folds and
+    predicts on the held-out 1/5. The meta-learner trains on these
+    out-of-fold predictions, preventing overfitting to base model
+    idiosyncrasies.
+    """
+    from sklearn.ensemble import StackingClassifier
+    from sklearn.linear_model import LogisticRegression
+
+    if final_estimator is None:
+        final_estimator = LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42)
+    ensemble = StackingClassifier(
+        estimators=estimators,
+        final_estimator=final_estimator,
+        cv=cv,
+    )
+    ensemble.fit(X_train, y_train)
+    return ensemble
+
+
+def select_best_calibration(
+    base_estimator: ClassifierMixin,
+    X_train: Any,
+    y_train: Any,
+    X_val: Any,
+    y_val: Any,
+    cv: int = 3,
+) -> CalibratedClassifierCV:
+    """Try both Platt (sigmoid) and isotonic calibration, returning the one with
+    lower log-loss on the validation set.
+
+    Isotonic often produces better-calibrated probabilities when the dataset
+    is large enough, while sigmoid is more data-efficient for small datasets.
+    A held-out validation fold prevents overfitting the calibration method
+    choice.
+    """
+    from sklearn.metrics import log_loss
+
+    sigmoid_calibrated = calibrate_classifier(base_estimator, X_train, y_train, method="sigmoid", cv=cv)
+    sigmoid_loss = float(log_loss(y_val, sigmoid_calibrated.predict_proba(X_val)[:, 1]))
+
+    isotonic_calibrated = calibrate_classifier(base_estimator, X_train, y_train, method="isotonic", cv=cv)
+    isotonic_loss = float(log_loss(y_val, isotonic_calibrated.predict_proba(X_val)[:, 1]))
+
+    if isotonic_loss < sigmoid_loss:
+        logger.info(
+            "Selected isotonic calibration (log_loss=%.4f vs sigmoid=%.4f)",
+            isotonic_loss,
+            sigmoid_loss,
+        )
+        return isotonic_calibrated
+    logger.info(
+        "Selected sigmoid calibration (log_loss=%.4f vs isotonic=%.4f)",
+        sigmoid_loss,
+        isotonic_loss,
+    )
+    return sigmoid_calibrated
+
+
 def _build_xgb_from_trial(trial: Any, random_seed: int = 42) -> XGBClassifier:
     params = {
         "max_depth": trial.suggest_int("max_depth", 3, 10),
@@ -152,6 +312,50 @@ def _build_xgb_from_trial(trial: Any, random_seed: int = 42) -> XGBClassifier:
         "random_state": random_seed,
     }
     return XGBClassifier(**params)
+
+
+def _build_lgb_from_trial(trial: Any, random_seed: int = 42) -> Any:
+    import lightgbm as lgb
+
+    params = {
+        "num_leaves": trial.suggest_int("num_leaves", 15, 127),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+        "n_estimators": trial.suggest_int("n_estimators", 50, 300),
+        "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+        "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
+        "scale_pos_weight": trial.suggest_float("scale_pos_weight", 1.0, 15.0),
+        "lambda_l1": trial.suggest_float("lambda_l1", 0.0, 10.0),
+        "lambda_l2": trial.suggest_float("lambda_l2", 0.0, 10.0),
+        "min_split_gain": trial.suggest_float("min_split_gain", 0.0, 1.0),
+        "objective": "binary",
+        "metric": "binary_logloss",
+        "boosting_type": "gbdt",
+        "random_state": random_seed,
+        "verbose": -1,
+    }
+    return lgb.LGBMClassifier(**params)
+
+
+def _build_catboost_from_trial(trial: Any, random_seed: int = 42) -> Any:
+    from catboost import CatBoostClassifier
+
+    params = {
+        "depth": trial.suggest_int("depth", 4, 10),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+        "iterations": trial.suggest_int("iterations", 50, 300),
+        "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+        "colsample_bylevel": trial.suggest_float("colsample_bylevel", 0.6, 1.0),
+        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, 50),
+        "scale_pos_weight": trial.suggest_float("scale_pos_weight", 1.0, 15.0),
+        "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0),
+        "objective": "Logloss",
+        "eval_metric": "Logloss",
+        "random_seed": random_seed,
+        "verbose": False,
+        "allow_writing_files": False,
+    }
+    return CatBoostClassifier(**params)
 
 
 def _optuna_objective(
@@ -194,22 +398,115 @@ def _optuna_objective(
     return mean_recall
 
 
+def compare_and_promote(
+    new_recall_at_high: float,
+    current_champion_recall_at_high: float | None,
+    min_improvement: float = 0.01,
+) -> bool:
+    """Return True if the new model should replace champion.
+
+    Requires a minimum absolute improvement in Recall@HIGH of 1 percentage
+    point to prevent flapping from noise. When no champion exists (first
+    training run), the new model is promoted by default.
+    """
+    if current_champion_recall_at_high is None:
+        return True
+    return (new_recall_at_high - current_champion_recall_at_high) >= min_improvement
+
+
+def compute_sample_weights(
+    y_train: Any,
+    positive_weight: float = 3.0,
+) -> Any:
+    """Assign higher weight to positive examples for imbalanced training.
+
+    Simple, stable approach that achieves similar effect to custom loss
+    functions without numerical risk. Pass result as ``sample_weight``
+    to ``.fit()`` for XGBoost, LightGBM, or CatBoost.
+    """
+    y_arr = np.asarray(y_train)
+    weights = np.ones_like(y_arr, dtype=float)
+    weights[y_arr == 1] = positive_weight
+    return weights
+
+
+def _make_optuna_objective(
+    builder_fn: Any,
+    X_train: Any,
+    y_train: Any,
+    random_seed: int = 42,
+    groups: Any = None,
+) -> Any:
+    """Factory: return an Optuna objective that maximises mean Recall@HIGH.
+
+    ``builder_fn`` is a callable ``(trial, random_seed) -> base_estimator``
+    (e.g. ``_build_xgb_from_trial``, ``_build_lgb_from_trial``,
+    ``_build_catboost_from_trial``). The base estimator is wrapped in
+    Platt calibration inside each CV fold so trial-time scores match
+    the deployed model's behaviour.
+
+    When ``groups`` is provided (provider IDs), GroupKFold is used
+    instead of StratifiedKFold to prevent provider-level leakage.
+    """
+
+    def _objective(trial: Any) -> float:
+        from sklearn.model_selection import GroupKFold
+
+        base_estimator = builder_fn(trial, random_seed=random_seed)
+        if groups is not None:
+            splitter = GroupKFold(n_splits=5)
+            split_iter = splitter.split(X_train, y_train, groups=groups)
+        else:
+            splitter = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_seed)
+            split_iter = splitter.split(X_train, y_train)
+        fold_recalls: list[float] = []
+        fold_precisions: list[float] = []
+        for tr_idx, va_idx in split_iter:
+            X_tr = X_train.iloc[tr_idx] if hasattr(X_train, "iloc") else X_train[tr_idx]
+            X_va = X_train.iloc[va_idx] if hasattr(X_train, "iloc") else X_train[va_idx]
+            y_tr = y_train.iloc[tr_idx] if hasattr(y_train, "iloc") else y_train[tr_idx]
+            y_va = y_train.iloc[va_idx] if hasattr(y_train, "iloc") else y_train[va_idx]
+            calibrated = CalibratedClassifierCV(base_estimator, method="sigmoid", cv=2)
+            calibrated.fit(X_tr, y_tr)
+            proba = calibrated.predict_proba(X_va)[:, 1]
+            fold_recalls.append(recall_at_high(y_va, proba))
+            pred = (proba >= 0.5).astype(int)
+            fold_precisions.append(float(precision_score(y_va, pred, zero_division=0)))
+        mean_recall = float(np.mean(fold_recalls))
+        mean_precision = float(np.mean(fold_precisions))
+        if mean_precision < OPTUNA_PRECISION_FLOOR:
+            return mean_recall - 2.0 * (OPTUNA_PRECISION_FLOOR - mean_precision)
+        return mean_recall
+
+    return _objective
+
+
 def tune_xgboost_optuna(
     X_train: Any,
     y_train: Any,
     n_trials: int = 50,
     random_seed: int = 42,
+    groups: Any = None,
 ) -> tuple[CalibratedClassifierCV, dict[str, Any]]:
-    """Run Optuna hyperparameter tuning, then refit + calibrate the best model."""
+    """Run Optuna hyperparameter tuning for XGBoost, then refit + calibrate the best model."""
     import optuna
+    from optuna.pruners import MedianPruner
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    study = optuna.create_study(direction="maximize")
+    study = optuna.create_study(
+        direction="maximize",
+        pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=3),
+    )
     study.optimize(
-        lambda trial: _optuna_objective(trial, X_train, y_train, random_seed=random_seed),
+        _make_optuna_objective(_build_xgb_from_trial, X_train, y_train, random_seed, groups=groups),
         n_trials=n_trials,
         show_progress_bar=False,
     )
+    if len(study.trials) == 0 or study.best_trial is None:
+        raise RuntimeError(
+            "Optuna XGBoost tuning failed: no successful trials. "
+            "Check trial logs for per-fold errors."
+        )
     best_params = dict(study.best_trial.params)
     best_params.update({
         "objective": "binary:logistic",
@@ -217,13 +514,133 @@ def tune_xgboost_optuna(
         "random_state": random_seed,
     })
     logger.info(
-        "Optuna best Recall@HIGH (penalised): %.4f, params: %s",
+        "Optuna XGBoost best Recall@HIGH (penalised): %.4f, params: %s",
         study.best_value,
         best_params,
     )
     base = XGBClassifier(**best_params)
     calibrated = calibrate_classifier(base, X_train, y_train, method="sigmoid", cv=3)
     return calibrated, best_params
+
+
+def tune_lightgbm_optuna(
+    X_train: Any,
+    y_train: Any,
+    n_trials: int = 50,
+    random_seed: int = 42,
+    groups: Any = None,
+) -> tuple[CalibratedClassifierCV, dict[str, Any]]:
+    """Run Optuna hyperparameter tuning for LightGBM, then refit + calibrate the best model."""
+    import lightgbm as lgb
+    import optuna
+    from optuna.pruners import MedianPruner
+
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    study = optuna.create_study(
+        direction="maximize",
+        pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=3),
+    )
+    study.optimize(
+        _make_optuna_objective(_build_lgb_from_trial, X_train, y_train, random_seed, groups=groups),
+        n_trials=n_trials,
+        show_progress_bar=False,
+    )
+    if len(study.trials) == 0 or study.best_trial is None:
+        raise RuntimeError(
+            "Optuna LightGBM tuning failed: no successful trials. "
+            "Check trial logs for per-fold errors."
+        )
+    best_params = dict(study.best_trial.params)
+    best_params.update({
+        "objective": "binary",
+        "metric": "binary_logloss",
+        "boosting_type": "gbdt",
+        "random_state": random_seed,
+        "verbose": -1,
+    })
+    logger.info(
+        "Optuna LightGBM best Recall@HIGH (penalised): %.4f, params: %s",
+        study.best_value,
+        best_params,
+    )
+    base = lgb.LGBMClassifier(**best_params)
+    calibrated = calibrate_classifier(base, X_train, y_train, method="sigmoid", cv=3)
+    return calibrated, best_params
+
+
+def tune_catboost_optuna(
+    X_train: Any,
+    y_train: Any,
+    n_trials: int = 50,
+    random_seed: int = 42,
+    groups: Any = None,
+) -> tuple[CalibratedClassifierCV, dict[str, Any]]:
+    """Run Optuna hyperparameter tuning for CatBoost, then refit + calibrate the best model."""
+    from catboost import CatBoostClassifier
+    import optuna
+    from optuna.pruners import MedianPruner
+
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    study = optuna.create_study(
+        direction="maximize",
+        pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=3),
+    )
+    study.optimize(
+        _make_optuna_objective(_build_catboost_from_trial, X_train, y_train, random_seed, groups=groups),
+        n_trials=n_trials,
+        show_progress_bar=False,
+    )
+    if len(study.trials) == 0 or study.best_trial is None:
+        raise RuntimeError(
+            "Optuna CatBoost tuning failed: no successful trials. "
+            "Check trial logs for per-fold errors."
+        )
+    best_params = dict(study.best_trial.params)
+    best_params.update({
+        "objective": "Logloss",
+        "eval_metric": "Logloss",
+        "random_seed": random_seed,
+        "verbose": False,
+        "allow_writing_files": False,
+    })
+    logger.info(
+        "Optuna CatBoost best Recall@HIGH (penalised): %.4f, params: %s",
+        study.best_value,
+        best_params,
+    )
+    base = CatBoostClassifier(**best_params)
+    calibrated = calibrate_classifier(base, X_train, y_train, method="sigmoid", cv=3)
+    return calibrated, best_params
+
+
+def select_features_by_importance(
+    model: Any,
+    X_val: Any,
+    y_val: Any,
+    feature_names: list[str],
+    min_importance: float = 0.001,
+) -> list[str]:
+    """Return feature names whose permutation importance exceeds the threshold.
+
+    Uses sklearn's ``permutation_importance`` with ``n_repeats=5`` for
+    stable estimates. Features with importance below ``min_importance``
+    are candidates for removal on larger datasets.
+    """
+    from sklearn.inspection import permutation_importance
+
+    result = permutation_importance(
+        model,
+        X_val,
+        y_val,
+        n_repeats=5,
+        random_state=42,
+        scoring="roc_auc",
+    )
+    return [
+        name
+        for name, imp in zip(feature_names, result.importances_mean)
+        if imp >= min_importance
+    ]
 
 
 def _is_unity_catalog_model_name(name: str) -> bool:
@@ -287,15 +704,20 @@ def train_with_mlflow(
         try:
             from mlflow.models import infer_signature
 
-            if hasattr(model, "feature_names_in_"):
-                import pandas as pd
-                from sklearn.base import is_classifier
+            import pandas as pd
+            from sklearn.base import is_classifier
 
+            col_names: list[str] | None = None
+            if hasattr(model, "feature_names_in_"):
+                col_names = list(model.feature_names_in_)
+            elif feature_columns:
+                col_names = list(feature_columns)
+            if col_names:
                 sample_input = pd.DataFrame(
-                    {col: [0.0] for col in model.feature_names_in_},
+                    {col: [0.0] for col in col_names},
                 ).astype(float)
                 signature_output = (
-                    pd.DataFrame({col: [0.5] for col in ["denial_probability"]})
+                    pd.DataFrame({"denial_probability": [0.5]})
                     if is_classifier(model)
                     else None
                 )
@@ -343,12 +765,24 @@ def train_with_mlflow(
 
 
 __all__ = [
+    "CATBOOST_DEFAULT_PARAMS",
+    "LIGHTGBM_DEFAULT_PARAMS",
     "LOGREG_DEFAULT_PARAMS",
     "OPTUNA_PRECISION_FLOOR",
     "XGBOOST_DEFAULT_PARAMS",
     "calibrate_classifier",
+    "compare_and_promote",
+    "compute_sample_weights",
+    "select_best_calibration",
+    "select_features_by_importance",
+    "train_catboost",
+    "train_lightgbm",
     "train_logistic_regression",
+    "train_stacking_ensemble",
+    "train_voting_ensemble",
     "train_with_mlflow",
     "train_xgboost",
+    "tune_catboost_optuna",
+    "tune_lightgbm_optuna",
     "tune_xgboost_optuna",
 ]
