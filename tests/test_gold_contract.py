@@ -111,7 +111,14 @@ class GoldPipelineContractTests(unittest.TestCase):
             "diagnosis_severity_encoded",
             "provider_claim_count",
             "provider_claim_count_30d",
+            "provider_claim_count_60d",
+            "provider_claim_count_90d",
             "provider_risk_score",
+            "cost_overbenchmark_and_highseverity",
+            "mismatch_and_overbenchmark",
+            "provider_30d_denial_rate",
+            "missing_fields_count",
+            "low_volume_provider_risk",
             "denial_label",
         ]
         for feature in required_features:
@@ -122,6 +129,19 @@ class GoldPipelineContractTests(unittest.TestCase):
         source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
         self.assertIn("rangeBetween", source)
         self.assertIn("86400", source)
+
+    def test_gold_pipeline_interaction_features_in_source(self):
+        source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
+        self.assertIn("cost_overbenchmark_and_highseverity", source)
+        self.assertIn("mismatch_and_overbenchmark", source)
+        self.assertIn("missing_fields_count", source)
+
+    def test_gold_pipeline_60d_90d_windows_in_source(self):
+        source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
+        self.assertIn("provider_claim_count_60d", source)
+        self.assertIn("provider_claim_count_90d", source)
+        self.assertIn("PROVIDER_LOOKBACK_WINDOW_60D", source)
+        self.assertIn("PROVIDER_LOOKBACK_WINDOW_90D", source)
 
     def test_gold_pipeline_30d_window_casts_date_through_timestamp(self):
         # Regression: DateType.cast("long") yields days-since-epoch, which made
