@@ -132,15 +132,31 @@ def load_from_registry(
         ) from exc
 
 
+def _resolve_column_order(model: Any, feature_columns: tuple[str, ...]) -> list[str]:
+    """Return the column order the model expects, falling back to ``feature_columns``.
+
+    XGBoost and other sklearn-style estimators store ``feature_names_in_``
+    after fitting. Using that order prevents ``feature_names mismatch``
+    errors when the model was trained with a different column order than
+    the current ``FEATURE_COLUMNS`` constant.
+    """
+    trained_names = getattr(model, "feature_names_in_", None)
+    if trained_names is not None:
+        return list(trained_names)
+    return list(feature_columns)
+
+
 def _coerce_features(
     df: pd.DataFrame,
     feature_columns: tuple[str, ...],
+    model: Any = None,
 ) -> pd.DataFrame:
     filled = fill_nulls(df)
     for col in feature_columns:
         if col in filled.columns and filled[col].dtype == bool:
             filled[col] = filled[col].astype(int)
-    return filled[list(feature_columns)].astype("float64")
+    columns = _resolve_column_order(model, feature_columns) if model is not None else list(feature_columns)
+    return filled[columns].astype("float64")
 
 
 def predict_single(
@@ -151,7 +167,7 @@ def predict_single(
     """Score a single claim and emit a latency log line for the §13 budget."""
     start = time.perf_counter()
     df = pd.DataFrame([feature_dict])
-    X = _coerce_features(df, feature_columns)
+    X = _coerce_features(df, feature_columns, model=model)
     prob = (
         model.predict_proba(X)[0, 1]
         if hasattr(model, "predict_proba")
@@ -177,7 +193,7 @@ def predict_batch(
     feature_columns: tuple[str, ...] = FEATURE_COLUMNS,
 ) -> pd.DataFrame:
     """Score a batch of claims and return probabilities + risk tiers."""
-    X = _coerce_features(feature_df, feature_columns)
+    X = _coerce_features(feature_df, feature_columns, model=model)
     probs = (
         model.predict_proba(X)[:, 1]
         if hasattr(model, "predict_proba")
