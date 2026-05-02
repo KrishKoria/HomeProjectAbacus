@@ -20,10 +20,13 @@ dev = [
 ]
 ml = [
     "xgboost>=2.0,<3.0",
+    "lightgbm>=4.2,<5.0",
+    "catboost>=1.2,<2.0",
     "scikit-learn>=1.5,<2.0",
     "shap>=0.44,<1.0",
     "mlflow>=3.0,<4.0",
     "optuna>=3.6,<4.0",
+    "imbalanced-learn>=0.12,<1.0",
 ]
 
 [build-system]
