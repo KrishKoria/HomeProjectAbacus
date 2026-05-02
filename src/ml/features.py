@@ -24,7 +24,14 @@ NUMERIC_FEATURES: Final[tuple[str, ...]] = (
     "diagnosis_count",
     "provider_claim_count",
     "provider_claim_count_30d",
+    "provider_claim_count_60d",
+    "provider_claim_count_90d",
     "provider_risk_score",
+    "cost_overbenchmark_and_highseverity",
+    "mismatch_and_overbenchmark",
+    "provider_30d_denial_rate",
+    "missing_fields_count",
+    "low_volume_provider_risk",
 )
 
 DEFAULT_FILL_VALUES: Final[dict[str, float | int]] = {
@@ -40,7 +47,14 @@ DEFAULT_FILL_VALUES: Final[dict[str, float | int]] = {
     "diagnosis_count": 1,
     "provider_claim_count": 0,
     "provider_claim_count_30d": 0,
+    "provider_claim_count_60d": 0,
+    "provider_claim_count_90d": 0,
     "provider_risk_score": 0.0,
+    "cost_overbenchmark_and_highseverity": 0.0,
+    "mismatch_and_overbenchmark": 0.0,
+    "provider_30d_denial_rate": 0.0,
+    "missing_fields_count": 0,
+    "low_volume_provider_risk": 0.0,
 }
 
 DEFAULT_TEST_SIZE: Final[float] = 0.3
@@ -79,6 +93,36 @@ def prepare_training_data(
     return X, y
 
 
+def temporal_split(
+    df: pd.DataFrame,
+    date_column: str = "date",
+    test_fraction: float = 0.3,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split by date: train on oldest (1 - test_fraction), test on newest.
+
+    Preserves temporal ordering for realistic evaluation of rolling-window
+    features. The split boundary is determined by quantile.
+    """
+    sorted_df = df.sort_values(date_column).reset_index(drop=True)
+    split_idx = int(len(sorted_df) * (1.0 - test_fraction))
+    return sorted_df.iloc[:split_idx].copy(), sorted_df.iloc[split_idx:].copy()
+
+
+def extract_provider_groups(
+    df: pd.DataFrame,
+    provider_column: str = "provider_id",
+) -> pd.Series:
+    """Extract provider groups for GroupKFold cross-validation.
+
+    Returns a pd.Series of provider IDs aligned with the DataFrame index.
+    Groups prevent claims from the same provider appearing in both train
+    and validation folds, producing honest (ungamed) metrics.
+    """
+    if provider_column not in df.columns:
+        return pd.Series(range(len(df)), index=df.index)
+    return df[provider_column].fillna("__missing_provider__").copy()
+
+
 def stratified_split(
     X: pd.DataFrame,
     y: pd.Series,
@@ -100,8 +144,10 @@ __all__ = [
     "DEFAULT_RANDOM_SEED",
     "DEFAULT_TEST_SIZE",
     "NUMERIC_FEATURES",
+    "extract_provider_groups",
     "fill_nulls",
     "load_gold_features",
     "prepare_training_data",
     "stratified_split",
+    "temporal_split",
 ]
