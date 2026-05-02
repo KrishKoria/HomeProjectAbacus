@@ -11,6 +11,8 @@ from common.gold_pipeline_config import (
     HIGH_SEVERITY_EXPECTED_COST_FLOOR,
     MIN_PROVIDER_RISK_COUNT,
     PHI_COLUMNS_GOLD,
+    PROVIDER_LOOKBACK_WINDOW_60D,
+    PROVIDER_LOOKBACK_WINDOW_90D,
     PROVIDER_LOOKBACK_WINDOW_DAYS,
     gold_table_name,
     gold_table_properties,
@@ -225,15 +227,28 @@ def gold_claim_features():
     # `date` is DateType; casting directly to long yields *days* since epoch,
     # which makes a `rangeBetween(-30 * 86400, 0)` window effectively unbounded.
     # Cast through timestamp first so the range units (seconds) match the column.
-    daily_window_30d = (
-        Window.partitionBy("provider_id")
-        .orderBy(F.col("event_date").cast("timestamp").cast("long"))
-        .rangeBetween(-PROVIDER_LOOKBACK_WINDOW_DAYS * 86400, 0)
+    def _rolling_window(days: int) -> Window:
+        return (
+            Window.partitionBy("provider_id")
+            .orderBy(F.col("event_date").cast("timestamp").cast("long"))
+            .rangeBetween(-days * 86400, 0)
+        )
+
+    provider_daily_rolling = (
+        provider_daily
+        .withColumn("provider_claim_count_30d", F.sum("daily_claim_count").over(_rolling_window(PROVIDER_LOOKBACK_WINDOW_DAYS)))
+        .withColumn("provider_claim_count_60d", F.sum("daily_claim_count").over(_rolling_window(PROVIDER_LOOKBACK_WINDOW_60D)))
+        .withColumn("provider_claim_count_90d", F.sum("daily_claim_count").over(_rolling_window(PROVIDER_LOOKBACK_WINDOW_90D)))
+        .withColumn("provider_30d_denial_rate_raw", F.sum("daily_denied_count").over(_rolling_window(PROVIDER_LOOKBACK_WINDOW_DAYS)))
+        .select(
+            "provider_id",
+            "event_date",
+            "provider_claim_count_30d",
+            "provider_claim_count_60d",
+            "provider_claim_count_90d",
+            "provider_30d_denial_rate_raw",
+        )
     )
-    provider_daily_rolling = provider_daily.withColumn(
-        "provider_claim_count_30d",
-        F.sum("daily_claim_count").over(daily_window_30d),
-    ).select("provider_id", "event_date", "provider_claim_count_30d")
 
     result = (
         base.withColumn("event_date", F.to_date(F.col("date")))
@@ -254,7 +269,57 @@ def gold_claim_features():
                 F.col("provider_claim_count_30d"),
             ).otherwise(F.lit(None).cast("int")),
         )
-        .drop("event_date")
+        .withColumn(
+            "provider_claim_count_60d",
+            F.when(
+                F.col("date").isNotNull() & F.col("provider_id").isNotNull(),
+                F.col("provider_claim_count_60d"),
+            ).otherwise(F.lit(None).cast("int")),
+        )
+        .withColumn(
+            "provider_claim_count_90d",
+            F.when(
+                F.col("date").isNotNull() & F.col("provider_id").isNotNull(),
+                F.col("provider_claim_count_90d"),
+            ).otherwise(F.lit(None).cast("int")),
+        )
+        # Interaction features
+        .withColumn(
+            "cost_overbenchmark_and_highseverity",
+            F.col("amount_to_benchmark_ratio") * F.col("diagnosis_severity_encoded").cast("double"),
+        )
+        .withColumn(
+            "mismatch_and_overbenchmark",
+            (
+                F.col("severity_procedure_mismatch").cast("int")
+                + F.col("specialty_diagnosis_mismatch").cast("int")
+            ).cast("double") * F.col("amount_to_benchmark_ratio"),
+        )
+        .withColumn(
+            "missing_fields_count",
+            (
+                F.col("is_procedure_missing").cast("int")
+                + F.col("is_amount_missing").cast("int")
+                + F.col("provider_location_missing").cast("int")
+            ),
+        )
+        .withColumn(
+            "provider_30d_denial_rate",
+            F.when(
+                F.col("provider_claim_count_30d").isNotNull()
+                & (F.col("provider_claim_count_30d") > 0),
+                F.col("provider_30d_denial_rate_raw").cast("double")
+                / F.col("provider_claim_count_30d").cast("double"),
+            ).otherwise(F.lit(None).cast("double")),
+        )
+        .withColumn(
+            "low_volume_provider_risk",
+            F.when(
+                F.col("provider_claim_count") < F.lit(MIN_PROVIDER_RISK_COUNT),
+                F.col("provider_risk_score"),
+            ).otherwise(F.lit(None).cast("double")),
+        )
+        .drop("event_date", "provider_30d_denial_rate_raw")
     )
 
     return result.select(
@@ -284,7 +349,14 @@ def gold_claim_features():
         "diagnosis_count",
         "provider_claim_count",
         "provider_claim_count_30d",
+        "provider_claim_count_60d",
+        "provider_claim_count_90d",
         "provider_risk_score",
+        "cost_overbenchmark_and_highseverity",
+        "mismatch_and_overbenchmark",
+        "provider_30d_denial_rate",
+        "missing_fields_count",
+        "low_volume_provider_risk",
         "denial_label",
         "_ingested_at",
         "_source_file",
