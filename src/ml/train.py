@@ -454,8 +454,16 @@ def _make_optuna_objective(
 
         base_estimator = builder_fn(trial, random_seed=random_seed)
         if groups is not None:
-            splitter = GroupKFold(n_splits=5)
-            split_iter = splitter.split(X_train, y_train, groups=groups)
+            groups_arr = np.asarray(groups)
+            unique_groups = np.unique(groups_arr)
+            n_unique_groups = int(unique_groups.size)
+            if n_unique_groups >= 2:
+                n_group_splits = min(5, n_unique_groups)
+                splitter = GroupKFold(n_splits=n_group_splits)
+                split_iter = splitter.split(X_train, y_train, groups=groups)
+            else:
+                splitter = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_seed)
+                split_iter = splitter.split(X_train, y_train)
         else:
             splitter = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_seed)
             split_iter = splitter.split(X_train, y_train)
