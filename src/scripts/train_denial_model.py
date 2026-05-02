@@ -391,11 +391,15 @@ if __name__ == "__main__":
     except Exception:
         traceback.print_exc()
     finally:
-        from pyspark.sql import SparkSession
-
         try:
-            SparkSession.builder.getOrCreate().stop()
-        except Exception:
-            pass
+            from pyspark.sql import SparkSession
+        except ModuleNotFoundError:
+            SparkSession = None
+
+        if SparkSession is not None:
+            try:
+                SparkSession.builder.getOrCreate().stop()
+            except Exception:
+                pass
     if _rc != 0:
         raise RuntimeError(f"Training failed with exit code {_rc}")
