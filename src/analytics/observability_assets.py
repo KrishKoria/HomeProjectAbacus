@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Final
 
-from src.common.bronze_pipeline_config import format_claimops_diagnostic_id
+from src.common.bronze_pipeline_config import (
+    cache_if_available,
+    format_claimops_diagnostic_id,
+    unpersist_if_available,
+    validate_identifier,
+)
 from src.common.observability import MESSAGE_EVENT_LOG_SQL_BRIDGE
 
 
@@ -44,28 +49,6 @@ def load_event_log_dataframe(spark, pipeline_id: str | None = None, published_ev
     return spark.sql(event_log_bridge_sql(pipeline_id))
 
 
-def _cache_if_available(dataframe):
-    """Cache the shared event log input when the runtime supports it."""
-    if not hasattr(dataframe, "cache"):
-        return dataframe
-    try:
-        return dataframe.cache()
-    except Exception as exc:
-        message = str(exc)
-        if "NOT_SUPPORTED_WITH_SERVERLESS" in message or "PERSIST TABLE is not supported" in message:
-            return dataframe
-        raise
-
-
-def _unpersist_if_available(dataframe) -> None:
-    if not hasattr(dataframe, "unpersist"):
-        return
-    try:
-        dataframe.unpersist()
-    except Exception:
-        return
-
-
 def _nested_event_log_path(dataframe, root: str, path: str):
     """Read an event-log nested path when Databricks exposes it as a struct or JSON string."""
     from pyspark.sql import functions as F
@@ -96,11 +79,6 @@ def _event_log_path_type(dataframe, root: str, path: str):
     return None
 
 
-def _nested_event_log_field(dataframe, root: str, field: str):
-    """Read a first-level event-log nested field from a struct or JSON string."""
-    return _nested_event_log_path(dataframe, root, field)
-
-
 def _event_log_column(dataframe, column: str):
     """Read an optional top-level event-log column without assuming every source shape has it."""
     from pyspark.sql import functions as F
@@ -114,12 +92,12 @@ def build_pipeline_updates(dataframe):
     """Shape update lifecycle records from the raw event log."""
     from pyspark.sql import functions as F
 
-    origin_update_id = _nested_event_log_field(dataframe, "origin", "update_id")
-    origin_pipeline_id = _nested_event_log_field(dataframe, "origin", "pipeline_id")
-    origin_user_name = _nested_event_log_field(dataframe, "origin", "user_name")
-    details_update_id = _nested_event_log_field(dataframe, "details", "update_id")
-    details_pipeline_id = _nested_event_log_field(dataframe, "details", "pipeline_id")
-    details_state = _nested_event_log_field(dataframe, "details", "state")
+    origin_update_id = _nested_event_log_path(dataframe, "origin", "update_id")
+    origin_pipeline_id = _nested_event_log_path(dataframe, "origin", "pipeline_id")
+    origin_user_name = _nested_event_log_path(dataframe, "origin", "user_name")
+    details_update_id = _nested_event_log_path(dataframe, "details", "update_id")
+    details_pipeline_id = _nested_event_log_path(dataframe, "details", "pipeline_id")
+    details_state = _nested_event_log_path(dataframe, "details", "state")
     update_progress_state = _nested_event_log_path(dataframe, "details", "update_progress.state")
     flow_progress_status = _nested_event_log_path(dataframe, "details", "flow_progress.status")
 
@@ -141,8 +119,8 @@ def build_expectation_metrics(dataframe):
     from pyspark.sql import functions as F
     from pyspark.sql.types import ArrayType, LongType, StringType, StructField, StructType
 
-    origin_update_id = _nested_event_log_field(dataframe, "origin", "update_id")
-    details_update_id = _nested_event_log_field(dataframe, "details", "update_id")
+    origin_update_id = _nested_event_log_path(dataframe, "origin", "update_id")
+    details_update_id = _nested_event_log_path(dataframe, "details", "update_id")
     expectations = _nested_event_log_path(dataframe, "details", "flow_progress.data_quality.expectations")
     expectation_type = _event_log_path_type(dataframe, "details", "flow_progress.data_quality.expectations")
     expectation_schema = ArrayType(
@@ -184,14 +162,14 @@ def build_user_actions(dataframe):
     """Shape user-facing audit actions from the raw event log."""
     from pyspark.sql import functions as F
 
-    origin_update_id = _nested_event_log_field(dataframe, "origin", "update_id")
-    details_update_id = _nested_event_log_field(dataframe, "details", "update_id")
-    origin_user_name = _nested_event_log_field(dataframe, "origin", "user_name")
-    origin_pipeline_id = _nested_event_log_field(dataframe, "origin", "pipeline_id")
-    details_user_action = _nested_event_log_field(dataframe, "details", "user_action")
+    origin_update_id = _nested_event_log_path(dataframe, "origin", "update_id")
+    details_update_id = _nested_event_log_path(dataframe, "details", "update_id")
+    origin_user_name = _nested_event_log_path(dataframe, "origin", "user_name")
+    origin_pipeline_id = _nested_event_log_path(dataframe, "origin", "pipeline_id")
+    details_user_action = _nested_event_log_path(dataframe, "details", "user_action")
     user_action_action = _nested_event_log_path(dataframe, "details", "user_action.action")
     user_action_user_name = _nested_event_log_path(dataframe, "details", "user_action.user_name")
-    details_pipeline_id = _nested_event_log_field(dataframe, "details", "pipeline_id")
+    details_pipeline_id = _nested_event_log_path(dataframe, "details", "pipeline_id")
 
     return (
         dataframe.where(F.col("event_type").isin("user_action", "create_update"))
@@ -210,14 +188,14 @@ def build_latest_failures(dataframe):
     """Shape the most recent failure rows with stable diagnostic IDs."""
     from pyspark.sql import functions as F
 
-    details_dataset = _nested_event_log_field(dataframe, "details", "dataset")
-    details_flow_name = _nested_event_log_field(dataframe, "details", "flow_name")
+    details_dataset = _nested_event_log_path(dataframe, "details", "dataset")
+    details_flow_name = _nested_event_log_path(dataframe, "details", "flow_name")
     flow_progress_dataset = _nested_event_log_path(dataframe, "details", "flow_progress.metrics.dataset")
-    origin_update_id = _nested_event_log_field(dataframe, "origin", "update_id")
-    details_update_id = _nested_event_log_field(dataframe, "details", "update_id")
-    error_code = _nested_event_log_field(dataframe, "error", "error_code")
-    error_message = _nested_event_log_field(dataframe, "error", "message")
-    details_error_code = _nested_event_log_field(dataframe, "details", "error_code")
+    origin_update_id = _nested_event_log_path(dataframe, "origin", "update_id")
+    details_update_id = _nested_event_log_path(dataframe, "details", "update_id")
+    error_code = _nested_event_log_path(dataframe, "error", "error_code")
+    error_message = _nested_event_log_path(dataframe, "error", "message")
+    details_error_code = _nested_event_log_path(dataframe, "details", "error_code")
 
     failure_rows = (
         dataframe.where(F.col("level").isin("ERROR", "WARN"))
@@ -239,9 +217,9 @@ def build_refresh_plans(dataframe):
     from pyspark.sql import functions as F
     from pyspark.sql.types import StringType
 
-    origin_update_id = _nested_event_log_field(dataframe, "origin", "update_id")
-    origin_pipeline_id = _nested_event_log_field(dataframe, "origin", "pipeline_id")
-    details_update_id = _nested_event_log_field(dataframe, "details", "update_id")
+    origin_update_id = _nested_event_log_path(dataframe, "origin", "update_id")
+    origin_pipeline_id = _nested_event_log_path(dataframe, "origin", "pipeline_id")
+    details_update_id = _nested_event_log_path(dataframe, "details", "update_id")
     planning_flow_name = _nested_event_log_path(dataframe, "details", "planning_information.flow_name")
     planning_dataset = _nested_event_log_path(dataframe, "details", "planning_information.dataset_name")
     planning_strategy = _nested_event_log_path(dataframe, "details", "planning_information.strategy")
@@ -287,7 +265,10 @@ def write_observability_tables(
     pipeline_stage: str | None = None,
 ) -> dict[str, str]:
     """Build and persist Databricks-native observability tables."""
-    event_log_df = _cache_if_available(
+    validate_identifier(catalog, "catalog")
+    validate_identifier(analytics_schema, "analytics_schema")
+
+    event_log_df = cache_if_available(
         load_event_log_dataframe(
             spark,
             pipeline_id=pipeline_id,
@@ -314,6 +295,8 @@ def write_observability_tables(
             try:
                 existing = spark.table(table_fqn)
                 if "pipeline_stage" not in existing.columns:
+                    validate_identifier(catalog, "catalog")
+                    validate_identifier(analytics_schema, "analytics_schema")
                     spark.sql(f"DROP TABLE IF EXISTS {table_fqn}")
             except Exception:
                 pass
@@ -325,7 +308,7 @@ def write_observability_tables(
     try:
         persisted = dict(persist_one(item) for item in outputs.items())
     finally:
-        _unpersist_if_available(event_log_df)
+        unpersist_if_available(event_log_df)
 
     return persisted
 
