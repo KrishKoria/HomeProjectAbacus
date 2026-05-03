@@ -67,6 +67,9 @@ SILVER_DIAGNOSTIC_IDS: Final[dict[str, dict[str, str]]] = {
         "unreadable_pdf": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 501),
         "empty_pdf_text": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 502),
         "duplicate_policy_path": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 503),
+        "oversized_pdf_file": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 504),
+        "oversized_pdf_pages": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 505),
+        "oversized_pdf_text": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 506),
     },
 }
 

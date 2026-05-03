@@ -80,6 +80,7 @@ from common.bronze_pipeline_config import (
     table_properties_for_sensitivity,
 )
 from common.observability import MESSAGE_BRONZE_APPEND_ONLY
+from common.silver_pipeline_config import MAX_PDF_SIZE_BYTES
 
 TABLE_NAME = bronze_table_name("policies")
 VOLUME_PATH = bronze_volume_path("policies")
@@ -105,6 +106,7 @@ VOLUME_PATH = bronze_volume_path("policies")
 # Business rule: a zero-byte PDF contains no policy text and cannot be parsed.
 # RAG impact: Silver pdfplumber parsing will produce zero chunks from an empty file.
 @dp.expect("pdf_size_positive", "length > 0")
+@dp.expect("pdf_size_within_bounds", f"length <= {MAX_PDF_SIZE_BYTES}")
 @dp.table(
     name=TABLE_NAME,
     cluster_by=["path"],
