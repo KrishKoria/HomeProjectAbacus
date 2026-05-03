@@ -27,6 +27,12 @@ NON_PHI_TABLE_PROPERTIES: Final[dict[str, str]] = table_properties_for_sensitivi
 PHI_TABLE_PROPERTIES: Final[dict[str, str]] = table_properties_for_sensitivity("PHI")
 SENSITIVE_TABLE_PROPERTIES: Final[dict[str, str]] = table_properties_for_sensitivity("SENSITIVE")
 
+MAX_PDF_SIZE_BYTES: Final[int] = 50_000_000
+MAX_PDF_PAGE_COUNT: Final[int] = 2000
+MAX_EXTRACTED_TEXT_LENGTH: Final[int] = 5_000_000
+MAX_CHUNK_COUNT: Final[int] = 5000
+MAX_PDF_TOKEN_COUNT: Final[int] = 500_000
+
 
 def silver_table_name(catalog: str, table_name: str, schema: str = SILVER_SCHEMA_DEFAULT) -> str:
     """Return a fully-qualified Silver table name."""
@@ -73,6 +79,11 @@ def read_bronze_snapshot(spark, table_name: str):
 
 __all__ = [
     "ANALYTICS_SCHEMA_DEFAULT",
+    "MAX_CHUNK_COUNT",
+    "MAX_EXTRACTED_TEXT_LENGTH",
+    "MAX_PDF_PAGE_COUNT",
+    "MAX_PDF_SIZE_BYTES",
+    "MAX_PDF_TOKEN_COUNT",
     "MONEY_DECIMAL_PRECISION",
     "MONEY_DECIMAL_SCALE",
     "NON_PHI_TABLE_PROPERTIES",

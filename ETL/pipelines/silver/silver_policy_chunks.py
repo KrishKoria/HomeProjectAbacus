@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from typing import Final
 
 from pyspark import pipelines as dp
 from pyspark.sql import Window
@@ -19,6 +20,11 @@ from common.observability import (
     MESSAGE_TEMPLATE_SILVER_TABLE_READY,
 )
 from common.silver_pipeline_config import (
+    MAX_CHUNK_COUNT,
+    MAX_EXTRACTED_TEXT_LENGTH,
+    MAX_PDF_PAGE_COUNT,
+    MAX_PDF_SIZE_BYTES,
+    MAX_PDF_TOKEN_COUNT,
     NON_PHI_TABLE_PROPERTIES,
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
@@ -51,6 +57,29 @@ _TEXT_SCHEMA = StructType(
     ]
 )
 
+_EXTRACTION_STATUS_META: Final[dict[str, tuple[str, str]]] = {
+    "UNREADABLE_PDF": ("unreadable_pdf", "pdfplumber could not extract policy text from the binary document"),
+    "EMPTY_PDF_TEXT": ("empty_pdf_text", "policy document produced no extractable text"),
+    "OVERSIZED_PDF_FILE": ("oversized_pdf_file", "policy PDF file size exceeds the maximum allowed size"),
+    "OVERSIZED_PDF_PAGES": ("oversized_pdf_pages", "policy PDF page count exceeds the maximum allowed pages"),
+    "OVERSIZED_PDF_TEXT": ("oversized_pdf_text", "extracted policy text length exceeds the maximum allowed size"),
+}
+
+_STATUS_RULE_MAP: Final[dict[str, str]] = {s: m[0] for s, m in _EXTRACTION_STATUS_META.items()}
+_STATUS_REASON_MAP: Final[dict[str, str]] = {s: m[1] for s, m in _EXTRACTION_STATUS_META.items()}
+_STATUS_DIAGNOSTIC_MAP: Final[dict[str, str]] = {
+    s: get_silver_diagnostic_id("policy_chunks", m[0]) for s, m in _EXTRACTION_STATUS_META.items()
+}
+
+
+def _status_chain(value_map: dict[str, str], default: str):
+    """Build a WHEN/OTHERWISE chain mapping extraction_status to target values."""
+    items = list(value_map.items())
+    result = F.when(F.col("extraction_status") == F.lit(items[0][0]), F.lit(items[0][1]))
+    for status, value in items[1:]:
+        result = result.when(F.col("extraction_status") == F.lit(status), F.lit(value))
+    return result.otherwise(F.lit(default))
+
 
 def _extract_policy_text(pdf_bytes):
     """Wrap pdfplumber extraction so the Spark UDF returns structured status values."""
@@ -58,11 +87,16 @@ def _extract_policy_text(pdf_bytes):
         if not pdf_bytes:
             policy_text = None
         else:
+            if len(pdf_bytes) > MAX_PDF_SIZE_BYTES:
+                return (None, "OVERSIZED_PDF_FILE", f"File size {len(pdf_bytes)} exceeds {MAX_PDF_SIZE_BYTES}")
+
             import pdfplumber
 
             page_text = []
             with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
-                for page in pdf.pages:
+                for i, page in enumerate(pdf.pages):
+                    if i >= MAX_PDF_PAGE_COUNT:
+                        return (None, "OVERSIZED_PDF_PAGES", f"Page count exceeds {MAX_PDF_PAGE_COUNT}")
                     extracted = page.extract_text() or ""
                     normalized = extracted.strip()
                     if normalized:
@@ -72,6 +106,8 @@ def _extract_policy_text(pdf_bytes):
         return (None, "UNREADABLE_PDF", str(exc))
     if policy_text is None:
         return (None, "EMPTY_PDF_TEXT", None)
+    if len(policy_text) > MAX_EXTRACTED_TEXT_LENGTH:
+        return (None, "OVERSIZED_PDF_TEXT", f"Extracted text length {len(policy_text)} exceeds {MAX_EXTRACTED_TEXT_LENGTH}")
     return (policy_text, "OK", None)
 
 
@@ -80,18 +116,20 @@ def _chunk_policy_text(policy_text, chunk_size_tokens: int = 512, overlap_tokens
     if policy_text is None:
         return []
 
-    normalized = policy_text
-    for delimiter in ("\r", "\n", "\t"):
-        normalized = normalized.replace(delimiter, " ")
-    normalized = " ".join(normalized.split())
+    normalized = " ".join(policy_text.split())
     if not normalized:
         return []
 
     tokens = normalized.split(" ")
+    if len(tokens) > MAX_PDF_TOKEN_COUNT:
+        tokens = tokens[:MAX_PDF_TOKEN_COUNT]
+
     step = max(1, chunk_size_tokens - overlap_tokens)
     chunks = []
     chunk_index = 0
     for start_index in range(0, len(tokens), step):
+        if chunk_index >= MAX_CHUNK_COUNT:
+            break
         token_slice = tokens[start_index:start_index + chunk_size_tokens]
         if not token_slice:
             continue
@@ -132,10 +170,10 @@ def _policy_documents_stream():
         .withColumn(
             "_data_quality_flags",
             F.filter(
-                F.array(
-                    F.when(F.col("extraction_status") == F.lit("UNREADABLE_PDF"), F.lit("unreadable_pdf")),
-                    F.when(F.col("extraction_status") == F.lit("EMPTY_PDF_TEXT"), F.lit("empty_pdf_text")),
-                ),
+                F.array(*[
+                    F.when(F.col("extraction_status") == F.lit(s), F.lit(r))
+                    for s, (r, _) in _EXTRACTION_STATUS_META.items()
+                ]),
                 lambda flag: flag.isNotNull(),
             ),
         )
@@ -208,30 +246,9 @@ def quarantine_policy_chunks():
     quarantined = (
         spark.read.table("policy_documents_stream")
         .where((F.col("extraction_status") != F.lit("OK")) | (F.col("_row_priority") > 1))
-        .withColumn(
-            "diagnostic_id",
-            F.when(F.col("extraction_status") == F.lit("UNREADABLE_PDF"), F.lit(get_silver_diagnostic_id("policy_chunks", "unreadable_pdf")))
-            .when(F.col("extraction_status") == F.lit("EMPTY_PDF_TEXT"), F.lit(get_silver_diagnostic_id("policy_chunks", "empty_pdf_text")))
-            .otherwise(F.lit(get_silver_diagnostic_id("policy_chunks", "duplicate_policy_path"))),
-        )
-        .withColumn(
-            "rule_name",
-            F.when(F.col("extraction_status") == F.lit("UNREADABLE_PDF"), F.lit("unreadable_pdf"))
-            .when(F.col("extraction_status") == F.lit("EMPTY_PDF_TEXT"), F.lit("empty_pdf_text"))
-            .otherwise(F.lit("duplicate_policy_path")),
-        )
-        .withColumn(
-            "quarantine_reason",
-            F.when(
-                F.col("extraction_status") == F.lit("UNREADABLE_PDF"),
-                F.lit("pdfplumber could not extract policy text from the binary document"),
-            )
-            .when(
-                F.col("extraction_status") == F.lit("EMPTY_PDF_TEXT"),
-                F.lit("policy document produced no extractable text"),
-            )
-            .otherwise(F.lit("duplicate policy path observed in the silver stream")),
-        )
+        .withColumn("diagnostic_id", _status_chain(_STATUS_DIAGNOSTIC_MAP, get_silver_diagnostic_id("policy_chunks", "duplicate_policy_path")))
+        .withColumn("rule_name", _status_chain(_STATUS_RULE_MAP, "duplicate_policy_path"))
+        .withColumn("quarantine_reason", _status_chain(_STATUS_REASON_MAP, "duplicate policy path observed in the silver stream"))
         .withColumn(
             "status_message",
             F.concat(
