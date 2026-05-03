@@ -47,10 +47,10 @@ from src.analytics.observability_assets import (  # noqa: E402
 from src.analytics.claims_analytics import (  # noqa: E402
     DASHBOARD_SOURCE_TABLES,
     HIGH_COST_THRESHOLD_RATIO,
-    _cache_if_available,
     analytics_table_name,
     build_and_persist_claims_assets,
 )
+from src.common.bronze_pipeline_config import cache_if_available  # noqa: E402
 
 
 def _read_text(relative_path: str) -> str:
@@ -363,7 +363,7 @@ class AnalyticsContractTests(unittest.TestCase):
 
         frame = ServerlessFrame()
 
-        self.assertIs(_cache_if_available(frame), frame)
+        self.assertIs(cache_if_available(frame), frame)
 
     def test_observability_helpers_keep_sql_bridge_minimal(self) -> None:
         self.assertEqual(
@@ -402,7 +402,7 @@ class AnalyticsContractTests(unittest.TestCase):
     def test_observability_writes_use_cached_event_log_and_sequential_persistence(self) -> None:
         source = _read_text("src/analytics/observability_assets.py")
 
-        self.assertIn("_cache_if_available", source)
+        self.assertIn("cache_if_available", source)
         self.assertIn("persisted = dict(persist_one(item) for item in outputs.items())", source)
         self.assertNotIn("ThreadPoolExecutor", source)
 

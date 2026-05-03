@@ -5,6 +5,9 @@ from typing import Final
 from src.common.bronze_pipeline_config import (
     BRONZE_SCHEMA_DEFAULT,
     bronze_table_name as _config_bronze_table_name,
+    cache_if_available,
+    table_properties_for_sensitivity,
+    validate_identifier,
 )
 from src.common.observability import (
     LOG_CATEGORY_ANALYTICS_BUILD,
@@ -42,6 +45,41 @@ DASHBOARD_SOURCE_TABLES: Final[tuple[str, ...]] = (
     "silver_claim_lineage",
 )
 
+TABLE_SENSITIVITY_CLASSIFICATIONS: Final[dict[str, str]] = {
+    "claims_provider_joined": "PHI",
+    "claims_diagnosis_joined": "PHI",
+    "high_cost_claims_summary": "SENSITIVE",
+    "silver_claim_lineage": "SENSITIVE",
+    "silver_claims_cost_enriched": "SENSITIVE",
+    "claims_provider_specialty_mismatch": "SENSITIVE",
+    "claims_by_specialty_summary": "NON-PHI",
+    "claims_by_region_summary": "NON-PHI",
+    "claims_by_diagnosis_summary": "NON-PHI",
+    "claims_dashboard_summary": "NON-PHI",
+    "claims_adjudication_summary": "NON-PHI",
+    "claims_denial_reason_summary": "NON-PHI",
+    "claims_revenue_daily_summary": "NON-PHI",
+    "bronze_pipeline_audit": "NON-PHI",
+    "ops_data_freshness": "NON-PHI",
+}
+
+PHI_COLUMNS_BY_TABLE: Final[dict[str, tuple[str, ...]]] = {
+    "claims_provider_joined": (
+        "patient_id",
+        "claim_id",
+        "provider_id",
+        "billed_amount",
+        "date",
+    ),
+    "claims_diagnosis_joined": (
+        "patient_id",
+        "claim_id",
+        "provider_id",
+        "billed_amount",
+        "date",
+    ),
+}
+
 
 def analytics_table_name(catalog: str, analytics_schema: str, table_name: str) -> str:
     """Return a fully-qualified analytics table name."""
@@ -68,20 +106,9 @@ def _log_dataset_ready(table_name: str, sensitivity: str) -> str:
 
 def ensure_analytics_schema(spark, catalog: str, analytics_schema: str) -> None:
     """Create the analytics schema if it does not exist."""
+    validate_identifier(catalog, "catalog")
+    validate_identifier(analytics_schema, "analytics_schema")
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{analytics_schema}")
-
-
-def _cache_if_available(dataframe):
-    """Cache a DataFrame when the runtime supports it; keep serverless paths portable."""
-    if not hasattr(dataframe, "cache"):
-        return dataframe
-    try:
-        return dataframe.cache()
-    except Exception as exc:
-        message = str(exc)
-        if "NOT_SUPPORTED_WITH_SERVERLESS" in message or "PERSIST TABLE is not supported" in message:
-            return dataframe
-        raise
 
 
 def _boolean_or_null(column_name: str):
@@ -523,9 +550,26 @@ def build_silver_claim_lineage(
     return trusted.unionByName(quarantined)
 
 
-def write_managed_table(dataframe, table_name: str) -> str:
-    """Persist a DataFrame as a managed Delta table with overwrite semantics."""
+def _format_table_properties_sql(properties: dict[str, str]) -> str:
+    """Render a table properties dict as a safe SQL TBLPROPERTIES value clause."""
+    return ", ".join(f"'{k}' = '{v}'" for k, v in properties.items())
+
+
+def write_managed_table(
+    dataframe,
+    table_name: str,
+    spark=None,
+    table_properties: dict[str, str] | None = None,
+) -> str:
+    """Persist a DataFrame as a managed Delta table with overwrite semantics.
+
+    When ``spark`` and ``table_properties`` are both provided, applies the
+    properties via an ALTER TABLE SET TBLPROPERTIES after the write.
+    """
     dataframe.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(table_name)
+    if spark is not None and table_properties:
+        prop_clause = _format_table_properties_sql(table_properties)
+        spark.sql(f"ALTER TABLE {table_name} SET TBLPROPERTIES ({prop_clause})")
     return table_name
 
 
@@ -538,11 +582,11 @@ def build_and_persist_claims_assets(
     """Build analytics, operational, and feature outputs and persist them to Delta tables."""
     ensure_analytics_schema(spark, catalog, analytics_schema)
 
-    claims_provider_joined = _cache_if_available(build_claims_provider_joined(spark, catalog, bronze_schema))
-    claims_diagnosis_joined = _cache_if_available(build_claims_diagnosis_joined(spark, catalog, bronze_schema))
-    claims_provider_cost_enriched = _cache_if_available(_build_claims_provider_cost_enriched(spark, catalog, bronze_schema))
-    claims = _cache_if_available(spark.table(silver_table_name(catalog, "claims", SILVER_SCHEMA_DEFAULT)))
-    mismatch = _cache_if_available(
+    claims_provider_joined = cache_if_available(build_claims_provider_joined(spark, catalog, bronze_schema))
+    claims_diagnosis_joined = cache_if_available(build_claims_diagnosis_joined(spark, catalog, bronze_schema))
+    claims_provider_cost_enriched = cache_if_available(_build_claims_provider_cost_enriched(spark, catalog, bronze_schema))
+    claims = cache_if_available(spark.table(silver_table_name(catalog, "claims", SILVER_SCHEMA_DEFAULT)))
+    mismatch = cache_if_available(
         build_claims_provider_specialty_mismatch(
             spark,
             catalog,
@@ -587,8 +631,13 @@ def build_and_persist_claims_assets(
     persisted: dict[str, str] = {}
     for table_key, dataframe in outputs.items():
         table_fqn = analytics_table_name(catalog, analytics_schema, table_key)
-        write_managed_table(dataframe, table_fqn)
-        persisted[table_key] = _log_dataset_ready(table_fqn, "MINIMUM-NECESSARY")
+        sensitivity = TABLE_SENSITIVITY_CLASSIFICATIONS[table_key]
+        properties = table_properties_for_sensitivity(
+            sensitivity,
+            PHI_COLUMNS_BY_TABLE.get(table_key, ()),
+        )
+        write_managed_table(dataframe, table_fqn, spark=spark, table_properties=properties)
+        persisted[table_key] = _log_dataset_ready(table_fqn, sensitivity)
 
     return persisted
 
@@ -597,6 +646,8 @@ __all__ = [
     "ANALYTICS_SCHEMA_DEFAULT",
     "DASHBOARD_SOURCE_TABLES",
     "HIGH_COST_THRESHOLD_RATIO",
+    "PHI_COLUMNS_BY_TABLE",
+    "TABLE_SENSITIVITY_CLASSIFICATIONS",
     "analytics_table_name",
     "build_and_persist_claims_assets",
     "build_bronze_pipeline_audit",
