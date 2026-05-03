@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
+import re
 from datetime import datetime, timezone
 from typing import Final, Iterable
+
+logger = logging.getLogger(__name__)
 
 from src.common.diagnostics import CLAIMOPS_DOMAINS, format_claimops_diagnostic_id
 
@@ -87,8 +91,32 @@ def stable_pipeline_run_id():
         try:
             configured = spark_session.conf.get(PIPELINE_RUN_ID_CONF, "")
         except Exception:
+            logger.warning("Could not read pipeline_run_id from SparkConf; using default.", exc_info=True)
             configured = ""
     return F.lit(configured or _DEFAULT_PIPELINE_RUN_ID)
+
+
+def cache_if_available(dataframe):
+    """Cache a DataFrame when the runtime supports it; keep serverless paths portable."""
+    if not hasattr(dataframe, "cache"):
+        return dataframe
+    try:
+        return dataframe.cache()
+    except Exception as exc:
+        message = str(exc)
+        if "NOT_SUPPORTED_WITH_SERVERLESS" in message or "PERSIST TABLE is not supported" in message:
+            return dataframe
+        raise
+
+
+def unpersist_if_available(dataframe) -> None:
+    """Unpersist a DataFrame when the runtime supports it."""
+    if not hasattr(dataframe, "unpersist"):
+        return
+    try:
+        dataframe.unpersist()
+    except Exception:
+        return
 
 
 def binary_file_autoloader_options(path_glob_filter: str = "*.pdf") -> dict[str, str]:
@@ -110,6 +138,21 @@ def table_properties_for_sensitivity(
     return properties
 
 
+_VALID_IDENTIFIER_RE: Final[re.Pattern[str]] = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
+
+
+def validate_identifier(name: str, label: str = "identifier") -> str:
+    """Validate a Unity Catalog unquoted identifier. Returns the validated name or raises ValueError."""
+    if not _VALID_IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid {label}: {name!r}. Must match {_VALID_IDENTIFIER_RE.pattern}")
+    return name
+
+
+def escape_backtick_identifier(name: str) -> str:
+    """Return a backtick-quoted identifier with embedded backticks doubled."""
+    return f"`{name.replace('`', '``')}`"
+
+
 __all__ = [
     "AUDIT_COLUMNS",
     "BRONZE_SCHEMA_DEFAULT",
@@ -125,9 +168,13 @@ __all__ = [
     "bronze_table_name",
     "bronze_volume_root",
     "bronze_volume_path",
+    "cache_if_available",
     "csv_autoloader_options",
+    "escape_backtick_identifier",
     "format_claimops_diagnostic_id",
     "stable_pipeline_run_id",
     "table_name",
     "table_properties_for_sensitivity",
+    "unpersist_if_available",
+    "validate_identifier",
 ]
