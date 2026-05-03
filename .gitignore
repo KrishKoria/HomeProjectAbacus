@@ -10,7 +10,6 @@
 .pytest_cache/
 .streamlit/
 .venv/
-.opencode/
 .databricks/
 .code-review-graph/
 *.egg-info/
@@ -24,5 +23,4 @@ __pycache__/
 AGENTS.md
 local_dev/
 CLAUDE.md
-# Added by code-review-graph
 
