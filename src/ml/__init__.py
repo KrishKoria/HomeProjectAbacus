@@ -15,10 +15,10 @@ FEATURE_COLUMNS = (
     "provider_claim_count",
     "provider_claim_count_30d",
     "provider_risk_score",
-    # New temporal windows (Phase 1.4)
+    # New temporal windows
     "provider_claim_count_60d",
     "provider_claim_count_90d",
-    # New interaction / derived features (Phase 1.3)
+    # New interaction / derived features
     "cost_overbenchmark_and_highseverity",
     "mismatch_and_overbenchmark",
     "provider_30d_denial_rate",

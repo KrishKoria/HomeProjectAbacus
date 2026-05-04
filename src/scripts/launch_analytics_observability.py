@@ -5,6 +5,7 @@ import logging
 
 from databricks.sdk import WorkspaceClient
 
+from src.common.diagnostics import DIAGNOSTIC_DOMAIN_ANALYTICS, DIAGNOSTIC_DOMAIN_OBSERVABILITY, format_claimops_diagnostic_id
 from src.framework import HealthCheckResult
 
 
@@ -30,7 +31,8 @@ def _normalize_state(value: str | None) -> str:
 def _resolve_job_id(workspace: WorkspaceClient, job_name: str) -> int:
     matching = [job for job in workspace.jobs.list(name=job_name) if job.job_id is not None]
     if not matching:
-        raise ValueError(f"analytics job not found: {job_name}")
+        diag_id = format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ANALYTICS, 201)
+        raise ValueError(f"[{diag_id}] analytics job not found: {job_name}")
     # Prefer the latest job ID if duplicate names exist.
     return max(int(job.job_id) for job in matching)
 
@@ -50,7 +52,11 @@ def main(argv: list[str] | None = None) -> int:
             job_id = args.analytics_job_id
         else:
             if args.analytics_job_name is None:
-                raise ValueError("either --analytics-job-id or --analytics-job-name is required")
+                diag_id = format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ANALYTICS, 202)
+                raise ValueError(
+                    f"[{diag_id}] either --analytics-job-id or "
+                    "--analytics-job-name is required"
+                )
             job_id = _resolve_job_id(workspace, args.analytics_job_name)
         launched = workspace.jobs.run_now(
             job_id=job_id,
@@ -62,7 +68,11 @@ def main(argv: list[str] | None = None) -> int:
             },
         )
     except Exception:
-        logger.warning("Failed to launch analytics observability job", exc_info=True)
+        logger.warning(
+            "[%s] Failed to launch analytics observability job",
+            format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_OBSERVABILITY, 201),
+            exc_info=True,
+        )
         print(HealthCheckResult("etl", False, "launch_analytics_observability_failed").summary_line())
         return 1
 

@@ -6,6 +6,8 @@ from typing import Final
 
 import yaml
 
+from src.common.diagnostics import DIAGNOSTIC_DOMAIN_FRAMEWORK, format_claimops_diagnostic_id
+
 
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 SERVICES_ROOT: Final[Path] = PROJECT_ROOT / "services"
@@ -62,7 +64,8 @@ def _read_yaml(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
     if not isinstance(data, dict):
-        raise ValueError(f"{path}: expected a YAML mapping at the top level")
+        diag_id = format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_FRAMEWORK, 101)
+        raise ValueError(f"[{diag_id}] {path}: expected a YAML mapping at the top level")
     return data
 
 
@@ -105,7 +108,10 @@ def _resource_definitions(resource_files: list[Path]) -> dict[str, dict[str, Pat
         payload = _read_yaml(resource_file)
         resources = payload.get("resources", {})
         if not isinstance(resources, dict):
-            raise ValueError(f"{resource_file}: resources must be a mapping")
+            diag_id = format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_FRAMEWORK, 102)
+            raise ValueError(
+                f"[{diag_id}] {resource_file}: resources must be a mapping"
+            )
         for resource_type, entries in resources.items():
             if isinstance(entries, dict):
                 for resource_key in entries:
@@ -117,7 +123,10 @@ def _registry_entries() -> dict[str, dict]:
     payload = _read_yaml(REGISTRY_PATH)
     services = payload.get("services", {})
     if not isinstance(services, dict):
-        raise ValueError(f"{REGISTRY_PATH}: services must be a mapping")
+        diag_id = format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_FRAMEWORK, 103)
+        raise ValueError(
+            f"[{diag_id}] {REGISTRY_PATH}: services must be a mapping"
+        )
     return services
 
 

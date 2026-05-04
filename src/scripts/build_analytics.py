@@ -4,6 +4,7 @@ import argparse
 import logging
 
 from src.analytics.claims_analytics import build_and_persist_claims_assets
+from src.common.diagnostics import DIAGNOSTIC_DOMAIN_ANALYTICS, format_claimops_diagnostic_id
 from src.framework import HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,11 @@ def main(argv: list[str] | None = None) -> int:
             analytics_schema=args.analytics_schema,
         )
     except Exception:
-        logger.warning("Analytics build failed", exc_info=True)
+        logger.warning(
+            "[%s] Analytics build failed",
+            format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ANALYTICS, 101),
+            exc_info=True,
+        )
         print("FAIL: analytics - analytics build failed")
         return 1
 

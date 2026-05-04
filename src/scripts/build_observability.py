@@ -4,6 +4,7 @@ import argparse
 import logging
 
 from src.analytics.observability_assets import write_observability_tables
+from src.common.diagnostics import DIAGNOSTIC_DOMAIN_OBSERVABILITY, format_claimops_diagnostic_id
 from src.framework import HealthCheckResult
 
 
@@ -35,7 +36,11 @@ def main(argv: list[str] | None = None) -> int:
             pipeline_stage=args.pipeline_stage,
         )
     except Exception:
-        logger.warning("Observability build failed", exc_info=True)
+        logger.warning(
+            "[%s] Observability build failed",
+            format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_OBSERVABILITY, 101),
+            exc_info=True,
+        )
         print(f"FAIL: observability - stage={args.pipeline_stage}")
         return 1
 
