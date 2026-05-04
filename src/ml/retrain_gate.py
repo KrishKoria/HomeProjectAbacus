@@ -6,6 +6,8 @@ import json
 import math
 from typing import Any, Final, Literal
 
+from src.common.diagnostics import get_ml_diagnostic_id
+
 import mlflow
 from mlflow.exceptions import MlflowException, RestException
 from mlflow.protos.databricks_pb2 import RESOURCE_DOES_NOT_EXIST
@@ -222,7 +224,11 @@ def _current_gold_object_metadata(spark, gold_table: str) -> tuple[str, str | No
             last_altered = str(first["last_altered"]) if first.get("last_altered") is not None else None
             return (obj_type, last_altered)
     except Exception:
-        logger.warning("Could not resolve Gold object metadata", exc_info=True)
+        logger.warning(
+            "[%s] Could not resolve Gold object metadata",
+            get_ml_diagnostic_id("gold_object_metadata_failed"),
+            exc_info=True,
+        )
     return ("unknown", None)
 
 
@@ -298,7 +304,8 @@ def decide_retrain(
     client = mlflow_client or MlflowClient()
     current_row_count = int(spark.table(gold_table).count())
     if current_row_count <= 0:
-        raise ValueError(f"{gold_table} has zero rows")
+        diag_id = get_ml_diagnostic_id("gold_table_zero_rows")
+        raise ValueError(f"[{diag_id}] {gold_table} has zero rows")
 
     current_gold_version = _current_gold_version(spark, gold_table)
     current_fingerprint = compute_fingerprint(

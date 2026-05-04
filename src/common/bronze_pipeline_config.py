@@ -7,7 +7,7 @@ from typing import Final, Iterable
 
 logger = logging.getLogger(__name__)
 
-from src.common.diagnostics import CLAIMOPS_DOMAINS, format_claimops_diagnostic_id
+from src.common.diagnostics import CLAIMOPS_DOMAINS, DIAGNOSTIC_DOMAIN_BRONZE, format_claimops_diagnostic_id
 
 
 AUDIT_COLUMNS: Final[tuple[str, str, str]] = (
@@ -91,7 +91,11 @@ def stable_pipeline_run_id():
         try:
             configured = spark_session.conf.get(PIPELINE_RUN_ID_CONF, "")
         except Exception:
-            logger.warning("Could not read pipeline_run_id from SparkConf; using default.", exc_info=True)
+            logger.warning(
+                "[%s] Could not read pipeline_run_id from SparkConf; using default.",
+                format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_BRONZE, 101),
+                exc_info=True,
+            )
             configured = ""
     return F.lit(configured or _DEFAULT_PIPELINE_RUN_ID)
 
@@ -144,7 +148,11 @@ _VALID_IDENTIFIER_RE: Final[re.Pattern[str]] = re.compile(r"^[a-zA-Z][a-zA-Z0-9_
 def validate_identifier(name: str, label: str = "identifier") -> str:
     """Validate a Unity Catalog unquoted identifier. Returns the validated name or raises ValueError."""
     if not _VALID_IDENTIFIER_RE.match(name):
-        raise ValueError(f"Invalid {label}: {name!r}. Must match {_VALID_IDENTIFIER_RE.pattern}")
+        diag_id = format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_BRONZE, 102)
+        raise ValueError(
+            f"[{diag_id}] Invalid {label}: {name!r}. "
+            f"Must match {_VALID_IDENTIFIER_RE.pattern}"
+        )
     return name
 
 

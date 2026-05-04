@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from src.common.diagnostics import get_ml_diagnostic_id
 from src.ml import FEATURE_COLUMNS
 from src.ml.retrain_gate import decide_retrain
 from src.scripts.train_denial_model import main as train_main
@@ -83,4 +84,7 @@ if __name__ == "__main__":
         except Exception:
             pass
     if _rc != 0:
-        raise RuntimeError(f"Training pipeline failed with exit code {_rc}")
+        raise RuntimeError(
+            f"[{get_ml_diagnostic_id('release_gate_blocked')}] "
+            f"Training pipeline failed with exit code {_rc}"
+        )

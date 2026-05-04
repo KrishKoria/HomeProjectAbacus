@@ -10,6 +10,7 @@ from typing import Any, Final
 
 import pandas as pd
 
+from src.common.diagnostics import get_ml_diagnostic_id
 from src.ml import FEATURE_COLUMNS
 from src.ml.features import fill_nulls
 
@@ -120,13 +121,15 @@ def load_from_registry(
         try:
             deps_path = mlflow.pyfunc.get_model_dependencies(model_uri)
         except Exception as deps_exc:
+            diag_id = get_ml_diagnostic_id("registry_dependency_spec_failed")
             raise ModuleNotFoundError(
-                f"{exc}. Model load failed and the dependency spec could not be resolved "
-                f"for {model_uri}: {deps_exc}"
+                f"[{diag_id}] {exc}. Model load failed and the dependency spec "
+                f"could not be resolved for {model_uri}: {deps_exc}"
             ) from exc
+        diag_id = get_ml_diagnostic_id("registry_model_load_failed")
         raise ModuleNotFoundError(
-            f"{exc}. Install the registered model dependencies from {deps_path} and restart "
-            "Python before retrying.\n"
+            f"[{diag_id}] {exc}. Install the registered model dependencies from "
+            f"{deps_path} and restart Python before retrying.\n"
             f"%pip install -q -r {deps_path}\n"
             "dbutils.library.restartPython()"
         ) from exc

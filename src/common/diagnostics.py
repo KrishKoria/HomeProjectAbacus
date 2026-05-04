@@ -9,6 +9,8 @@ DIAGNOSTIC_DOMAIN_HIPAA: Final[str] = "HIPAA"
 DIAGNOSTIC_DOMAIN_OBSERVABILITY: Final[str] = "OBS"
 DIAGNOSTIC_DOMAIN_SILVER: Final[str] = "SLV"
 DIAGNOSTIC_DOMAIN_QUARANTINE: Final[str] = "QRT"
+DIAGNOSTIC_DOMAIN_ML: Final[str] = "ML"
+DIAGNOSTIC_DOMAIN_FRAMEWORK: Final[str] = "FWK"
 
 CLAIMOPS_DOMAINS: Final[frozenset[str]] = frozenset(
     {
@@ -18,6 +20,8 @@ CLAIMOPS_DOMAINS: Final[frozenset[str]] = frozenset(
         DIAGNOSTIC_DOMAIN_OBSERVABILITY,
         DIAGNOSTIC_DOMAIN_SILVER,
         DIAGNOSTIC_DOMAIN_QUARANTINE,
+        DIAGNOSTIC_DOMAIN_ML,
+        DIAGNOSTIC_DOMAIN_FRAMEWORK,
     }
 )
 
@@ -74,6 +78,43 @@ SILVER_DIAGNOSTIC_IDS: Final[dict[str, dict[str, str]]] = {
 }
 
 
+ML_DIAGNOSTIC_IDS: Final[dict[str, str]] = {
+    # Training (ML-1xx)
+    "optuna_xgboost_no_trials": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 101),
+    "optuna_lightgbm_no_trials": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 102),
+    "optuna_catboost_no_trials": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 103),
+    "mlflow_version_resolution_failed": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 104),
+    "databricks_user_resolution_failed": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 105),
+    "mlflow_signature_inference_failed": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 106),
+    "gold_metadata_computation_failed": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 107),
+    "mlflow_logging_warning": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 109),
+    "gold_fingerprint_empty": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 108),
+    # Evaluation (ML-2xx)
+    "unknown_evaluation_metric": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 201),
+    # Retrain gate (ML-3xx)
+    "gold_version_lookup_failed": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 301),
+    "champion_alias_lookup_failed": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 302),
+    "champion_run_lookup_failed": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 303),
+    "gold_table_zero_rows": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 304),
+    "gold_object_metadata_failed": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 305),
+    # Prediction (ML-4xx)
+    "registry_model_load_failed": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 401),
+    "registry_dependency_spec_failed": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 402),
+    # Training script (ML-5xx)
+    "spark_unavailable_gold_fallback": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 110),
+    "no_data_source_available": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 501),
+    "gold_csv_path_not_found": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 502),
+    "release_gate_blocked": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 503),
+}
+
+
+def get_ml_diagnostic_id(rule_name: str) -> str:
+    """Return a stable diagnostic ID for an ML rule name."""
+    if rule_name in ML_DIAGNOSTIC_IDS:
+        return ML_DIAGNOSTIC_IDS[rule_name]
+    return format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_ML, 999)
+
+
 def get_silver_diagnostic_id(dataset: str, rule_name: str) -> str:
     """Return a stable diagnostic ID for a dataset/rule pair."""
     dataset_rules = SILVER_DIAGNOSTIC_IDS.get(dataset, {})
@@ -86,11 +127,15 @@ __all__ = [
     "CLAIMOPS_DOMAINS",
     "DIAGNOSTIC_DOMAIN_ANALYTICS",
     "DIAGNOSTIC_DOMAIN_BRONZE",
+    "DIAGNOSTIC_DOMAIN_FRAMEWORK",
     "DIAGNOSTIC_DOMAIN_HIPAA",
+    "DIAGNOSTIC_DOMAIN_ML",
     "DIAGNOSTIC_DOMAIN_OBSERVABILITY",
     "DIAGNOSTIC_DOMAIN_QUARANTINE",
     "DIAGNOSTIC_DOMAIN_SILVER",
+    "ML_DIAGNOSTIC_IDS",
     "SILVER_DIAGNOSTIC_IDS",
     "format_claimops_diagnostic_id",
+    "get_ml_diagnostic_id",
     "get_silver_diagnostic_id",
 ]

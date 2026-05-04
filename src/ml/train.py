@@ -13,6 +13,12 @@ from sklearn.metrics import precision_score
 from sklearn.model_selection import StratifiedKFold
 from xgboost import XGBClassifier
 
+from src.common.diagnostics import get_ml_diagnostic_id
+from src.common.log_categories import LOG_CATEGORY_ML_TRAINING
+from src.common.log_messages import (
+    MESSAGE_TEMPLATE_ML_TRAINING_FAILURE,
+    MESSAGE_TEMPLATE_ML_REGISTRY_ERROR,
+)
 from src.ml.evaluate import recall_at_high
 
 logger = logging.getLogger(__name__)
@@ -50,8 +56,13 @@ def _resolve_experiment_name(model_name: str) -> str:
         if row and row["user"]:
             user = row["user"]
     except Exception:
-        logger.warning("Failed to resolve Databricks workspace user", exc_info=True)
+        logger.warning(
+            "[%s] Failed to resolve Databricks workspace user",
+            get_ml_diagnostic_id("databricks_user_resolution_failed"),
+            exc_info=True,
+        )
     return f"/Users/{user}/{base}"
+
 
 XGBOOST_DEFAULT_PARAMS: Final[dict[str, Any]] = {
     "max_depth": 6,
@@ -61,8 +72,8 @@ XGBOOST_DEFAULT_PARAMS: Final[dict[str, Any]] = {
     "eval_metric": "logloss",
     "early_stopping_rounds": 50,
     # Synthetic claim labels are ~70/30 (approved/denied); without rebalancing
-    # XGBoost biases toward the majority class and silently misses ARCHITECTURE
-    # §13's Recall@HIGH gate. The Optuna search refines this further per fold.
+    # XGBoost biases toward the majority class and silently misses
+    # Recall@HIGH gate. The Optuna search refines this further per fold.
     "scale_pos_weight": 2.5,
     "random_state": 42,
 }
@@ -106,7 +117,8 @@ def train_logistic_regression(
     random_seed: int = 42,
 ) -> LogisticRegression:
     """Fit the baseline logistic-regression model using class-balanced weights."""
-    training_params = {**LOGREG_DEFAULT_PARAMS, **(params or {}), "random_state": random_seed}
+    training_params = {**LOGREG_DEFAULT_PARAMS, **
+                       (params or {}), "random_state": random_seed}
     model = LogisticRegression(**training_params)
     model.fit(X_train, y_train)
     return model
@@ -122,7 +134,8 @@ def train_xgboost(
     sample_weight: Any = None,
 ) -> XGBClassifier:
     """Fit the primary XGBoost classifier with optional early-stopping eval set."""
-    training_params = {**XGBOOST_DEFAULT_PARAMS, **(params or {}), "random_state": random_seed}
+    training_params = {**XGBOOST_DEFAULT_PARAMS, **
+                       (params or {}), "random_state": random_seed}
     training_params.pop("early_stopping_rounds", 50)
     model = XGBClassifier(**training_params)
     fit_kwargs: dict[str, Any] = {}
@@ -147,7 +160,8 @@ def train_lightgbm(
     """Fit a LightGBM classifier with optional early-stopping eval set."""
     import lightgbm as lgb
 
-    training_params = {**LIGHTGBM_DEFAULT_PARAMS, **(params or {}), "random_state": random_seed}
+    training_params = {**LIGHTGBM_DEFAULT_PARAMS, **
+                       (params or {}), "random_state": random_seed}
     model = lgb.LGBMClassifier(**training_params)
     fit_kwargs: dict[str, Any] = {}
     if X_val is not None and y_val is not None:
@@ -170,7 +184,8 @@ def train_catboost(
     """Fit a CatBoost classifier with optional early-stopping eval set."""
     from catboost import CatBoostClassifier
 
-    training_params = {**CATBOOST_DEFAULT_PARAMS, **(params or {}), "random_seed": random_seed}
+    training_params = {**CATBOOST_DEFAULT_PARAMS, **
+                       (params or {}), "random_seed": random_seed}
     model = CatBoostClassifier(**training_params)
     fit_kwargs: dict[str, Any] = {}
     if X_val is not None and y_val is not None:
@@ -246,7 +261,8 @@ def train_stacking_ensemble(
     from sklearn.linear_model import LogisticRegression
 
     if final_estimator is None:
-        final_estimator = LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42)
+        final_estimator = LogisticRegression(
+            max_iter=1000, class_weight="balanced", random_state=42)
     ensemble = StackingClassifier(
         estimators=estimators,
         final_estimator=final_estimator,
@@ -274,11 +290,15 @@ def select_best_calibration(
     """
     from sklearn.metrics import log_loss
 
-    sigmoid_calibrated = calibrate_classifier(base_estimator, X_train, y_train, method="sigmoid", cv=cv)
-    sigmoid_loss = float(log_loss(y_val, sigmoid_calibrated.predict_proba(X_val)[:, 1]))
+    sigmoid_calibrated = calibrate_classifier(
+        base_estimator, X_train, y_train, method="sigmoid", cv=cv)
+    sigmoid_loss = float(
+        log_loss(y_val, sigmoid_calibrated.predict_proba(X_val)[:, 1]))
 
-    isotonic_calibrated = calibrate_classifier(base_estimator, X_train, y_train, method="isotonic", cv=cv)
-    isotonic_loss = float(log_loss(y_val, isotonic_calibrated.predict_proba(X_val)[:, 1]))
+    isotonic_calibrated = calibrate_classifier(
+        base_estimator, X_train, y_train, method="isotonic", cv=cv)
+    isotonic_loss = float(
+        log_loss(y_val, isotonic_calibrated.predict_proba(X_val)[:, 1]))
 
     if isotonic_loss < sigmoid_loss:
         logger.info(
@@ -378,18 +398,24 @@ def _optuna_objective(
     fold_recalls: list[float] = []
     fold_precisions: list[float] = []
     for tr_idx, va_idx in skf.split(X_train, y_train):
-        X_tr = X_train.iloc[tr_idx] if hasattr(X_train, "iloc") else X_train[tr_idx]
-        X_va = X_train.iloc[va_idx] if hasattr(X_train, "iloc") else X_train[va_idx]
-        y_tr = y_train.iloc[tr_idx] if hasattr(y_train, "iloc") else y_train[tr_idx]
-        y_va = y_train.iloc[va_idx] if hasattr(y_train, "iloc") else y_train[va_idx]
+        X_tr = X_train.iloc[tr_idx] if hasattr(
+            X_train, "iloc") else X_train[tr_idx]
+        X_va = X_train.iloc[va_idx] if hasattr(
+            X_train, "iloc") else X_train[va_idx]
+        y_tr = y_train.iloc[tr_idx] if hasattr(
+            y_train, "iloc") else y_train[tr_idx]
+        y_va = y_train.iloc[va_idx] if hasattr(
+            y_train, "iloc") else y_train[va_idx]
         # cv=2 inside calibration keeps fold cost manageable (5 outer × 2 inner
         # = 10 fits per trial × 50 trials ≈ minutes on CPU).
-        calibrated = CalibratedClassifierCV(base_estimator, method="sigmoid", cv=2)
+        calibrated = CalibratedClassifierCV(
+            base_estimator, method="sigmoid", cv=2)
         calibrated.fit(X_tr, y_tr)
         proba = calibrated.predict_proba(X_va)[:, 1]
         fold_recalls.append(recall_at_high(y_va, proba))
         pred = (proba >= 0.5).astype(int)
-        fold_precisions.append(float(precision_score(y_va, pred, zero_division=0)))
+        fold_precisions.append(
+            float(precision_score(y_va, pred, zero_division=0)))
     mean_recall = float(np.mean(fold_recalls))
     mean_precision = float(np.mean(fold_precisions))
     if mean_precision < OPTUNA_PRECISION_FLOOR:
@@ -462,24 +488,32 @@ def _make_optuna_objective(
                 splitter = GroupKFold(n_splits=n_group_splits)
                 split_iter = splitter.split(X_train, y_train, groups=groups)
             else:
-                splitter = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_seed)
+                splitter = StratifiedKFold(
+                    n_splits=5, shuffle=True, random_state=random_seed)
                 split_iter = splitter.split(X_train, y_train)
         else:
-            splitter = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_seed)
+            splitter = StratifiedKFold(
+                n_splits=5, shuffle=True, random_state=random_seed)
             split_iter = splitter.split(X_train, y_train)
         fold_recalls: list[float] = []
         fold_precisions: list[float] = []
         for tr_idx, va_idx in split_iter:
-            X_tr = X_train.iloc[tr_idx] if hasattr(X_train, "iloc") else X_train[tr_idx]
-            X_va = X_train.iloc[va_idx] if hasattr(X_train, "iloc") else X_train[va_idx]
-            y_tr = y_train.iloc[tr_idx] if hasattr(y_train, "iloc") else y_train[tr_idx]
-            y_va = y_train.iloc[va_idx] if hasattr(y_train, "iloc") else y_train[va_idx]
-            calibrated = CalibratedClassifierCV(base_estimator, method="sigmoid", cv=2)
+            X_tr = X_train.iloc[tr_idx] if hasattr(
+                X_train, "iloc") else X_train[tr_idx]
+            X_va = X_train.iloc[va_idx] if hasattr(
+                X_train, "iloc") else X_train[va_idx]
+            y_tr = y_train.iloc[tr_idx] if hasattr(
+                y_train, "iloc") else y_train[tr_idx]
+            y_va = y_train.iloc[va_idx] if hasattr(
+                y_train, "iloc") else y_train[va_idx]
+            calibrated = CalibratedClassifierCV(
+                base_estimator, method="sigmoid", cv=2)
             calibrated.fit(X_tr, y_tr)
             proba = calibrated.predict_proba(X_va)[:, 1]
             fold_recalls.append(recall_at_high(y_va, proba))
             pred = (proba >= 0.5).astype(int)
-            fold_precisions.append(float(precision_score(y_va, pred, zero_division=0)))
+            fold_precisions.append(
+                float(precision_score(y_va, pred, zero_division=0)))
         mean_recall = float(np.mean(fold_recalls))
         mean_precision = float(np.mean(fold_precisions))
         if mean_precision < OPTUNA_PRECISION_FLOOR:
@@ -506,13 +540,15 @@ def tune_xgboost_optuna(
         pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=3),
     )
     study.optimize(
-        _make_optuna_objective(_build_xgb_from_trial, X_train, y_train, random_seed, groups=groups),
+        _make_optuna_objective(_build_xgb_from_trial,
+                               X_train, y_train, random_seed, groups=groups),
         n_trials=n_trials,
         show_progress_bar=False,
     )
     if len(study.trials) == 0 or study.best_trial is None:
+        diag_id = get_ml_diagnostic_id("optuna_xgboost_no_trials")
         raise RuntimeError(
-            "Optuna XGBoost tuning failed: no successful trials. "
+            f"[{diag_id}] Optuna XGBoost tuning failed: no successful trials. "
             "Check trial logs for per-fold errors."
         )
     best_params = dict(study.best_trial.params)
@@ -527,7 +563,8 @@ def tune_xgboost_optuna(
         best_params,
     )
     base = XGBClassifier(**best_params)
-    calibrated = calibrate_classifier(base, X_train, y_train, method="sigmoid", cv=3)
+    calibrated = calibrate_classifier(
+        base, X_train, y_train, method="sigmoid", cv=3)
     return calibrated, best_params
 
 
@@ -549,13 +586,15 @@ def tune_lightgbm_optuna(
         pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=3),
     )
     study.optimize(
-        _make_optuna_objective(_build_lgb_from_trial, X_train, y_train, random_seed, groups=groups),
+        _make_optuna_objective(_build_lgb_from_trial,
+                               X_train, y_train, random_seed, groups=groups),
         n_trials=n_trials,
         show_progress_bar=False,
     )
     if len(study.trials) == 0 or study.best_trial is None:
+        diag_id = get_ml_diagnostic_id("optuna_lightgbm_no_trials")
         raise RuntimeError(
-            "Optuna LightGBM tuning failed: no successful trials. "
+            f"[{diag_id}] Optuna LightGBM tuning failed: no successful trials. "
             "Check trial logs for per-fold errors."
         )
     best_params = dict(study.best_trial.params)
@@ -572,7 +611,8 @@ def tune_lightgbm_optuna(
         best_params,
     )
     base = lgb.LGBMClassifier(**best_params)
-    calibrated = calibrate_classifier(base, X_train, y_train, method="sigmoid", cv=3)
+    calibrated = calibrate_classifier(
+        base, X_train, y_train, method="sigmoid", cv=3)
     return calibrated, best_params
 
 
@@ -594,13 +634,15 @@ def tune_catboost_optuna(
         pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=3),
     )
     study.optimize(
-        _make_optuna_objective(_build_catboost_from_trial, X_train, y_train, random_seed, groups=groups),
+        _make_optuna_objective(_build_catboost_from_trial,
+                               X_train, y_train, random_seed, groups=groups),
         n_trials=n_trials,
         show_progress_bar=False,
     )
     if len(study.trials) == 0 or study.best_trial is None:
+        diag_id = get_ml_diagnostic_id("optuna_catboost_no_trials")
         raise RuntimeError(
-            "Optuna CatBoost tuning failed: no successful trials. "
+            f"[{diag_id}] Optuna CatBoost tuning failed: no successful trials. "
             "Check trial logs for per-fold errors."
         )
     best_params = dict(study.best_trial.params)
@@ -617,7 +659,8 @@ def tune_catboost_optuna(
         best_params,
     )
     base = CatBoostClassifier(**best_params)
-    calibrated = calibrate_classifier(base, X_train, y_train, method="sigmoid", cv=3)
+    calibrated = calibrate_classifier(
+        base, X_train, y_train, method="sigmoid", cv=3)
     return calibrated, best_params
 
 
@@ -703,11 +746,14 @@ def train_with_mlflow(
         metadata = dict(training_metadata or {})
         feature_columns = metadata.pop("feature_columns", None)
         if metadata:
-            mlflow.log_params({key: str(value) for key, value in metadata.items()})
+            mlflow.log_params({key: str(value)
+                              for key, value in metadata.items()})
         if "release_gate_passed" in metadata:
-            mlflow.set_tag("release_gate_passed", str(metadata["release_gate_passed"]).lower())
+            mlflow.set_tag("release_gate_passed", str(
+                metadata["release_gate_passed"]).lower())
         if feature_columns is not None:
-            mlflow.log_dict({"columns": list(feature_columns)}, "feature_columns.json")
+            mlflow.log_dict({"columns": list(feature_columns)},
+                            "feature_columns.json")
         signature_input = None
         try:
             from mlflow.models import infer_signature
@@ -729,9 +775,14 @@ def train_with_mlflow(
                     if is_classifier(model)
                     else None
                 )
-                signature_input = infer_signature(sample_input, signature_output)
+                signature_input = infer_signature(
+                    sample_input, signature_output)
         except Exception:
-            logger.warning("MLflow signature inference failed", exc_info=True)
+            logger.warning(
+                "[%s] MLflow signature inference failed",
+                get_ml_diagnostic_id("mlflow_signature_inference_failed"),
+                exc_info=True,
+            )
             signature_input = None
         log_kwargs: dict[str, Any] = {
             "name": artifact_path,
@@ -752,10 +803,11 @@ def train_with_mlflow(
             if versions:
                 version = max(int(v.version) for v in versions)
         if version is None:
+            diag_id = get_ml_diagnostic_id("mlflow_version_resolution_failed")
             raise RuntimeError(
-                f"Registered model {registered_model_name} under run {run_id} "
-                f"but could not resolve version. Champion alias '{champion_alias}' "
-                f"cannot be set."
+                f"[{diag_id}] Registered model {registered_model_name} under run "
+                f"{run_id} but could not resolve version. "
+                f"Champion alias '{champion_alias}' cannot be set."
             )
         client.set_registered_model_alias(
             name=registered_model_name,

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Final, Literal
 
 import numpy as np
+from src.common.diagnostics import get_ml_diagnostic_id
+
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -105,7 +107,10 @@ def find_optimal_threshold(
         elif metric == "recall_at_high":
             score = recall_at_high(y_true_arr, y_prob_arr, threshold=t)
         else:
-            raise ValueError(f"Unknown metric: {metric}")
+            raise ValueError(
+            f"[{get_ml_diagnostic_id('unknown_evaluation_metric')}] "
+            f"Unknown metric: {metric}"
+        )
         if score > best_score:
             best_score = score
             best_threshold = t

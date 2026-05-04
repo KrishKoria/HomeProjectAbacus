@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.common.diagnostics import get_ml_diagnostic_id
 from src.ml.evaluate import (
     compute_confusion_matrix,
     compute_shap_values,
@@ -127,18 +128,25 @@ def _load_features(args: argparse.Namespace) -> pd.DataFrame:
         spark = SparkSession.builder.getOrCreate()
         return spark.table(args.gold_table).toPandas()
     except Exception:
-        logger.warning("Spark unavailable; checking --gold-csv fallback", exc_info=True)
+        logger.warning(
+            "[%s] Spark unavailable; checking --gold-csv fallback",
+            get_ml_diagnostic_id("spark_unavailable_gold_fallback"),
+            exc_info=True,
+        )
 
     if args.gold_csv:
         csv_path = Path(args.gold_csv)
         if not csv_path.exists():
-            logger.error("--gold-csv path does not exist: %s", csv_path)
+            diag_id = get_ml_diagnostic_id("gold_csv_path_not_found")
+            logger.error("[%s] --gold-csv path does not exist: %s", diag_id, csv_path)
             sys.exit(1)
         return pd.read_csv(csv_path)
 
+    diag_id = get_ml_diagnostic_id("no_data_source_available")
     logger.error(
-        "No data source available. Either run inside Databricks (Spark) or "
-        "pass --gold-csv pointing at a CSV exported from healthcare.gold.claim_features."
+        "[%s] No data source available. Either run inside Databricks (Spark) or "
+        "pass --gold-csv pointing at a CSV exported from healthcare.gold.claim_features.",
+        diag_id,
     )
     sys.exit(1)
 
@@ -268,17 +276,20 @@ def train_pipeline(
         gold_version = _current_gold_version(spark, gold_table_name)
         fingerprint = compute_fingerprint(spark, gold_table_name, list(FEATURE_COLUMNS))
     except Exception as exc:
+        diag_id = get_ml_diagnostic_id("gold_metadata_computation_failed")
         logger.error(
-            "Cannot compute Gold-table metadata required for MLflow logging: %s",
+            "[%s] Cannot compute Gold-table metadata required for MLflow logging: %s",
+            diag_id,
             str(exc),
         )
         raise RuntimeError(
-            f"Gold metadata computation failed for {gold_table_name}: {exc}"
+            f"[{diag_id}] Gold metadata computation failed for {gold_table_name}: {exc}"
         ) from exc
 
     if not fingerprint:
+        diag_id = get_ml_diagnostic_id("gold_fingerprint_empty")
         raise RuntimeError(
-            f"Empty/None fingerprint computed for {gold_table_name}. "
+            f"[{diag_id}] Empty/None fingerprint computed for {gold_table_name}. "
             f"Training cannot proceed without a valid data fingerprint."
         )
 
@@ -310,7 +321,11 @@ def train_pipeline(
             training_metadata=training_metadata,
         )
     except Exception:
-        logger.warning("MLflow logging failed, continuing without tracking", exc_info=True)
+        logger.warning(
+            "[%s] MLflow logging failed, continuing without tracking",
+            get_ml_diagnostic_id("mlflow_logging_warning"),
+            exc_info=True,
+        )
 
     return best_model, best_name, best_metrics, logreg_metrics, xgb_metrics, lgb_metrics, catboost_metrics, voting_metrics, stacking_metrics
 
@@ -402,4 +417,7 @@ if __name__ == "__main__":
             except Exception:
                 pass
     if _rc != 0:
-        raise RuntimeError(f"Training failed with exit code {_rc}")
+        raise RuntimeError(
+            f"[{get_ml_diagnostic_id('release_gate_blocked')}] "
+            f"Training failed with exit code {_rc}"
+        )
