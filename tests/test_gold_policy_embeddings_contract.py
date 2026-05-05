@@ -61,10 +61,12 @@ class GoldPolicyEmbeddingsContractTests(unittest.TestCase):
             with self.subTest(column=col):
                 self.assertIn(f'"{col}"', source)
 
-    def test_incremental_only_embeds_new_chunks(self) -> None:
+    def test_pipeline_does_not_read_its_own_gold_target(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
-        self.assertIn("left_anti", source)
-        self.assertIn('F.col("embedding_status") == F.lit("COMPLETED")', source)
+
+        self.assertNotIn("spark.read.table(GOLD_POLICY_CHUNKS_TABLE)", source)
+        self.assertNotIn("read.table(GOLD_POLICY_CHUNKS_TABLE)", source)
+        self.assertNotIn("left_anti", source)
 
     def test_skips_null_and_whitespace_only_chunks(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
@@ -78,6 +80,21 @@ class GoldPolicyEmbeddingsContractTests(unittest.TestCase):
     def test_gold_config_clustering(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
         self.assertIn("chunk_id", source)
+
+    def test_pipeline_has_no_self_read_fallback(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("except Exception as exc:", source)
+        self.assertNotIn("_is_table_missing_exception", source)
+        self.assertNotIn("logger.warning(", source)
+
+    def test_embedding_freshness_is_driven_by_silver_chunk_identity(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        silver_source = (
+            PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_policy_chunks.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("ai_query", source)
+        self.assertIn('F.col("chunk.chunk_text")', silver_source)
 
 
 if __name__ == "__main__":

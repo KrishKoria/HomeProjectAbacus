@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import argparse
+import json
+import sys
 import unittest
+from types import ModuleType
+from types import SimpleNamespace
+from unittest import mock
 
 from src.rag.retriever import _scrub_phi, retrieve_and_explain
 from src.rag.synthesizer import _synthesize_via_template, synthesize
 from src.rag.vector_search import PolicyRetriever
+from src.scripts import create_vector_index
 
 
 class PhiScrubbingTests(unittest.TestCase):
@@ -58,6 +65,78 @@ class PolicyRetrieverTests(unittest.TestCase):
         result = retriever.search("medical necessity criteria")
         self.assertIsInstance(result, list)
         self.assertEqual(result, [])
+
+    def test_vector_search_client_uses_service_principal_when_available(self) -> None:
+        from src.rag.vector_search import _vector_search_client
+
+        fake_constructor = mock.Mock(return_value=object())
+        fake_module = mock.Mock(VectorSearchClient=fake_constructor)
+
+        with (
+            mock.patch.dict("sys.modules", {"databricks.vector_search.client": fake_module}),
+            mock.patch.dict(
+                "os.environ",
+                {
+                    "DATABRICKS_HOST": "https://dbc-test.cloud.databricks.com",
+                    "DATABRICKS_CLIENT_ID": "client-id",
+                    "DATABRICKS_CLIENT_SECRET": "client-secret",
+                },
+                clear=False,
+            ),
+        ):
+            _vector_search_client()
+
+        fake_constructor.assert_called_once_with(
+            workspace_url="https://dbc-test.cloud.databricks.com",
+            service_principal_client_id="client-id",
+            service_principal_client_secret="client-secret",
+            disable_notice=True,
+        )
+
+    def test_workspace_query_index_uses_default_databricks_app_auth(self) -> None:
+        from src.rag.vector_search import _workspace_query_index
+
+        fake_indexes = mock.MagicMock()
+        fake_indexes.query_index.return_value = SimpleNamespace(
+            as_dict=lambda: {
+                "manifest": {
+                    "columns": [
+                        {"name": "chunk_id"},
+                        {"name": "chunk_text"},
+                        {"name": "document_path"},
+                        {"name": "chunk_index"},
+                        {"name": "score"},
+                    ]
+                },
+                "result": {
+                    "data_array": [
+                        ["chunk-1", "Policy text", "/policy.pdf", 3, 0.91],
+                    ]
+                },
+            }
+        )
+        fake_client = mock.MagicMock()
+        fake_client.vector_search_indexes = fake_indexes
+        fake_sdk = ModuleType("databricks.sdk")
+        fake_sdk.WorkspaceClient = mock.Mock(return_value=fake_client)
+
+        with mock.patch.dict(sys.modules, {"databricks.sdk": fake_sdk}):
+            rows = _workspace_query_index(
+                "healthcare.gold.policy_chunks_index",
+                "medical necessity",
+                5,
+            )
+
+        fake_sdk.WorkspaceClient.assert_called_once_with()
+        fake_indexes.query_index.assert_called_once_with(
+            index_name="healthcare.gold.policy_chunks_index",
+            columns=["chunk_id", "chunk_text", "document_path", "chunk_index"],
+            query_text="medical necessity",
+            num_results=5,
+        )
+        self.assertEqual(rows[0]["chunk_id"], "chunk-1")
+        self.assertEqual(rows[0]["chunk_text"], "Policy text")
+        self.assertEqual(rows[0]["relevance_score"], 0.91)
 
 
 class SynthesizerTests(unittest.TestCase):
@@ -168,6 +247,123 @@ class RetrieveAndExplainTests(unittest.TestCase):
         self.assertNotIn("pat-12345", narrative)
         self.assertNotIn("$42,500", narrative)
         self.assertNotIn("2024-02-22", narrative)
+
+
+class VectorIndexScriptTests(unittest.TestCase):
+    def test_dry_run_payload_is_deterministic(self) -> None:
+        args = argparse.Namespace(
+            source_table="healthcare.gold.policy_chunks_vs",
+            mv_source_table="healthcare.gold.policy_chunks",
+            endpoint_name="endpoint_a",
+            index_name="healthcare.gold.policy_chunks_index",
+            query_model_endpoint="databricks-gte-large-en",
+            embedding_column="embedding_vector",
+            primary_key="chunk_id",
+            dry_run=True,
+        )
+        payload = create_vector_index._dry_run_output(create_vector_index._configure_index(args))
+        parsed = json.loads(payload)
+
+        self.assertEqual(parsed["endpoint_name"], "endpoint_a")
+        self.assertEqual(parsed["index_name"], "healthcare.gold.policy_chunks_index")
+        self.assertEqual(parsed["source_table"], "healthcare.gold.policy_chunks_vs")
+        self.assertEqual(parsed["mv_source_table"], "healthcare.gold.policy_chunks")
+        self.assertEqual(parsed["query_model_endpoint"], "databricks-gte-large-en")
+        self.assertEqual(parsed["embedding_column"], "embedding_vector")
+        self.assertEqual(parsed["primary_key"], "chunk_id")
+        self.assertEqual(parsed["pipeline_type"], "TRIGGERED")
+
+    def test_existing_index_triggers_sync_instead_of_recreate(self) -> None:
+        fake_index = mock.MagicMock()
+        fake_client = mock.MagicMock()
+        fake_endpoint = mock.MagicMock()
+        fake_endpoint.name = "endpoint_a"
+        fake_client.list_endpoints.return_value = [fake_endpoint]
+        fake_client.get_index.return_value = fake_index
+
+        args = argparse.Namespace(
+            source_table="healthcare.gold.policy_chunks_vs",
+            mv_source_table="healthcare.gold.policy_chunks",
+            endpoint_name="endpoint_a",
+            index_name="healthcare.gold.policy_chunks_index",
+            query_model_endpoint="databricks-gte-large-en",
+            embedding_column="embedding_vector",
+            primary_key="chunk_id",
+            dry_run=False,
+        )
+
+        fake_module = mock.Mock(VectorSearchClient=mock.Mock(return_value=fake_client))
+        with (
+            mock.patch.dict("sys.modules", {"databricks.vector_search.client": fake_module}),
+            mock.patch.object(create_vector_index, "_ensure_cdf_delta_source"),
+        ):
+            create_vector_index.create_vector_index(args)
+
+        fake_client.create_endpoint.assert_not_called()
+        fake_client.create_delta_sync_index.assert_not_called()
+        fake_index.sync.assert_called_once()
+
+    def test_missing_index_creates_then_syncs(self) -> None:
+        fake_created_index = mock.MagicMock()
+        fake_client = mock.MagicMock()
+        fake_client.index_exists.return_value = False
+        fake_client.get_index.return_value = fake_created_index
+
+        args = argparse.Namespace(
+            source_table="healthcare.gold.policy_chunks_vs",
+            mv_source_table="healthcare.gold.policy_chunks",
+            endpoint_name="endpoint_a",
+            index_name="healthcare.gold.policy_chunks_index",
+            query_model_endpoint="databricks-gte-large-en",
+            embedding_column="embedding_vector",
+            primary_key="chunk_id",
+            dry_run=False,
+        )
+
+        fake_module = mock.Mock(VectorSearchClient=mock.Mock(return_value=fake_client))
+        with (
+            mock.patch.dict("sys.modules", {"databricks.vector_search.client": fake_module}),
+            mock.patch.object(create_vector_index, "_ensure_cdf_delta_source"),
+        ):
+            create_vector_index.create_vector_index(args)
+
+        fake_client.create_delta_sync_index.assert_called_once_with(
+            endpoint_name="endpoint_a",
+            source_table_name="healthcare.gold.policy_chunks_vs",
+            index_name="healthcare.gold.policy_chunks_index",
+            primary_key="chunk_id",
+            embedding_dimension=768,
+            embedding_vector_column="embedding_vector",
+            model_endpoint_name_for_query="databricks-gte-large-en",
+            pipeline_type="TRIGGERED",
+        )
+        fake_client.get_index.assert_called_with(index_name="healthcare.gold.policy_chunks_index")
+        fake_created_index.sync.assert_called_once()
+
+    def test_mirror_sql_enforces_cdf_and_deletes_removed_rows(self) -> None:
+        fake_spark = mock.MagicMock()
+        fake_spark.table.return_value.columns = ["chunk_id", "chunk_text", "embedding_vector"]
+        fake_spark_session = mock.MagicMock()
+        fake_spark_session.getActiveSession.return_value = fake_spark
+        fake_sql_module = mock.MagicMock(SparkSession=fake_spark_session)
+
+        with mock.patch.dict("sys.modules", {"pyspark.sql": fake_sql_module}):
+            create_vector_index._ensure_cdf_delta_source(
+                mv_table="healthcare.gold.policy_chunks",
+                delta_table="healthcare.gold.policy_chunks_vs",
+                primary_key="chunk_id",
+            )
+
+        executed_sql = [call.args[0] for call in fake_spark.sql.call_args_list]
+        self.assertTrue(
+            any("ALTER TABLE `healthcare`.`gold`.`policy_chunks_vs`" in sql for sql in executed_sql)
+        )
+        self.assertTrue(
+            any("delta.enableChangeDataFeed" in sql for sql in executed_sql)
+        )
+        self.assertTrue(
+            any("WHEN NOT MATCHED BY SOURCE THEN DELETE" in sql for sql in executed_sql)
+        )
 
 
 if __name__ == "__main__":
