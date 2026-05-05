@@ -1,0 +1,8 @@
+service:
+  name: rag_vector_index
+  type: job
+  version: "1.0.0"
+  description: Creates or syncs the Databricks Vector Search index for policy chunks.
+entry_point:
+  resource_key: rag_vector_index_job
+  resource_type: jobs
