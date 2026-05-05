@@ -116,7 +116,7 @@ def load_from_registry(
     _configure_registry_uri(mlflow, name)
     model_uri = _registry_model_uri(name, alias)
     try:
-        return mlflow.pyfunc.load_model(model_uri)
+        return mlflow.sklearn.load_model(model_uri)
     except ModuleNotFoundError as exc:
         try:
             deps_path = mlflow.pyfunc.get_model_dependencies(model_uri)
