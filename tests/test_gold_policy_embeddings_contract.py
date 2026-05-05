@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+import ast
+import unittest
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+GOLD_EMBEDDING_PATH = (
+    PROJECT_ROOT / "ETL" / "pipelines" / "gold" / "gold_policy_embeddings.py"
+)
+
+
+class GoldPolicyEmbeddingsContractTests(unittest.TestCase):
+    @classmethod
+    def _parse_pipeline(cls):
+        return ast.parse(GOLD_EMBEDDING_PATH.read_text(encoding="utf-8"))
+
+    def test_pipeline_defines_materialized_view(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn("@dp.materialized_view(", source)
+        self.assertIn("gold_policy_embeddings", source)
+        self.assertIn('refresh_policy="incremental"', source)
+
+    def test_pipeline_reads_from_silver_policy_chunks(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn("healthcare.silver.policy_chunks", source)
+        self.assertIn("read_silver_snapshot", source)
+
+    def test_pipeline_writes_to_gold_policy_chunks(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn("policy_chunks", source)
+
+    def test_embedding_dimension_is_768(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn("EMBEDDING_DIM = 768", source)
+
+    def test_embedding_model_is_gte_large_en(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn('databricks-gte-large-en', source)
+
+    def test_embedding_status_tracks_completed_and_failed(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn("COMPLETED", source)
+        self.assertIn("FAILED", source)
+
+    def test_output_columns_match_spec(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        required_columns = [
+            "chunk_id",
+            "document_path",
+            "chunk_index",
+            "chunk_text",
+            "token_count",
+            "embedding_vector",
+            "embedding_status",
+            "embedding_model",
+            "embedded_at",
+        ]
+        for col in required_columns:
+            with self.subTest(column=col):
+                self.assertIn(f'"{col}"', source)
+
+    def test_incremental_only_embeds_new_chunks(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn("left_anti", source)
+        self.assertIn('F.col("embedding_status") == F.lit("COMPLETED")', source)
+
+    def test_skips_null_and_whitespace_only_chunks(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn("chunk_text", source)
+        self.assertIn("isNotNull", source)
+
+    def test_table_properties_non_phi(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn('"NON-PHI"', source)
+
+    def test_gold_config_clustering(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn("chunk_id", source)
+
+
+if __name__ == "__main__":
+    unittest.main()
