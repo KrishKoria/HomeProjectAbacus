@@ -141,19 +141,35 @@ def evaluate_model(
 
 
 def _unwrap_for_shap(model: Any) -> Any:
-    """Return the underlying tree model when ``model`` is a CalibratedClassifierCV.
+    """Iteratively unwrap model wrappers until reaching a native tree estimator.
 
-    SHAP's ``TreeExplainer`` needs the raw XGBoost / sklearn tree estimator,
-    not the Platt-scaling wrapper. Calibration is applied per-fold, so we
-    take the first calibrated sub-classifier's underlying estimator —
-    SHAP attributions across the ensemble are essentially identical for
-    the explanation use case (top-N feature contributions per claim).
+    Handles chained wrappers (e.g. VotingClassifier → CalibratedClassifierCV →
+    XGBClassifier) by looping until the model stabilizes.
     """
-    sub = getattr(model, "calibrated_classifiers_", None)
-    if sub:
-        inner = getattr(sub[0], "estimator", None)
-        if inner is not None:
-            return inner
+    for _ in range(10):
+        # 1. Unwrap MLflow PyFuncModel (safety net; sklearn loader avoids this)
+        if type(model).__name__ == "PyFuncModel":
+            impl = getattr(model, "_model_impl", None)
+            if impl is not None:
+                model = impl
+                continue
+
+        # 2. Unwrap CalibratedClassifierCV (Platt scaling)
+        sub = getattr(model, "calibrated_classifiers_", None)
+        if sub:
+            inner = getattr(sub[0], "estimator", None)
+            if inner is not None:
+                model = inner
+                continue
+
+        # 3. Unwrap VotingClassifier / StackingClassifier to first estimator
+        estimators_attr = getattr(model, "estimators_", None)
+        if estimators_attr is not None:
+            model = estimators_attr[0][1] if isinstance(estimators_attr[0], tuple) else estimators_attr[0]
+            continue
+
+        break
+
     return model
 
 

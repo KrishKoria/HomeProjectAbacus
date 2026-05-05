@@ -1,6 +1,15 @@
+catboost>=1.2,<2.0
 altair>=6.0.0,<7.0.0
+databricks-sdk>=0.54.0,<1.0.0
+databricks-sql-connector>=4.1.2,<5.0.0
+databricks-vectorsearch>=0.67,<1.0
+mlflow[databricks]>=3.0,<4.0
 pandas>=2.2.3,<3.0.0
 pdfplumber>=0.11,<1.0
+scikit-learn>=1.5,<2.0
+shap>=0.44,<1.0
 pyyaml>=6.0.2,<7.0.0
 pyarrow>=23.0.0,<24.0.0
 streamlit>=1.50.0,<2.0.0
+lightgbm>=4.5,<5.0
+xgboost>=2.0,<3.0

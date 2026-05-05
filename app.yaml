@@ -1,0 +1,19 @@
+command:
+  - streamlit
+  - run
+  - app_streamlit.py
+env:
+  - name: STREAMLIT_GATHER_USAGE_STATS
+    value: "false"
+  - name: CLAIMOPS_SQL_WAREHOUSE_ID
+    value: "26e842cddb906c23"
+  - name: CLAIMOPS_SQL_HTTP_PATH
+    value: "/sql/1.0/warehouses/26e842cddb906c23"
+  - name: CLAIMOPS_GOLD_TABLE
+    value: "healthcare.gold.claim_features"
+  - name: CLAIMOPS_MODEL_NAME
+    value: "healthcare.ml.claim_denial_model"
+  - name: CLAIMOPS_MODEL_ALIAS
+    value: "champion"
+  - name: CLAIMOPS_VECTOR_INDEX_NAME
+    value: "healthcare.gold.policy_chunks_index"

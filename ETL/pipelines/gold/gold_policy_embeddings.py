@@ -31,26 +31,17 @@ EMBEDDING_DIM = 768
     table_properties=gold_table_properties("NON-PHI"),
 )
 def gold_policy_embeddings():
+    import datetime
+
     silver = read_silver_snapshot(
         spark,
         SILVER_POLICY_CHUNKS_TABLE,
     ).where(F.col("chunk_text").isNotNull() & (F.trim(F.col("chunk_text")) != ""))
 
-    if spark.catalog.tableExists(GOLD_POLICY_CHUNKS_TABLE):
-        existing = spark.read.table(GOLD_POLICY_CHUNKS_TABLE).select("chunk_id").where(
-            F.col("embedding_status") == F.lit("COMPLETED")
-        )
-    else:
-        existing = spark.createDataFrame([], silver.select("chunk_id").schema)
-
-    new_chunks = silver.join(
-        existing,
-        on="chunk_id",
-        how="left_anti",
-    )
+    now = datetime.datetime.now(datetime.timezone.utc)
 
     result = (
-        new_chunks.withColumn(
+        silver.withColumn(
             "embedding_vector",
             F.expr(f"ai_query('{EMBEDDING_MODEL}', chunk_text)"),
         )
@@ -62,7 +53,7 @@ def gold_policy_embeddings():
             ).otherwise(F.lit("FAILED")),
         )
         .withColumn("embedding_model", F.lit(EMBEDDING_MODEL))
-        .withColumn("embedded_at", F.current_timestamp())
+        .withColumn("embedded_at", F.lit(now))
     )
 
     return result.select(

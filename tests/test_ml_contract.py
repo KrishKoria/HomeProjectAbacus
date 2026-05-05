@@ -118,6 +118,47 @@ class FeaturePreparationTests(unittest.TestCase):
         }
         self.assertEqual(set(FEATURE_COLUMNS), expected_features)
 
+    def test_load_gold_features_for_claim_filters_in_spark_before_to_pandas(self):
+        from src.ml import FEATURE_COLUMNS
+        from src.ml.features import load_gold_features_for_claim
+
+        class FakeFrame:
+            def __init__(self):
+                self.select_args = None
+                self.where_called = False
+                self.limit_value = None
+                self.to_pandas_called = False
+
+            def select(self, *columns):
+                self.select_args = columns
+                return self
+
+            def where(self, _predicate):
+                self.where_called = True
+                return self
+
+            def limit(self, count):
+                self.limit_value = count
+                return self
+
+            def toPandas(self):
+                self.to_pandas_called = True
+                return pd.DataFrame({"claim_id": ["CLM-1"]})
+
+        fake_frame = FakeFrame()
+        fake_spark = mock.MagicMock()
+        fake_spark.table.return_value = fake_frame
+
+        result = load_gold_features_for_claim(fake_spark, "CLM-1")
+
+        self.assertEqual(fake_spark.table.call_args.args[0], "healthcare.gold.claim_features")
+        self.assertEqual(fake_frame.select_args[0], "claim_id")
+        self.assertEqual(fake_frame.select_args[1:], FEATURE_COLUMNS)
+        self.assertTrue(fake_frame.where_called)
+        self.assertEqual(fake_frame.limit_value, 1)
+        self.assertTrue(fake_frame.to_pandas_called)
+        self.assertEqual(result.iloc[0]["claim_id"], "CLM-1")
+
 
 class ModelTrainingTests(unittest.TestCase):
     @classmethod

@@ -241,29 +241,54 @@ def compute_fingerprint(spark, gold_table: str, feature_columns: list[str]) -> s
     try:
         from pyspark.sql import functions as F
 
-        sample_rows = (
-            frame.withColumn(
-                "_sample_key",
-                F.sha2(
-                    F.concat_ws(
-                        "||",
-                        *[F.coalesce(F.col(column).cast("string"),
-                                     F.lit("<NULL>")) for column in columns],
-                    ),
-                    256,
-                ),
-            )
-            .orderBy(F.col("_sample_key").asc())
-            .limit(256)
-            .drop("_sample_key")
-            .collect()
+        row_digest = F.sha2(
+            F.concat_ws(
+                "||",
+                *[F.coalesce(F.col(column).cast("string"), F.lit("<NULL>")) for column in columns],
+            ),
+            256,
         )
+        aggregate_row = (
+            frame.select(row_digest.alias("_row_digest"))
+            .agg(
+                F.sha2(
+                    F.concat_ws("||", F.sort_array(F.collect_list(F.col("_row_digest")))),
+                    256,
+                ).alias("content_hash")
+            )
+            .collect()[0]
+        )
+        content_hash = aggregate_row["content_hash"] if isinstance(aggregate_row, dict) else aggregate_row.content_hash
     except ModuleNotFoundError:
-        sample_rows = frame.collect()[:256]
+        rows = [row.asDict(recursive=True) for row in frame.collect()]
+        sorted_rows = sorted(
+            rows,
+            key=lambda row: json.dumps(row, sort_keys=True, default=str),
+        )
+        row_hashes = [
+            sha256(json.dumps(row, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+            for row in sorted_rows
+        ]
+        content_hash = sha256("||".join(row_hashes).encode("utf-8")).hexdigest()
+    except Exception:
+        logger.warning(
+            "Spark aggregate fingerprint unavailable; falling back to local deterministic hashing",
+            exc_info=True,
+        )
+        rows = [row.asDict(recursive=True) for row in frame.collect()]
+        sorted_rows = sorted(
+            rows,
+            key=lambda row: json.dumps(row, sort_keys=True, default=str),
+        )
+        row_hashes = [
+            sha256(json.dumps(row, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+            for row in sorted_rows
+        ]
+        content_hash = sha256("||".join(row_hashes).encode("utf-8")).hexdigest()
     payload = {
         "columns": columns,
         "row_count": row_count,
-        "rows": [row.asDict(recursive=True) for row in sample_rows],
+        "content_hash": content_hash or "",
     }
     return sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 

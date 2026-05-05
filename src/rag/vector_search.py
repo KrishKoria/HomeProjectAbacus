@@ -1,9 +1,109 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_RESULT_COLUMNS = ["chunk_id", "chunk_text", "document_path", "chunk_index"]
+
+
+def _env(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip()
+
+
+def _workspace_url() -> str:
+    host = _env("DATABRICKS_HOST")
+    if not host:
+        hostname = _env("DATABRICKS_SERVER_HOSTNAME")
+        if hostname:
+            host = f"https://{hostname}"
+    return host.rstrip("/")
+
+
+def _vector_search_client():
+    from databricks.vector_search.client import VectorSearchClient
+
+    workspace_url = _workspace_url()
+    personal_access_token = _env("DATABRICKS_TOKEN")
+    if workspace_url and personal_access_token:
+        return VectorSearchClient(
+            workspace_url=workspace_url,
+            personal_access_token=personal_access_token,
+            disable_notice=True,
+        )
+
+    client_id = _env("DATABRICKS_CLIENT_ID")
+    client_secret = _env("DATABRICKS_CLIENT_SECRET")
+    if workspace_url and client_id and client_secret:
+        return VectorSearchClient(
+            workspace_url=workspace_url,
+            service_principal_client_id=client_id,
+            service_principal_client_secret=client_secret,
+            disable_notice=True,
+        )
+
+    return VectorSearchClient(disable_notice=True)
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "as_dict"):
+        return value.as_dict()
+    return {}
+
+
+def _field(value: Any, name: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
+def _manifest_column_names(manifest: Any) -> list[str]:
+    columns = _field(manifest, "columns", []) or []
+    names: list[str] = []
+    for column in columns:
+        name = _field(column, "name")
+        if name:
+            names.append(str(name))
+    return names
+
+
+def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list[dict[str, Any]]:
+    from databricks.sdk import WorkspaceClient
+
+    response = WorkspaceClient().vector_search_indexes.query_index(
+        index_name=index_name,
+        columns=_RESULT_COLUMNS,
+        query_text=query_text,
+        num_results=top_k,
+    )
+    payload = _as_dict(response)
+    manifest = payload.get("manifest") if payload else _field(response, "manifest", {})
+    result = payload.get("result") if payload else _field(response, "result", {})
+    column_names = _manifest_column_names(manifest) or [*_RESULT_COLUMNS, "score"]
+    data_array = _field(result, "data_array", []) or []
+
+    rows: list[dict[str, Any]] = []
+    for row in data_array:
+        mapped = {
+            column_names[index]: row[index]
+            for index in range(min(len(row), len(column_names)))
+        }
+        if "score" not in mapped and len(row) > len(_RESULT_COLUMNS):
+            mapped["score"] = row[-1]
+        rows.append(
+            {
+                "chunk_id": mapped.get("chunk_id"),
+                "chunk_text": mapped.get("chunk_text", ""),
+                "document_path": mapped.get("document_path", ""),
+                "chunk_index": mapped.get("chunk_index", 0),
+                "relevance_score": float(mapped.get("score", 0.0) or 0.0),
+            }
+        )
+    return rows
 
 
 class PolicyRetriever:
@@ -51,24 +151,33 @@ class PolicyRetriever:
     ) -> list[dict[str, Any]]:
         """Call Databricks Vector Search index endpoint.
 
-        Uses ``databricks-vector-sdk`` when available; falls back to an
-        empty result set outside Databricks.
+        Databricks Apps should use ``WorkspaceClient`` because it picks up
+        the app service principal credentials injected by the runtime.
+        The standalone vector SDK remains as a fallback for older job/notebook
+        contexts.
         """
         try:
-            from databricks.vector_search.client import VectorSearchClient
+            return _workspace_query_index(self.index_name, query_text, top_k)
+        except ImportError:
+            logger.debug("databricks-sdk not installed; trying vector SDK fallback")
+        except Exception:
+            logger.exception("WorkspaceClient Vector Search query failed; trying vector SDK fallback")
+
+        try:
+            from databricks.vector_search.client import VectorSearchClient  # noqa: F401
         except ImportError:
             logger.debug("databricks-vector-sdk not installed; no-op retrieval")
             return []
 
-        client = VectorSearchClient(disable_notice=True)
-        endpoint = client.get_index(self.index_name)
+        client = _vector_search_client()
+        endpoint = client.get_index(index_name=self.index_name)
         if endpoint is None:
             logger.warning("Vector Search index %s not found", self.index_name)
             return []
 
         raw = endpoint.similarity_search(
             query_text=query_text,
-            columns=["chunk_id", "chunk_text", "document_path", "chunk_index"],
+            columns=_RESULT_COLUMNS,
             num_results=top_k,
         )
         result = raw.get("result", {})

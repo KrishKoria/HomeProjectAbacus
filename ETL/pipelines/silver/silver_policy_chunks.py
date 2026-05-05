@@ -206,10 +206,18 @@ def silver_policy_chunks():
         .withColumn("chunk_text", F.col("chunk.chunk_text"))
         .withColumn("token_count", F.col("chunk.token_count"))
         .withColumn(
-            # A deterministic hash keeps chunk IDs stable across reruns as long as the
-            # document path and chunk position do not change.
+            # Include normalized chunk text so updated policy content at the same path/index
+            # receives a new chunk_id and is re-embedded downstream.
             "chunk_id",
-            F.sha2(F.concat_ws("::", F.col("path"), F.col("chunk.chunk_index").cast("string")), 256),
+            F.sha2(
+                F.concat_ws(
+                    "::",
+                    F.col("path"),
+                    F.col("chunk.chunk_index").cast("string"),
+                    F.col("chunk.chunk_text"),
+                ),
+                256,
+            ),
         )
 
     )

@@ -61,9 +61,15 @@ resources:
               - ${resources.jobs.analytics_observability_job.id}
           environment_key: default
 
+        - task_key: sync_policy_vector_index
+          depends_on:
+            - task_key: verify_etl_light
+          run_job_task:
+            job_id: ${resources.jobs.rag_vector_index_job.id}
+
         - task_key: launch_ml_retrain
           depends_on:
-            - task_key: run_etl_pipeline
+            - task_key: verify_etl_light
           run_job_task:
             job_id: ${resources.jobs.ml_retrain_job.id}
       environments:

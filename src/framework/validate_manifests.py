@@ -52,6 +52,9 @@ JOB_TASK_EXPECTATIONS: Final[dict[str, tuple[str, ...]]] = {
     "ml_training": (
         "maybe_retrain_model",
     ),
+    "rag_vector_index": (
+        "create_or_sync_policy_vector_index",
+    ),
     "setup_infrastructure": ("apply_grants", "create_retrain_decisions"),
 }
 JOB_SERVICE_TO_TASK: Final[dict[str, tuple[str, ...]]] = {

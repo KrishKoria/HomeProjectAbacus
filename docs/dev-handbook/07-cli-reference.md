@@ -294,6 +294,7 @@ uv run python tools/generate_synthetic_policy_pdfs.py
 | `silver_pipeline` | Triggered by `healthcare_etl_pipeline` DLT pipeline | `ETL/pipelines/silver/*` (DLT materialized views) |
 | `gold_pipeline` | Triggered by `healthcare_etl_pipeline` DLT pipeline | `ETL/pipelines/gold/*` (DLT materialized views) |
 | `ml_retrain_job` | `databricks bundle run ml_retrain_job -t dev --profile dev` | `src/scripts/maybe_retrain_model.py` |
+| `rag_vector_index_job` | `databricks bundle run rag_vector_index_job -t dev --profile dev` | `src/scripts/create_vector_index.py` |
 | `analytics_job` | (Part of `analytics_observability_job`) | `src/scripts/build_observability.py` + `src/scripts/build_analytics.py` + `src/scripts/verify_silver.py` |
 
 ### ETL Pipeline (DLT)
@@ -340,6 +341,20 @@ Defined in `services/ml/training/resources/training.job.yml`. Calls `maybe_retra
 
 Job environment includes ML dependencies: `xgboost>=2.0,<3.0`, `lightgbm>=4.2,<5.0`, `catboost>=1.2,<2.0`, `scikit-learn>=1.5,<2.0`, `shap>=0.44,<1.0`, `optuna>=3.6,<4.0`, `mlflow>=3.0,<4.0`, `imbalanced-learn>=0.12,<1.0`.
 
+### RAG Vector Index Job
+
+Defined in `services/rag/vector_index/resources/vector_index.job.yml`. Calls `create_vector_index.py` with two table parameters:
+
+| Parameter | Value |
+|---|---|
+| `--mv-source-table` | `${var.catalog}.${var.gold_schema}.policy_chunks` |
+| `--source-table` | `${var.catalog}.${var.gold_schema}.policy_chunks_vs` |
+| `--endpoint-name` | `${var.vector_search_endpoint_name}` |
+| `--index-name` | `${var.vector_search_index_name}` |
+| `--embedding-column` | `embedding_vector` |
+
+This keeps Lakeflow ownership on the Gold MV while giving Vector Search a CDF-backed Delta Sync source.
+
 ### Common Invocation Pattern
 
 ```bash
@@ -366,6 +381,9 @@ databricks bundle run etl_fast_dev_job -t dev --profile dev
 # Step 4: Retrain model (gate-checked)
 databricks bundle run ml_retrain_job -t dev --profile dev
 
-# Step 5: Build analytics + observability
+# Step 5: Create/sync vector index
+databricks bundle run rag_vector_index_job -t dev --profile dev
+
+# Step 6: Build analytics + observability
 databricks bundle run analytics_observability_job -t dev --profile dev
 ```
