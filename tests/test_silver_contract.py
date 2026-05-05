@@ -183,6 +183,15 @@ class PolicyChunkingTests(unittest.TestCase):
         self.assertNotIn("embedding_vector", source)
         self.assertNotIn("embedding_status", source)
 
+    def test_chunk_id_hash_includes_chunk_text_for_embedding_freshness(self) -> None:
+        source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_policy_chunks.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        self.assertIn("F.sha2(", source)
+        self.assertIn('F.col("path")', source)
+        self.assertIn('F.col("chunk.chunk_index").cast("string")', source)
+        self.assertIn('F.col("chunk.chunk_text")', source)
+
     def test_policy_text_is_normalized_before_chunking(self) -> None:
         self.assertEqual(
             normalize_policy_text("Line one\n\nLine two\tLine three"),
