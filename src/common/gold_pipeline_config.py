@@ -24,6 +24,11 @@ PROVIDER_LOOKBACK_WINDOW_60D: Final[int] = 60
 PROVIDER_LOOKBACK_WINDOW_90D: Final[int] = 90
 MIN_PROVIDER_RISK_COUNT: Final[int] = 5
 
+# Dx-Px mapping defaults — used when a (diagnosis, procedure) pair is missing
+# from the mapping table or when either code is NULL on the claim.
+DX_PX_COMPATIBLE_DEFAULT: Final[int] = 0
+DX_PX_PAIR_RISK_PRIOR_DEFAULT: Final[float] = 0.15
+
 
 def gold_table_name(catalog: str, table_name: str, schema: str = GOLD_SCHEMA_DEFAULT) -> str:
     """Return a fully-qualified Gold table name."""
@@ -57,6 +62,8 @@ def read_silver_snapshot(spark, table_name: str):
 
 
 __all__ = [
+    "DX_PX_COMPATIBLE_DEFAULT",
+    "DX_PX_PAIR_RISK_PRIOR_DEFAULT",
     "GOLD_AUDIT_COLUMNS",
     "GOLD_SCHEMA_DEFAULT",
     "HIGH_COST_RATIO_THRESHOLD",

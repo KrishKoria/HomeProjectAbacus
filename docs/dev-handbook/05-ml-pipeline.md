@@ -25,7 +25,7 @@ Gold table (healthcare.gold.claim_features)
 
 | File | Purpose | Key Exports |
 |---|---|---|
-| `src/ml/__init__.py` | Feature column definitions | `FEATURE_COLUMNS` (20 features), `TARGET_COLUMN` |
+| `src/ml/__init__.py` | Feature column definitions | `FEATURE_COLUMNS` (22 features), `TARGET_COLUMN` |
 | `src/ml/features.py` | Data loading and preparation | `load_gold_features()`, `prepare_training_data()`, `fill_nulls()`, `stratified_split()`, `temporal_split()`, `BOOLEAN_FEATURES`, `NUMERIC_FEATURES`, `DEFAULT_FILL_VALUES` |
 | `src/ml/train.py` | Model training and tuning | `train_xgboost()`, `train_lightgbm()`, `train_catboost()`, `train_logistic_regression()`, `train_voting_ensemble()`, `train_stacking_ensemble()`, `tune_xgboost_optuna()`, `tune_lightgbm_optuna()`, `tune_catboost_optuna()`, `calibrate_classifier()`, `select_best_calibration()`, `train_with_mlflow()` |
 | `src/ml/evaluate.py` | Metrics and release gate | `evaluate_model()`, `EvaluationMetrics.meets_thresholds()`, `recall_at_high()`, `find_optimal_threshold()`, `compute_shap_values()` |
@@ -54,7 +54,7 @@ FEATURE_COLUMNS = (
 TARGET_COLUMN = "denial_label"
 ```
 
-These 20 features are classified as boolean or numeric in `src/ml/features.py:11-35`:
+These 22 features are classified as boolean or numeric in `src/ml/features.py:11-35`:
 
 ```python
 BOOLEAN_FEATURES = (

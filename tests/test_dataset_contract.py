@@ -88,6 +88,43 @@ class DatasetContractTests(unittest.TestCase):
         self.assertEqual(reason, "NONE")
         self.assertEqual(allowed_amount, "85.00")
 
+    def test_dx_px_mapping_exists_and_has_expected_schema(self) -> None:
+        mapping = pd.read_csv(PROJECT_ROOT / "datasets" / "dx_px_mapping.csv")
+
+        expected_columns = {
+            "diagnosis_code",
+            "procedure_code",
+            "compatible",
+            "procedure_category",
+            "pair_risk_prior",
+        }
+        self.assertEqual(set(mapping.columns), expected_columns)
+        self.assertEqual(len(mapping), 36)
+        self.assertTrue(mapping["compatible"].isin({0, 1}).all())
+        self.assertTrue((mapping["pair_risk_prior"] >= 0.0).all())
+        self.assertTrue((mapping["pair_risk_prior"] <= 1.0).all())
+        self.assertGreater(mapping["pair_risk_prior"].nunique(), 2)
+        self.assertTrue(mapping["procedure_category"].notna().all())
+        self.assertFalse(
+            mapping.duplicated(subset=["diagnosis_code", "procedure_code"]).any()
+        )
+
+    def test_dx_px_mapping_regenerator_is_present(self) -> None:
+        script_path = PROJECT_ROOT / "tools" / "generate_dx_px_mapping.py"
+
+        self.assertTrue(script_path.exists())
+        result = subprocess.run(
+            [sys.executable, str(script_path), "--check"],
+            cwd=PROJECT_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        source = script_path.read_text(encoding="utf-8")
+        self.assertNotIn("claims_1000.csv", source)
+        self.assertNotIn("is_denied", source)
+
 
 if __name__ == "__main__":
     unittest.main()
