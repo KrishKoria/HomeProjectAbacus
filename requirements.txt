@@ -1,3 +1,4 @@
+catboost>=1.2,<2.0
 altair>=6.0.0,<7.0.0
 databricks-sdk>=0.54.0,<1.0.0
 databricks-sql-connector>=4.1.2,<5.0.0
