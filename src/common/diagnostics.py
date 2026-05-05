@@ -67,6 +67,14 @@ SILVER_DIAGNOSTIC_IDS: Final[dict[str, dict[str, str]]] = {
         "missing_region": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 404),
         "duplicate_cost_key": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 405),
     },
+    "dx_px_mapping": {
+        "missing_diagnosis_code": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 601),
+        "missing_procedure_code": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 602),
+        "missing_procedure_category": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 603),
+        "invalid_compatible": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 604),
+        "invalid_pair_risk_prior": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 605),
+        "duplicate_mapping_key": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 607),
+    },
     "policy_chunks": {
         "unreadable_pdf": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 501),
         "empty_pdf_text": format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_SILVER, 502),

@@ -24,6 +24,9 @@ FEATURE_COLUMNS = (
     "provider_30d_denial_rate",
     "missing_fields_count",
     "low_volume_provider_risk",
+    # Code-pair features (dx_px)
+    "dx_px_compatible",
+    "dx_px_pair_risk_prior",
 )
 
 TARGET_COLUMN = "denial_label"

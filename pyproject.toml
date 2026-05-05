@@ -29,6 +29,14 @@ ml = [
     "imbalanced-learn>=0.12,<1.0",
 ]
 
+# Databricks-runtime-only dependencies (not published on PyPI):
+#   databricks-vector-sdk  — Vector Search client for delta-sync index queries
+#   databricks-sdk         — Foundation Model API + Unity Catalog auth
+#
+# These are pre-installed on Databricks ML runtimes (17.3 LTS+).
+# Code falls back gracefully when they are absent (empty search results,
+# template-based explanation synthesis, zero-vector embeddings).
+
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"

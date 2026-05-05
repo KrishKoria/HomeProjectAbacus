@@ -173,15 +173,15 @@ class PolicyChunkingTests(unittest.TestCase):
         self.assertNotIn("array_remove", source)
         self.assertIn("F.filter", source)
 
-    def test_policy_documents_are_shared_with_temporary_view_and_embedding_contract(self) -> None:
+    def test_embedding_columns_removed_from_silver_ownership_moves_to_gold(self) -> None:
         source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_policy_chunks.py"
         source = source_path.read_text(encoding="utf-8")
 
         self.assertIn("@dp.temporary_view", source)
         self.assertIn('name="policy_documents_stream"', source)
         self.assertIn('spark.read.table("policy_documents_stream")', source)
-        self.assertIn("embedding_vector", source)
-        self.assertIn("embedding_status", source)
+        self.assertNotIn("embedding_vector", source)
+        self.assertNotIn("embedding_status", source)
 
     def test_policy_text_is_normalized_before_chunking(self) -> None:
         self.assertEqual(
@@ -242,6 +242,7 @@ class SilverContractTests(unittest.TestCase):
             "silver_providers.py": "providers_stream",
             "silver_cost.py": "cost_stream",
             "silver_diagnosis.py": "diagnosis_stream",
+            "silver_dx_px_mapping.py": "dx_px_mapping_stream",
         }
         for relative_path, view_name in expected_views.items():
             with self.subTest(file=relative_path):
@@ -292,6 +293,7 @@ class SilverContractTests(unittest.TestCase):
             "silver_claims.py",
             "silver_cost.py",
             "silver_diagnosis.py",
+            "silver_dx_px_mapping.py",
             "silver_policy_chunks.py",
             "silver_providers.py",
         ):
@@ -302,6 +304,16 @@ class SilverContractTests(unittest.TestCase):
                 with_column_start = source.index(".withColumn", window_start)
                 window_source = source[window_start:with_column_start]
                 self.assertIn('F.col("_source_file").desc()', window_source)
+
+    def test_silver_dx_px_mapping_diagnostic_ids_registered(self) -> None:
+        self.assertIn("dx_px_mapping", SILVER_DIAGNOSTIC_IDS)
+        mapping_diags = SILVER_DIAGNOSTIC_IDS["dx_px_mapping"]
+        self.assertIn("missing_diagnosis_code", mapping_diags)
+        self.assertIn("missing_procedure_code", mapping_diags)
+        self.assertIn("missing_procedure_category", mapping_diags)
+        self.assertIn("invalid_compatible", mapping_diags)
+        self.assertIn("invalid_pair_risk_prior", mapping_diags)
+        self.assertIn("duplicate_mapping_key", mapping_diags)
 
     def test_new_log_categories_and_messages_are_phi_safe_templates(self) -> None:
         self.assertEqual(LOG_CATEGORY_SILVER_PIPELINE, "silver_pipeline")

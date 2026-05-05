@@ -84,6 +84,26 @@ Format for new entries:
 - **Trigger to revive:** Databricks GA's a `lookup:` variable form that resolves to a registered-model version by alias (e.g. `lookup: { registered_model_version_by_alias: { name: ..., alias: champion } }`). When that lands, replace the dev default + prod CI step with a single `lookup:` declaration.
 - **Full context:** the `model_version` variable comment block in the databricks.yml example.
 
+## fastapi-react-frontend
+
+- **Status:** deferred 2026-05-05
+- **Source:** Week 5+6 implementation planning (grill-with-docs session).
+- **Why deferred:** Streamlit on Databricks serves the v1 UI need with zero infra overhead (no API gateway, no JWT/OAuth, no CORS, no VPC connector, no Cloud Run). FastAPI + React adds weeks of infra work before any business value. The project has no dedicated frontend team yet; React without a designer produces generic dashboards.
+- **Trigger to revive:** a dedicated frontend team is formed OR the Streamlit app is insufficient for production UX requirements (thousands of concurrent users, complex real-time collaboration, offline mode).
+- **Full context:** [`openspec/changes/add-week5-week6-xai-rag/design.md`](../openspec/changes/add-week5-week6-xai-rag/design.md) — Design §4 (Serving layer). Core logic lives in `src/xai/` and `src/rag/` as pure Python modules; when FastAPI is needed, FastAPI routes call those same modules with zero logic duplication. ARCHITECTURE.md §16-17 contain the aspirational FastAPI + React design.
+
+---
+
+## src/common/policy_chunks.py disposition
+
+- **Status:** deferred 2026-05-05
+- **Source:** Week 5+6 implementation planning (grill-with-docs session).
+- **Why deferred:** The module provides programmatic PDF text extraction, normalization, and chunking outside Spark — potentially useful for single-document upload in the Streamlit UI. The Bronze → Silver SDP pipeline (`bronze_policies.py` → `silver_policy_chunks.py`) already handles bulk PDF ingestion with pdfplumber UDFs, so this module is duplicative for batch but may serve the interactive path. Deleting it now risks re-implementing it if the Streamlit ingestion flow needs it.
+- **Trigger to revive (and remove):** the Streamlit UI stabilizes and confirms it does NOT use this module for any ingestion path. At that point, delete `src/common/policy_chunks.py` and remove its tests. If it IS used by Streamlit, keep it and remove this deferral entry.
+- **Full context:** [`openspec/changes/add-week5-week6-xai-rag/design.md`](../openspec/changes/add-week5-week6-xai-rag/design.md) — Design §8.
+
+---
+
 # Project Context for Claude
 
 ## ⚠️ TOP-OF-MIND: Deferred decision — `claim_type` feature

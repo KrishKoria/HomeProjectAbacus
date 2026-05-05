@@ -6,6 +6,8 @@ from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import CATALOG_DEFAULT
 from common.gold_pipeline_config import (
+    DX_PX_COMPATIBLE_DEFAULT,
+    DX_PX_PAIR_RISK_PRIOR_DEFAULT,
     GOLD_SCHEMA_DEFAULT,
     HIGH_COST_RATIO_THRESHOLD,
     HIGH_SEVERITY_EXPECTED_COST_FLOOR,
@@ -39,6 +41,7 @@ _silver_claims = f"{CATALOG_DEFAULT}.{SILVER_SCHEMA_DEFAULT}.claims"
 _silver_providers = f"{CATALOG_DEFAULT}.{SILVER_SCHEMA_DEFAULT}.providers"
 _silver_diagnosis = f"{CATALOG_DEFAULT}.{SILVER_SCHEMA_DEFAULT}.diagnosis"
 _silver_cost = f"{CATALOG_DEFAULT}.{SILVER_SCHEMA_DEFAULT}.cost"
+_silver_dx_px_mapping = f"{CATALOG_DEFAULT}.{SILVER_SCHEMA_DEFAULT}.dx_px_mapping"
 
 
 @dp.materialized_view(
@@ -56,6 +59,7 @@ def _claims_feature_base():
     providers = read_silver_snapshot(spark, _silver_providers)
     diagnosis = read_silver_snapshot(spark, _silver_diagnosis)
     cost = read_silver_snapshot(spark, _silver_cost)
+    dx_px_mapping = read_silver_snapshot(spark, _silver_dx_px_mapping)
 
     claims_provider = claims.join(
         F.broadcast(providers.select("provider_id", "specialty", "location")),
@@ -85,8 +89,21 @@ def _claims_feature_base():
         how="left",
     )
 
+    claim_cost_mapping = claim_cost.join(
+        F.broadcast(
+            dx_px_mapping.select(
+                "diagnosis_code",
+                "procedure_code",
+                "compatible",
+                F.col("pair_risk_prior").cast("double").alias("pair_risk_prior"),
+            )
+        ),
+        on=["diagnosis_code", "procedure_code"],
+        how="left",
+    )
+
     return (
-        claim_cost
+        claim_cost_mapping
         .withColumn("is_procedure_missing", F.col("procedure_code").isNull())
         .withColumn("is_amount_missing", F.col("billed_amount").isNull())
         .withColumn(
@@ -140,9 +157,29 @@ def _claims_feature_base():
             "denial_label",
             F.when(F.col("is_denied") == F.lit(True), F.lit(1)).otherwise(F.lit(0)),
         )
+        # Code-pair features from dx_px_mapping
+        .withColumn(
+            "dx_px_compatible",
+            F.when(
+                F.col("procedure_code").isNotNull() & F.col("diagnosis_code").isNotNull(),
+                F.coalesce(F.col("compatible"), F.lit(DX_PX_COMPATIBLE_DEFAULT)),
+            ).otherwise(F.lit(DX_PX_COMPATIBLE_DEFAULT)),
+        )
+        .withColumn(
+            "dx_px_pair_risk_prior",
+            F.when(
+                F.col("procedure_code").isNotNull() & F.col("diagnosis_code").isNotNull(),
+                F.coalesce(
+                    F.col("pair_risk_prior").cast("double"),
+                    F.lit(DX_PX_PAIR_RISK_PRIOR_DEFAULT).cast("double"),
+                ),
+            ).otherwise(F.lit(DX_PX_PAIR_RISK_PRIOR_DEFAULT).cast("double")),
+        )
     ).drop(
         "cost_procedure_code",
         "cost_region",
+        "compatible",
+        "pair_risk_prior",
         # Defense-in-depth: drop Silver columns that mirror the training target so
         # any future widening of the final select cannot leak label information
         # into the feature surface. `is_denied` is preserved because it is the
@@ -213,8 +250,8 @@ def _provider_lifetime_stats():
     refresh_policy="incremental",
     comment=(
         _GOLD_TABLE_READY_COMMENT
-        + " Gold claim features table: 13 engineered risk features joined from "
-        "Silver claims, providers, diagnosis, and cost. Ready for ML training."
+        + " Gold claim features table: 22 engineered risk features joined from "
+        "Silver claims, providers, diagnosis, cost, and dx_px_mapping. Ready for ML training."
     ),
     table_properties=gold_table_properties("SENSITIVE", CLAIMS_PHI_COLUMNS),
 )
@@ -358,6 +395,8 @@ def gold_claim_features():
         "provider_30d_denial_rate",
         "missing_fields_count",
         "low_volume_provider_risk",
+        "dx_px_compatible",
+        "dx_px_pair_risk_prior",
         "denial_label",
         "_ingested_at",
         "_source_file",
