@@ -20,6 +20,7 @@ resources:
               - "10"
               - --random-seed
               - "42"
+              # - --force # Uncomment to force retraining regardless of new data availability
           environment_key: default
       environments:
         - environment_key: default
