@@ -173,15 +173,15 @@ class PolicyChunkingTests(unittest.TestCase):
         self.assertNotIn("array_remove", source)
         self.assertIn("F.filter", source)
 
-    def test_policy_documents_are_shared_with_temporary_view_and_embedding_contract(self) -> None:
+    def test_embedding_columns_removed_from_silver_ownership_moves_to_gold(self) -> None:
         source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_policy_chunks.py"
         source = source_path.read_text(encoding="utf-8")
 
         self.assertIn("@dp.temporary_view", source)
         self.assertIn('name="policy_documents_stream"', source)
         self.assertIn('spark.read.table("policy_documents_stream")', source)
-        self.assertIn("embedding_vector", source)
-        self.assertIn("embedding_status", source)
+        self.assertNotIn("embedding_vector", source)
+        self.assertNotIn("embedding_status", source)
 
     def test_policy_text_is_normalized_before_chunking(self) -> None:
         self.assertEqual(
