@@ -142,7 +142,7 @@ Rows that fail validation in the Silver pipeline are routed to `healthcare.quara
 
 ### What It Does
 
-The Gold stage engineers 20 predictive features from Silver tables through four Spark DLT materialized views defined in `ETL/pipelines/gold/gold_claim_features.py`.
+The Gold stage engineers 22 predictive features from Silver tables through four Spark DLT materialized views defined in `ETL/pipelines/gold/gold_claim_features.py`.
 
 ### Materialized View 1: `claims_feature_base` (Private)
 
@@ -219,7 +219,7 @@ The final view adds five interaction / derived features:
 - `missing_fields_count` -- count of missing fields among `is_procedure_missing`, `is_amount_missing`, `provider_location_missing`
 - `low_volume_provider_risk` -- provider_risk_score for providers with fewer than `MIN_PROVIDER_RISK_COUNT` claims
 
-The final `SELECT` includes 36 columns: 10 identifier/metadata columns, 20 feature columns (matching `FEATURE_COLUMNS` in `src/ml/__init__.py`), the target `denial_label`, and 4 audit/quality columns (`_ingested_at`, `_source_file`, `_pipeline_run_id`, `_data_quality_flags`).
+The final `SELECT` includes 38 columns: 10 identifier/metadata columns, 22 feature columns (matching `FEATURE_COLUMNS` in `src/ml/__init__.py`), the target `denial_label`, and 4 audit/quality columns (`_ingested_at`, `_source_file`, `_pipeline_run_id`, `_data_quality_flags`).
 
 ### Tables Read and Written
 

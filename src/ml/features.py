@@ -15,6 +15,7 @@ BOOLEAN_FEATURES: Final[tuple[str, ...]] = (
     "severity_procedure_mismatch",
     "specialty_diagnosis_mismatch",
     "provider_location_missing",
+    "dx_px_compatible",
 )
 
 NUMERIC_FEATURES: Final[tuple[str, ...]] = (
@@ -32,6 +33,7 @@ NUMERIC_FEATURES: Final[tuple[str, ...]] = (
     "provider_30d_denial_rate",
     "missing_fields_count",
     "low_volume_provider_risk",
+    "dx_px_pair_risk_prior",
 )
 
 DEFAULT_FILL_VALUES: Final[dict[str, float | int]] = {
@@ -55,6 +57,8 @@ DEFAULT_FILL_VALUES: Final[dict[str, float | int]] = {
     "provider_30d_denial_rate": 0.0,
     "missing_fields_count": 0,
     "low_volume_provider_risk": 0.0,
+    "dx_px_compatible": 0,
+    "dx_px_pair_risk_prior": 0.15,
 }
 
 DEFAULT_TEST_SIZE: Final[float] = 0.3
@@ -73,9 +77,12 @@ def load_gold_features(
 def fill_nulls(df: pd.DataFrame, fill_values: dict[str, float | int] | None = None) -> pd.DataFrame:
     values = fill_values if fill_values is not None else DEFAULT_FILL_VALUES
     filled = df.copy()
+    for col_name in (*BOOLEAN_FEATURES, *NUMERIC_FEATURES):
+        if col_name in filled.columns:
+            filled[col_name] = pd.to_numeric(filled[col_name], errors="coerce")
     for col_name, fill_val in values.items():
         if col_name in filled.columns:
-            filled[col_name] = filled[col_name].fillna(fill_val).infer_objects(copy=False)
+            filled[col_name] = filled[col_name].fillna(fill_val)
     return filled
 
 
@@ -85,11 +92,8 @@ def prepare_training_data(
     target_column: str = TARGET_COLUMN,
 ) -> tuple[pd.DataFrame, pd.Series]:
     filled = fill_nulls(df)
-    X = filled[list(feature_columns)].copy()
-    for col in BOOLEAN_FEATURES:
-        if col in X.columns:
-            X[col] = X[col].astype(int)
-    y = filled[target_column].astype(int)
+    X = filled[list(feature_columns)].copy().astype("float64")
+    y = pd.to_numeric(filled[target_column], errors="raise").astype(int)
     return X, y
 
 

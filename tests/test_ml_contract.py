@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 import pickle
 import sys
 import tempfile
@@ -43,6 +44,8 @@ class FeaturePreparationTests(unittest.TestCase):
                 "provider_30d_denial_rate": np.random.uniform(0.0, 0.6, 200),
                 "missing_fields_count": np.random.randint(0, 4, 200),
                 "low_volume_provider_risk": np.random.choice([None, 0.2, 0.4, 0.6], 200, p=[0.6, 0.2, 0.1, 0.1]),
+                "dx_px_compatible": np.random.choice([0, 1, None], 200, p=[0.4, 0.4, 0.2]),
+                "dx_px_pair_risk_prior": np.random.choice([None, 0.1, 0.25, 0.5, 0.75], 200, p=[0.2, 0.2, 0.3, 0.2, 0.1]),
                 "denial_label": np.random.choice([0, 1], 200, p=[0.7, 0.3]),
             }
         )
@@ -59,6 +62,20 @@ class FeaturePreparationTests(unittest.TestCase):
         self.assertEqual(X.isnull().sum().sum(), 0, "Features should have no nulls after preparation")
         self.assertEqual(len(X), len(y))
 
+    def test_prepare_training_data_coerces_object_numeric_features(self):
+        from src.ml.features import prepare_training_data
+
+        object_backed = self.sample_df.head(3).copy()
+        object_backed["amount_to_benchmark_ratio"] = ["1.2", "2.4", None]
+        object_backed["provider_risk_score"] = ["0.45", Decimal("0.33"), "0.10"]
+        object_backed["dx_px_pair_risk_prior"] = [Decimal("0.30"), "0.55", None]
+
+        X, _ = prepare_training_data(object_backed)
+
+        self.assertTrue((X.dtypes == "float64").all(), X.dtypes.to_string())
+        self.assertAlmostEqual(X.loc[X.index[0], "dx_px_pair_risk_prior"], 0.30, places=6)
+        self.assertAlmostEqual(X.loc[X.index[1], "provider_risk_score"], 0.33, places=6)
+
     def test_train_test_split_maintains_stratification(self):
         from src.ml.features import prepare_training_data, stratified_split
 
@@ -73,7 +90,7 @@ class FeaturePreparationTests(unittest.TestCase):
     def test_feature_columns_constant_is_stable(self):
         from src.ml import FEATURE_COLUMNS
 
-        self.assertEqual(len(FEATURE_COLUMNS), 20)
+        self.assertEqual(len(FEATURE_COLUMNS), 22)
         self.assertIn("denial_label", ["denial_label"])
         expected_features = {
             "is_procedure_missing",
@@ -96,6 +113,8 @@ class FeaturePreparationTests(unittest.TestCase):
             "provider_30d_denial_rate",
             "missing_fields_count",
             "low_volume_provider_risk",
+            "dx_px_compatible",
+            "dx_px_pair_risk_prior",
         }
         self.assertEqual(set(FEATURE_COLUMNS), expected_features)
 
@@ -252,6 +271,8 @@ class ModelEvaluationTests(unittest.TestCase):
                 "provider_30d_denial_rate": np.random.uniform(0.0, 0.6, n),
                 "missing_fields_count": np.random.randint(0, 4, n),
                 "low_volume_provider_risk": np.random.choice([0.0, 0.2, 0.4, 0.6], n),
+                "dx_px_compatible": np.random.choice([0, 1], n),
+                "dx_px_pair_risk_prior": np.random.choice([0.0, 0.1, 0.25, 0.5, 0.75], n),
             }
         )
         labels = pd.Series(np.random.choice([0, 1], n, p=[0.7, 0.3]))
@@ -365,6 +386,8 @@ class PredictionTests(unittest.TestCase):
                 "provider_30d_denial_rate": np.random.uniform(0.0, 0.6, n),
                 "missing_fields_count": np.random.randint(0, 4, n),
                 "low_volume_provider_risk": np.random.choice([0.0, 0.2, 0.4, 0.6], n),
+                "dx_px_compatible": np.random.choice([0, 1], n),
+                "dx_px_pair_risk_prior": np.random.choice([0.0, 0.1, 0.25, 0.5, 0.75], n),
             }
         )
         labels = pd.Series(np.random.choice([0, 1], n, p=[0.7, 0.3]))
@@ -457,12 +480,14 @@ class PredictionTests(unittest.TestCase):
                     "provider_claim_count_30d": 3,
                     "provider_claim_count_60d": 5,
                     "provider_claim_count_90d": 12,
-                    "provider_risk_score": 0.45,
+                    "provider_risk_score": "0.45",
                     "cost_overbenchmark_and_highseverity": 1.2,
                     "mismatch_and_overbenchmark": 0.0,
                     "provider_30d_denial_rate": 0.33,
                     "missing_fields_count": 1,
                     "low_volume_provider_risk": 0.0,
+                    "dx_px_compatible": 1,
+                    "dx_px_pair_risk_prior": Decimal("0.3"),
                 }
             ]
         )

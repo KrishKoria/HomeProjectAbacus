@@ -191,7 +191,7 @@ Notable differences:
 
 **File:** `ETL/pipelines/gold/gold_claim_features.py`
 
-The Gold pipeline is the feature-engineering layer. It takes cleaned Silver data and produces 20 engineered features for ML training. It uses four materialized views (three private, one public) in a dependency chain.
+The Gold pipeline is the feature-engineering layer. It takes cleaned Silver data and produces 22 engineered features for ML training. It uses four materialized views (three private, one public) in a dependency chain.
 
 ### View 1: `_claims_feature_base` (private MV)
 
@@ -352,7 +352,7 @@ low_volume_provider_risk = (
 
 ### Complete Feature Table
 
-All 20 features in `gold_claim_features`:
+All 22 features in `gold_claim_features`:
 
 | # | Feature | Type | How Computed | Source Lines |
 |---|---|---|---|---|

@@ -119,6 +119,8 @@ class GoldPipelineContractTests(unittest.TestCase):
             "provider_30d_denial_rate",
             "missing_fields_count",
             "low_volume_provider_risk",
+            "dx_px_compatible",
+            "dx_px_pair_risk_prior",
             "denial_label",
         ]
         for feature in required_features:
@@ -188,6 +190,16 @@ class GoldPipelineContractTests(unittest.TestCase):
 
         for name in gold_pipeline_config.__all__:
             self.assertTrue(hasattr(gold_pipeline_config, name), f"Missing export: {name}")
+
+    def test_gold_pipeline_joins_dx_px_mapping(self):
+        source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
+        self.assertIn("_silver_dx_px_mapping", source)
+        self.assertIn("dx_px_mapping", source)
+
+    def test_gold_pipeline_drops_mapping_intermediate_columns(self):
+        source = GOLD_PIPELINE_PATH.read_text(encoding="utf-8")
+        self.assertIn('"compatible"', source)
+        self.assertIn('"pair_risk_prior"', source)
 
     def test_gold_config_named_constants_are_stable(self):
         from src.common.gold_pipeline_config import (
