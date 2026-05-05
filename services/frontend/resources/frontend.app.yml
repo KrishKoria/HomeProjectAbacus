@@ -1,0 +1,29 @@
+resources:
+  apps:
+    claim_ops_app:
+      name: claim-ops-app
+      description: Streamlit frontend proving model, SHAP, and RAG policy guidance in Databricks Apps.
+      source_code_path: ../../../
+      resources:
+        - name: app-sql-warehouse
+          sql_warehouse:
+            id: ${var.app_sql_warehouse_id}
+            permission: CAN_USE
+        - name: app-policy-vector-index
+          uc_securable:
+            securable_full_name: ${var.vector_search_index_name}
+            securable_type: TABLE
+            permission: SELECT
+        - name: app-claim-features-table
+          uc_securable:
+            securable_full_name: ${var.app_claim_features_table}
+            securable_type: TABLE
+            permission: SELECT
+        - name: app-claim-denial-model
+          uc_securable:
+            securable_full_name: ${var.app_model_registry_name}
+            securable_type: FUNCTION
+            permission: EXECUTE
+      permissions:
+        - level: CAN_USE
+          group_name: users

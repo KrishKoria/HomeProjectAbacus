@@ -5,9 +5,11 @@ Databricks-hosted: ``streamlit run app_streamlit.py`` on a Databricks workspace.
 from __future__ import annotations
 
 import logging
+import os
 import time
-from typing import Any
+from typing import Any, Final
 
+import pandas as pd
 import streamlit as st
 
 logger = logging.getLogger(__name__)
@@ -24,13 +26,18 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 # PHI safety — list of patterns that must never appear in rendered output
 # ---------------------------------------------------------------------------
-_FORBIDDEN_PHI_PATTERNS = [
+_FORBIDDEN_PHI_PATTERNS: Final[list[str]] = [
     "patient_id",
     "patient_name",
     "date_of_birth",
     "XXX-XX-XXXX",
 ]
-_PHI_PLACEHOLDER = "[REDACTED]"
+_DEFAULT_GOLD_TABLE: Final[str] = "healthcare.gold.claim_features"
+_DEFAULT_VECTOR_INDEX_NAME: Final[str] = "healthcare.gold.policy_chunks_index"
+_DEFAULT_MODEL_NAME: Final[str] = "healthcare.ml.claim_denial_model"
+_DEFAULT_MODEL_ALIAS: Final[str] = "champion"
+_SAMPLE_CLAIM_LIMIT: Final[int] = 25
+_MAX_DETAILS_LEN: Final[int] = 200
 
 
 def _assert_no_phi(text: str, context: str = "") -> None:
@@ -62,7 +69,10 @@ def _load_model():
     try:
         from src.ml.predict import load_from_registry
 
-        model = load_from_registry()
+        model = load_from_registry(
+            name=_env("CLAIMOPS_MODEL_NAME", _DEFAULT_MODEL_NAME) or _DEFAULT_MODEL_NAME,
+            alias=_env("CLAIMOPS_MODEL_ALIAS", _DEFAULT_MODEL_ALIAS) or _DEFAULT_MODEL_ALIAS,
+        )
         st.session_state.model = model
         st.session_state.model_loaded = True
         st.session_state.model_error = None
@@ -78,7 +88,7 @@ def _get_retriever():
     try:
         from src.rag.vector_search import PolicyRetriever
 
-        retriever = PolicyRetriever()
+        retriever = PolicyRetriever(index_name=_vector_index_name())
         st.session_state.retriever = retriever
         return retriever
     except Exception:
@@ -88,6 +98,162 @@ def _get_retriever():
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+def _env(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip()
+
+
+def _workspace_hostname() -> str:
+    host = _env("DATABRICKS_SERVER_HOSTNAME")
+    if host:
+        return host.replace("https://", "").replace("http://", "").strip("/")
+    host = _env("DATABRICKS_HOST")
+    return host.replace("https://", "").replace("http://", "").strip("/")
+
+
+def _gold_table_name() -> str:
+    return _env("CLAIMOPS_GOLD_TABLE", _DEFAULT_GOLD_TABLE)
+
+
+def _vector_index_name() -> str:
+    return _env("CLAIMOPS_VECTOR_INDEX_NAME", _DEFAULT_VECTOR_INDEX_NAME)
+
+
+def _quote_identifier(value: str) -> str:
+    clean = value.strip()
+    if not clean or "`" in clean:
+        raise ValueError(f"Invalid SQL identifier segment: {value!r}")
+    return f"`{clean}`"
+
+
+def _quote_table_name(value: str) -> str:
+    segments = [segment for segment in value.split(".") if segment]
+    if not segments or len(segments) > 3:
+        raise ValueError(f"Invalid table name: {value!r}")
+    return ".".join(_quote_identifier(segment) for segment in segments)
+
+
+def _sql_connection():
+    from databricks import sql
+    from databricks.sdk.core import Config, oauth_service_principal
+
+    server_hostname = _workspace_hostname()
+    http_path = _env("CLAIMOPS_SQL_HTTP_PATH", _env("DATABRICKS_HTTP_PATH"))
+    if not server_hostname:
+        raise ValueError(
+            "Missing Databricks workspace host. Set DATABRICKS_SERVER_HOSTNAME or DATABRICKS_HOST."
+        )
+    if not http_path:
+        raise ValueError(
+            "Missing SQL warehouse HTTP path. Set CLAIMOPS_SQL_HTTP_PATH or DATABRICKS_HTTP_PATH."
+        )
+
+    direct_token = _env("DATABRICKS_TOKEN")
+    if direct_token:
+        return sql.connect(
+            server_hostname=server_hostname,
+            http_path=http_path,
+            access_token=direct_token,
+        )
+
+    client_id = _env("DATABRICKS_CLIENT_ID")
+    client_secret = _env("DATABRICKS_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise ValueError(
+            "Missing app OAuth credentials. Expected DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET."
+        )
+    oauth_config = Config(
+        host=f"https://{server_hostname}",
+        client_id=client_id,
+        client_secret=client_secret,
+    )
+
+    def _credential_provider():
+        return oauth_service_principal(oauth_config)
+
+    return sql.connect(
+        server_hostname=server_hostname,
+        http_path=http_path,
+        credentials_provider=_credential_provider,
+    )
+
+
+def _query_sql(query: str, parameters: list[Any] | tuple[Any, ...] | None = None) -> pd.DataFrame:
+    with _sql_connection() as connection:
+        with connection.cursor() as cursor:
+            if parameters is None:
+                cursor.execute(query)
+            else:
+                cursor.execute(query, parameters)
+            rows = cursor.fetchall()
+            columns = [str(col[0]) for col in cursor.description or ()]
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame(rows, columns=columns)
+
+
+@st.cache_data(ttl=120)
+def _load_sample_claim_ids(limit: int = _SAMPLE_CLAIM_LIMIT) -> list[str]:
+    query = (
+        f"SELECT claim_id "
+        f"FROM {_quote_table_name(_gold_table_name())} "
+        f"WHERE claim_id IS NOT NULL "
+        f"ORDER BY claim_id "
+        f"LIMIT ?"
+    )
+    result = _query_sql(query, [int(limit)])
+    if result.empty or "claim_id" not in result.columns:
+        return []
+    return [str(value) for value in result["claim_id"].tolist()]
+
+
+@st.cache_data(ttl=60)
+def _load_claim_features(claim_id: str) -> pd.DataFrame:
+    from src.ml import FEATURE_COLUMNS
+
+    projected_columns = ", ".join(_quote_identifier(column) for column in FEATURE_COLUMNS)
+    query = (
+        f"SELECT claim_id, {projected_columns} "
+        f"FROM {_quote_table_name(_gold_table_name())} "
+        f"WHERE claim_id = ? "
+        f"LIMIT 1"
+    )
+    return _query_sql(query, [claim_id])
+
+
+def _check_gold_connectivity() -> tuple[bool, str]:
+    try:
+        query = f"SELECT 1 FROM {_quote_table_name(_gold_table_name())} LIMIT 1"
+        _query_sql(query)
+        return True, _gold_table_name()
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _check_model_availability() -> tuple[bool, str]:
+    model = _load_model()
+    if model is not None:
+        return True, _env("CLAIMOPS_MODEL_NAME", _DEFAULT_MODEL_NAME)
+    error_text = st.session_state.model_error or "Model unavailable"
+    return False, error_text
+
+
+def _check_vector_search_availability() -> tuple[bool, str]:
+    try:
+        from databricks.sdk import WorkspaceClient
+
+        WorkspaceClient().vector_search_indexes.get_index(index_name=_vector_index_name())
+        return True, _vector_index_name()
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _render_status(label: str, ok: bool, detail: str) -> None:
+    if ok:
+        st.success(f"{label}: connected")
+    else:
+        st.warning(f"{label}: degraded ({detail[:_MAX_DETAILS_LEN]})")
+
+
 def _risk_color(level: str) -> str:
     return {"LOW": "green", "MEDIUM": "orange", "HIGH": "red"}.get(level, "gray")
 
@@ -109,12 +275,47 @@ def main() -> None:
     st.title("Claim Denial Risk Analyzer")
     st.caption("SHAP explanations + RAG policy retrieval powered by Databricks")
 
+    # --- Runtime health ---
+    status_col_1, status_col_2, status_col_3 = st.columns(3)
+    gold_ok, gold_detail = _check_gold_connectivity()
+    model_ok, model_detail = _check_model_availability()
+    vector_ok, vector_detail = _check_vector_search_availability()
+    with status_col_1:
+        _render_status("Gold Data", gold_ok, gold_detail)
+    with status_col_2:
+        _render_status("Model", model_ok, model_detail)
+    with status_col_3:
+        _render_status("Vector Search", vector_ok, vector_detail)
+
     # --- Input ---
-    claim_id = st.text_input(
-        "Claim ID",
-        placeholder="e.g. CLM-2024-000042",
-        help="Enter a claim ID from healthcare.gold.claim_features",
-    )
+    sample_claim_ids: list[str] = []
+    sample_error: str | None = None
+    try:
+        sample_claim_ids = _load_sample_claim_ids()
+    except Exception as exc:
+        sample_error = str(exc)
+
+    selector_col, input_col = st.columns([1, 2])
+    selected_claim = ""
+    with selector_col:
+        if sample_claim_ids:
+            selected_claim = st.selectbox(
+                "Sample Claims",
+                options=[""] + sample_claim_ids,
+                help="Pick a claim ID populated in the Gold table.",
+            )
+        elif sample_error:
+            st.caption(f"Sample list unavailable: {sample_error[:_MAX_DETAILS_LEN]}")
+        else:
+            st.caption("No sample claims found in Gold yet.")
+
+    with input_col:
+        claim_id = st.text_input(
+            "Claim ID",
+            value=selected_claim,
+            placeholder="e.g. CLM-2024-000042",
+            help=f"Enter a claim ID from {_gold_table_name()}",
+        ).strip()
     predict_clicked = st.button("Analyze Risk", type="primary", disabled=not claim_id)
 
     if not predict_clicked:
@@ -139,9 +340,8 @@ def main() -> None:
 
     # --- Feature fetch ---
     try:
-        from src.ml.features import load_gold_features, fill_nulls
+        from src.ml.features import fill_nulls
         from src.ml import FEATURE_COLUMNS
-        import pandas as pd
     except ImportError as exc:
         st.error(f"ML module unavailable. Diagnostic: {exc}")
         return
@@ -149,21 +349,18 @@ def main() -> None:
     start = time.perf_counter()
 
     try:
-        from pyspark.sql import SparkSession
-
-        spark = SparkSession.builder.getOrCreate()
-        raw = load_gold_features(spark=spark)
-        if "claim_id" in raw.columns:
-            raw = raw.loc[raw["claim_id"].astype(str) == claim_id].copy()
-        else:
-            raw = pd.DataFrame()
-    except Exception:
-        raw = pd.DataFrame()
+        raw = _load_claim_features(claim_id)
+    except Exception as exc:
+        st.error(
+            "Feature lookup failed. "
+            f"Check SQL warehouse/app permissions and connectivity.\n\nDiagnostic: {str(exc)[:_MAX_DETAILS_LEN]}"
+        )
+        return
 
     if raw.empty:
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         st.error(
-            f"Claim ID **{claim_id}** not found in `healthcare.gold.claim_features`. "
+            f"Claim ID **{claim_id}** not found in `{_gold_table_name()}`. "
             f"(lookup took {elapsed_ms:.0f} ms)"
         )
         return
