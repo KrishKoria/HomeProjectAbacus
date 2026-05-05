@@ -8,7 +8,7 @@ The core workflow:
 
 1. **Ingest** raw claims, provider, diagnosis, and cost data from flat files into Delta Lake (Bronze layer).
 2. **Clean and validate** the data: normalize codes, deduplicate rows, quarantine bad records (Silver layer).
-3. **Engineer 20 predictive features** with temporal rolling windows and provider risk scoring (Gold layer).
+3. **Engineer 22 predictive features** with temporal rolling windows, provider risk scoring, and Dx-Px code-pair priors (Gold layer).
 4. **Train 6 candidate models** (Logistic Regression, XGBoost, LightGBM, CatBoost, Voting Ensemble, Stacking Ensemble) with Optuna hyperparameter tuning, calibrated probabilities, and MLflow tracking.
 5. **Register the best champion model** to the MLflow Model Registry under the `champion` alias, gated by strict release thresholds.
 6. **Serve predictions** at inference time, classifying each claim as LOW, MEDIUM, or HIGH risk of denial.
@@ -52,9 +52,9 @@ The feature-engineering layer. Implemented as four Spark DLT (Delta Live Tables)
 | `claims_feature_base` | Private MV | Silver claims joined with provider, diagnosis, and cost reference data. Computes 7 base features. |
 | `provider_daily_stats` | Private MV | Provider/day aggregations for rolling window computations. |
 | `provider_lifetime_stats` | Private MV | Provider lifetime claim counts, diagnosis counts, and risk scores. |
-| `gold_claim_features` | Incremental MV | The final 20-feature output table; consumer for ML training. |
+| `gold_claim_features` | Incremental MV | The final 22-feature output table; consumer for ML training. |
 
-The 20 engineered features (defined in `src/ml/__init__.py`):
+The 22 engineered features (defined in `src/ml/__init__.py`):
 
 ```
 is_procedure_missing        is_amount_missing

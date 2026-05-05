@@ -211,8 +211,7 @@ def silver_policy_chunks():
             "chunk_id",
             F.sha2(F.concat_ws("::", F.col("path"), F.col("chunk.chunk_index").cast("string")), 256),
         )
-        .withColumn("embedding_vector", F.lit(None).cast("array<double>"))
-        .withColumn("embedding_status", F.lit("NOT_CONFIGURED"))
+
     )
     return trusted_docs.select(
         "chunk_id",
@@ -220,8 +219,6 @@ def silver_policy_chunks():
         "chunk_index",
         "chunk_text",
         "token_count",
-        "embedding_vector",
-        "embedding_status",
         "_data_quality_flags",
         "_source_file",
         "_pipeline_run_id",

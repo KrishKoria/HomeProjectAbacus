@@ -471,23 +471,32 @@ flowchart TD
 
 ### 9.3 Derived Denial Risk Features (Gold Layer)
 
-The Gold layer ships **13 engineered features** consumed as `FEATURE_COLUMNS` by `src/ml/`. The first eight are the original denial-risk signals; the last five are cost-benchmark and provider-history aggregations called out in WEEK4.md and used by the model.
+The Gold layer ships **22 engineered features** consumed as `FEATURE_COLUMNS` by `src/ml/`. Features derive from Silver claims joined with provider, diagnosis, cost, and dx_px_mapping reference tables.
 
-| Feature                        | Derivation                                                     | Denial Signal |
-| ------------------------------ | -------------------------------------------------------------- | ------------- |
-| `is_procedure_missing`         | procedure_code IS NULL                                         | Very High     |
-| `is_amount_missing`            | billed_amount IS NULL                                          | Very High     |
-| `amount_to_benchmark_ratio`    | billed_amount / expected_cost                                  | > 1.5 = High  |
-| `severity_procedure_mismatch`  | High-severity dx + low-cost procedure                          | Medium        |
-| `specialty_diagnosis_mismatch` | Provider specialty ≠ diagnosis category                        | Medium        |
-| `provider_location_missing`    | location IS NULL                                               | Low           |
-| `provider_claim_count_30d`     | Count of claims per provider in trailing 30-day window         | Context       |
-| `diagnosis_severity_encoded`   | From diagnosis.severity (High=1, Low=0)                        | Context       |
-| `billed_vs_avg_cost`           | billed_amount / average_cost                                   | > 1.5 = High  |
-| `high_cost_flag`               | amount_to_benchmark_ratio ≥ 1.5                                | High          |
-| `diagnosis_count`              | Distinct diagnoses observed for the provider                   | Context       |
-| `provider_claim_count`         | Total claims observed for the provider                         | Context       |
-| `provider_risk_score`          | Provider-level denied / total ratio (rule-based proxy)         | Medium-High   |
+| Feature                           | Derivation                                                     | Denial Signal |
+| --------------------------------- | -------------------------------------------------------------- | ------------- |
+| `is_procedure_missing`            | procedure_code IS NULL                                         | Very High     |
+| `is_amount_missing`               | billed_amount IS NULL                                          | Very High     |
+| `amount_to_benchmark_ratio`       | billed_amount / expected_cost                                  | > 1.5 = High  |
+| `billed_vs_avg_cost`              | billed_amount / average_cost                                   | > 1.5 = High  |
+| `high_cost_flag`                  | amount_to_benchmark_ratio ≥ 1.5                                | High          |
+| `severity_procedure_mismatch`     | High-severity dx + low-cost procedure                          | Medium        |
+| `specialty_diagnosis_mismatch`    | Provider specialty ≠ diagnosis category                        | Medium        |
+| `provider_location_missing`       | location IS NULL                                               | Low           |
+| `diagnosis_severity_encoded`      | From diagnosis.severity (High=1, Low=0)                        | Context       |
+| `diagnosis_count`                 | Distinct diagnoses observed for the provider                   | Context       |
+| `provider_claim_count`            | Total claims observed for the provider                         | Context       |
+| `provider_claim_count_30d`        | Count of claims per provider in trailing 30-day window         | Context       |
+| `provider_claim_count_60d`        | Count of claims per provider in trailing 60-day window         | Context       |
+| `provider_claim_count_90d`        | Count of claims per provider in trailing 90-day window         | Context       |
+| `provider_risk_score`             | Provider-level denied / total ratio (rule-based proxy)         | Medium-High   |
+| `cost_overbenchmark_and_highseverity` | amount_to_benchmark_ratio × severity (interaction)         | High          |
+| `mismatch_and_overbenchmark`      | severity + specialty mismatch × benchmark ratio (interaction)  | High          |
+| `provider_30d_denial_rate`        | Provider-level denied ratio in 30-day window                   | Medium-High   |
+| `missing_fields_count`            | Count of is_procedure + is_amount + location missing           | Medium        |
+| `low_volume_provider_risk`        | Raw denied/total for providers with < 5 claims                 | Medium        |
+| `dx_px_compatible`                | dx_px_mapping.compatible — is this (Dx, Px) pair valid?       | High          |
+| `dx_px_pair_risk_prior`           | dx_px_mapping.pair_risk_prior — synthetic risk prior by pair   | Very High     |
 
 ---
 
@@ -575,7 +584,7 @@ The runtime view below is deliberately simplified into a **single executive spin
 | ⑤ Data          | Unity Catalog             | Single governance plane — catalogs, schemas, tables, grants, row / column-level ACLs, lineage               |
 | ⑤ Data          | Bronze layer              | Raw Delta ingestion via Lakeflow SDP `read_files()`; append-only; full lineage to source file               |
 | ⑤ Data          | Silver layer              | Cleaned, validated, deduplicated; null-flag columns; Delta `MERGE` upserts on `claim_id`                    |
-| ⑤ Data          | Gold layer                | Joined feature store with the eight engineered risk features (see §9.3); ML-ready                           |
+| ⑤ Data          | Gold layer                | Joined feature store with the 22 engineered risk features (see §9.3); ML-ready                              |
 | ⑤ Data          | MLflow Registry           | Versioned models + stages (Staging / Production) + signatures + metrics                                     |
 | ⑤ Data          | Model Serving Endpoint    | Low-latency XGBoost + SHAP inference behind an authenticated HTTPS endpoint                                 |
 | ⑤ Data          | Vector Search Index       | Embedded policy chunks; metadata filters (`doc_id`, `section`) enforced server-side                         |
@@ -673,7 +682,7 @@ Silver materialization reads governed Bronze snapshots in the current pipeline i
 
 **Implementation Approach:**
 
-Gold joins all four Silver tables (claims, providers, diagnosis, cost) and computes the 13 denial risk features defined in Section 9.3. A rule-based `denial_label` is derived as a proxy training target. The result is written to `healthcare.gold.claim_features` (clustered by `claim_id`, `claimops.layer = "gold"`) as the ML feature store. Provider-level aggregations and the trailing 30-day window function execute inside the pipeline so downstream consumers read precomputed columns.
+Gold joins Silver claims, providers, diagnosis, cost, and dx_px_mapping and computes the 22 denial risk features defined in Section 9.3. A rule-based `denial_label` is derived as a proxy training target. The result is written to `healthcare.gold.claim_features` (clustered by `claim_id`, `claimops.layer = "gold"`) as the ML feature store. Provider-level aggregations and trailing 30d/60d/90d window functions execute inside the pipeline so downstream consumers read precomputed columns.
 
 ---
 
@@ -752,6 +761,22 @@ flowchart TD
 
     VIDX -->|"top-5 chunks"| VS
 ```
+
+### 14.1.1 Implemented Architecture (Week 5+6)
+
+The RAG system is now **implemented** with three new modules and a Gold embedding pipeline:
+
+| Component | File | Description |
+|---|---|---|
+| XAI Engine | `src/xai/` | SHAP TreeExplainer with business-reason mapping from `feature_reasons.py` to `explain()`. Returns top-N (feature, importance, reason, direction) tuples. |
+| RAG Retrieval | `src/rag/` | `EmbeddingProvider` (Databricks GTE), `PolicyRetriever` (Vector Search), `synthesize()` (Llama 70B with template fallback), `retrieve_and_explain()` orchestrator. |
+| Gold Embeddings | `ETL/pipelines/gold/gold_policy_embeddings.py` | SDP `@dp.materialized_view` pipeline: reads `healthcare.silver.policy_chunks`, calls GTE endpoint per chunk, writes to `healthcare.gold.policy_chunks` with `embedding_vector` (768-dim double array), `embedding_status` (COMPLETED/FAILED), `embedding_model` (`databricks-gte-large-en`), `embedded_at`. Incremental — only processes new or changed chunks via `left_anti` join. |
+| Vector Index | `src/scripts/create_vector_index.py` | CLI script to create/update the Databricks Vector Search delta-sync index on `healthcare.gold.policy_chunks`. Index auto-syncs with the Gold table. |
+| Streamlit UI | `app_streamlit.py` | Databricks-hosted app: claim input → prediction → SHAP explanations → RAG policy retrieval → natural-language narrative. Session state caches model and retriever across reruns. |
+
+**Data flow:** Silver chunks → Gold embedding pipeline → `healthcare.gold.policy_chunks` → Vector Search delta-sync index → `PolicyRetriever.search()` → Llama 70B synthesis → Streamlit display.
+
+**Silver cleanup:** `embedding_vector` and `embedding_status` placeholder columns removed from `silver_policy_chunks.py`. Embedding ownership now lives exclusively in Gold.
 
 ### 14.2 PHI Firewall — Critical HIPAA Control
 

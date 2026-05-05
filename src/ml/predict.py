@@ -155,9 +155,6 @@ def _coerce_features(
     model: Any = None,
 ) -> pd.DataFrame:
     filled = fill_nulls(df)
-    for col in feature_columns:
-        if col in filled.columns and filled[col].dtype == bool:
-            filled[col] = filled[col].astype(int)
     columns = _resolve_column_order(model, feature_columns) if model is not None else list(feature_columns)
     return filled[columns].astype("float64")
 
