@@ -31,7 +31,7 @@ Format for new entries:
 - **Status:** deferred 2026-04-29 (during the integration plan composable-framework refinement pass).
 - **Source:** [`docs/integration_plan.md`](integration_plan.md) → Composable Service Framework → Python Verification Contract.
 - **Why deferred:** the framework today has only one consumer pattern (verifier scripts that emit `HealthCheckResult`). Designing `ServiceVerifier` Protocol methods (`health_check()`, `verify()`) and a `ServiceConfig` base before a second non-pipeline service exists is speculative; the shape will likely need rework once a real second consumer arrives.
-- **Trigger to revive:** the **second non-pipeline service type** lands (ml_serving endpoint, rag_indexing pipeline + Vector Search setup, agent job, or app). At that point both abstractions get real consumers and can be designed against concrete needs.
+- **Trigger to revive:** the next non-pipeline service type lands beyond the current set (ml_training, analytics_observability, rag_vector_index, setup_infrastructure). At that point both abstractions get real cross-service consumers and can be designed against concrete needs.
 - **Full context:** see the "Deferred (introduce when second non-pipeline service lands)" subsection inside the Python Verification Contract section.
 
 ---

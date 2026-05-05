@@ -770,11 +770,11 @@ The RAG system is now **implemented** with three new modules and a Gold embeddin
 |---|---|---|
 | XAI Engine | `src/xai/` | SHAP TreeExplainer with business-reason mapping from `feature_reasons.py` to `explain()`. Returns top-N (feature, importance, reason, direction) tuples. |
 | RAG Retrieval | `src/rag/` | `EmbeddingProvider` (Databricks GTE), `PolicyRetriever` (Vector Search), `synthesize()` (Llama 70B with template fallback), `retrieve_and_explain()` orchestrator. |
-| Gold Embeddings | `ETL/pipelines/gold/gold_policy_embeddings.py` | SDP `@dp.materialized_view` pipeline: reads `healthcare.silver.policy_chunks`, calls GTE endpoint per chunk, writes to `healthcare.gold.policy_chunks` with `embedding_vector` (768-dim double array), `embedding_status` (COMPLETED/FAILED), `embedding_model` (`databricks-gte-large-en`), `embedded_at`. Incremental — only processes new or changed chunks via `left_anti` join. |
-| Vector Index | `src/scripts/create_vector_index.py` | CLI script to create/update the Databricks Vector Search delta-sync index on `healthcare.gold.policy_chunks`. Index auto-syncs with the Gold table. |
+| Gold Embeddings | `ETL/pipelines/gold/gold_policy_embeddings.py` | SDP `@dp.materialized_view` pipeline: reads `healthcare.silver.policy_chunks`, calls GTE endpoint per chunk, writes to `healthcare.gold.policy_chunks` with `embedding_vector` (768-dim double array), `embedding_status` (COMPLETED/FAILED), `embedding_model` (`databricks-gte-large-en`), `embedded_at`. The MV does not read its own target; policy content changes are represented by Silver `chunk_id` changes. |
+| Vector Index | `src/scripts/create_vector_index.py` | CLI script to create/update the Databricks Vector Search delta-sync index on `healthcare.gold.policy_chunks_vs`. The script incrementally mirrors from `healthcare.gold.policy_chunks` into the CDF-enabled `_vs` table, then syncs the index. |
 | Streamlit UI | `app_streamlit.py` | Databricks-hosted app: claim input → prediction → SHAP explanations → RAG policy retrieval → natural-language narrative. Session state caches model and retriever across reruns. |
 
-**Data flow:** Silver chunks → Gold embedding pipeline → `healthcare.gold.policy_chunks` → Vector Search delta-sync index → `PolicyRetriever.search()` → Llama 70B synthesis → Streamlit display.
+**Data flow:** Silver chunks → Gold embedding pipeline → `healthcare.gold.policy_chunks` (MV) → incremental mirror to `healthcare.gold.policy_chunks_vs` (CDF Delta) → Vector Search delta-sync index → `PolicyRetriever.search()` → Llama 70B synthesis → Streamlit display.
 
 **Silver cleanup:** `embedding_vector` and `embedding_status` placeholder columns removed from `silver_policy_chunks.py`. Embedding ownership now lives exclusively in Gold.
 
