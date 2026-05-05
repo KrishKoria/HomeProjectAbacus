@@ -1,6 +1,6 @@
 # Chapter 3: All Services
 
-This chapter documents each of the six services in the system, organized by the service manifest dependency order. Each section includes a service overview table, pipeline/job structure, key files, and table read/write patterns.
+This chapter documents each of the services in the system, organized by the service manifest dependency order. Each section includes a service overview table, pipeline/job structure, key files, and table read/write patterns.
 
 ---
 
@@ -523,23 +523,30 @@ The services are orchestrated through Databricks job pipelines in a specific ord
   [File arrives on /Volumes/.../raw_landing/]
                |
   etl_file_arrival_job (triggered by file_arrival)
-       |                        |
-   run_etl_pipeline         launch_ml_retrain (ml_training)
-       |                        |
-   verify_etl_light         [runs in parallel]
        |
-   launch_analytics_observability
+   run_etl_pipeline
        |
-   analytics_observability_job
-       |--------------------------|
-   build_observability    build_analytics    build_quality_assets
+   verify_etl_light
+    |        |        |
+    |        |        +--> launch_ml_retrain (ml_training)
+    |        +--> sync_policy_vector_index (rag_vector_index)
+    +--> launch_analytics_observability
+               |
+      analytics_observability_job
+         |--------------------------|
+      build_observability  build_analytics  build_quality_assets
 ```
 
 1. **File arrival trigger** fires when a new file lands in the raw_landing volume.
 2. **`etl_file_arrival_job`** starts, running the consolidated ETL pipeline (Bronze -> Silver -> Gold).
 3. After the pipeline completes, **`verify_etl_light.py`** validates the output tables.
-4. Simultaneously with verification, the ML retrain job is launched (via `run_job_task`) -- this runs in parallel with verification and analytics.
-5. After verification succeeds, `launch_analytics_observability.py` triggers the analytics job, passing upstream context parameters.
+4. After verification succeeds, the ML retrain job and vector index sync job are launched via `run_job_task`.
+5. `launch_analytics_observability.py` always runs (`ALL_DONE`) to preserve observability diagnostics, then triggers the analytics job with upstream context parameters.
 6. The **`analytics_observability_job`** builds observability tables, analytics dashboard assets, and quality metrics in sequence.
+
+Vector index sync uses a two-table contract by design:
+- `healthcare.gold.policy_chunks` is the Gold materialized view owned by Lakeflow.
+- `healthcare.gold.policy_chunks_vs` is a CDF-enabled Delta table used as the Vector Search Delta Sync source.
+- `src/scripts/create_vector_index.py` incrementally merges MV rows into the `_vs` table and then syncs the index.
 
 For development iteration, the **`etl_fast_dev_job`** runs only the ETL pipeline + verification (no analytics or ML), providing a faster feedback loop.

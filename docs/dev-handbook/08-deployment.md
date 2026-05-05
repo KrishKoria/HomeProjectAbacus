@@ -80,7 +80,9 @@ databricks bundle run <job_key> -t dev --profile dev
 |---|---|---|
 | `setup_infrastructure` | Create schemas + volumes | < 1 min |
 | `ml_retrain_job` | Gate-checked model retraining | 5-15 min |
+| `rag_vector_index_job` | Create/sync Vector Search index | 1-3 min |
 | `analytics_observability_job` | Build analytics + quality assets | 2-5 min |
+| `claim_ops_app` | Deploy/start Streamlit Databricks App | < 2 min |
 
 ### Run the Full ETL Pipeline
 
@@ -107,9 +109,20 @@ databricks bundle run etl_fast_dev_job -t dev --profile dev
 # 4. Retrain ML model
 databricks bundle run ml_retrain_job -t dev --profile dev
 
-# 5. Build analytics dashboard assets
+# 5. Create/sync vector index
+databricks bundle run rag_vector_index_job -t dev --profile dev
+
+# 6. Build analytics dashboard assets
 databricks bundle run analytics_observability_job -t dev --profile dev
+
+# 7. Deploy/start the frontend app
+databricks bundle run claim_ops_app -t dev --profile dev
 ```
+
+Vector sync uses two Gold-layer tables intentionally: `healthcare.gold.policy_chunks` (Lakeflow materialized view) and `healthcare.gold.policy_chunks_vs` (CDF-enabled Delta table for Delta Sync). The vector job incrementally mirrors MV changes into `_vs` before running index sync.
+
+The frontend app reads Gold data through Databricks SQL (warehouse HTTP path), not SparkSession.
+It reports startup health for Gold connectivity, model load, and Vector Search availability.
 
 ---
 
@@ -164,6 +177,7 @@ Change `-t dev` to `-t prod` (or vice versa). All variables in `databricks.yml` 
 | `model_version` | `"1"` | CI/CD-resolved |
 | `workspace.profile` | `dev` | `prod` |
 | `mode` | `development` | `production` |
+| Databricks App run key | `claim_ops_app` | `claim_ops_app` |
 
 The catalog name is `healthcare` in both environments -- data is separated by workspace, not by catalog.
 
@@ -255,6 +269,12 @@ Plus `--editable ${workspace.file_path}` for the project itself.
 | Spark analysis exception | Check cluster logs in the Spark UI from the job run page |
 | Permission denied | Verify service principal has `USE CATALOG`, `USE SCHEMA`, `CREATE TABLE` on the target catalog |
 
+For Databricks Apps frontend runtime, the app service principal needs:
+- SQL warehouse: `CAN_USE`
+- Gold table: `SELECT` plus `USE CATALOG` and `USE SCHEMA`
+- ML model: model read/execute access in Unity Catalog
+- Vector Search index: query access
+
 ### DESCRIBE HISTORY Error on gold_claim_features
 
 `healthcare.gold.claim_features` is a DLT materialized view in the development target, **not** a Delta table. Running `DESCRIBE HISTORY` on it will fail with `EXPECT_TABLE_NOT_VIEW` or similar errors.
@@ -330,7 +350,7 @@ databricks auth token -p dev
 databricks bundle deploy -t dev --profile dev
 
 # 3. Create schemas + load sample data
-databricks bundle run setup_infrastructure -t dev --profile dev --conf load_sample_data=true
+databricks bundle run setup_infrastructure -t dev --profile dev --params load_sample_data=true
 ```
 
 ### Daily Development Loop
@@ -340,7 +360,9 @@ databricks bundle run setup_infrastructure -t dev --profile dev --conf load_samp
 databricks bundle validate -t dev --profile dev && \
 databricks bundle deploy -t dev --profile dev && \
 databricks bundle run etl_fast_dev_job -t dev --profile dev && \
-databricks bundle run ml_retrain_job -t dev --profile dev
+databricks bundle run ml_retrain_job -t dev --profile dev && \
+databricks bundle run rag_vector_index_job -t dev --profile dev && \
+databricks bundle run claim_ops_app -t dev --profile dev
 ```
 
 ### Production Release
@@ -351,6 +373,8 @@ databricks bundle validate -t prod --profile prod
 databricks bundle deploy -t prod --profile prod
 databricks bundle run etl_fast_dev_job -t prod --profile prod
 databricks bundle run ml_retrain_job -t prod --profile prod
+databricks bundle run rag_vector_index_job -t prod --profile prod
+databricks bundle run claim_ops_app -t prod --profile prod
 databricks bundle run analytics_observability_job -t prod --profile prod
 ```
 
