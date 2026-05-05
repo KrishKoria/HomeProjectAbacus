@@ -15,7 +15,7 @@ import logging
 import sys
 
 DEFAULT_SOURCE_TABLE = "healthcare.gold.policy_chunks"
-DEFAULT_ENDPOINT_NAME = "healthcare-gold-policy-chunks-index"
+DEFAULT_ENDPOINT_NAME = "healthcare.gold.policy_chunks_index"
 DEFAULT_EMBEDDING_COLUMN = "embedding_vector"
 DEFAULT_PRIMARY_KEY = "chunk_id"
 EMBEDDING_DIM = 768

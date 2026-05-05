@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
-from pyspark.sql import types as T
 
 from common.bronze_pipeline_config import CATALOG_DEFAULT
 from common.gold_pipeline_config import (
@@ -16,34 +15,6 @@ GOLD_POLICY_CHUNKS_TABLE = gold_table_name(CATALOG_DEFAULT, "policy_chunks")
 SILVER_POLICY_CHUNKS_TABLE = "healthcare.silver.policy_chunks"
 EMBEDDING_MODEL = "databricks-gte-large-en"
 EMBEDDING_DIM = 768
-
-
-def _embed_chunk(text: str | None) -> list[float] | None:
-    """Call Databricks GTE endpoint for a single chunk text.
-
-    On Databricks this uses ``ai_query``; outside Databricks returns None.
-    """
-    if not text or not text.strip():
-        return None
-    try:
-        from pyspark.sql import SparkSession
-
-        spark = SparkSession.getActiveSession()
-        if spark is None:
-            return None
-        result = spark.sql(
-            "SELECT ai_query('{model}', '{text}') AS embedding".format(
-                model=EMBEDDING_MODEL, text=text.replace("'", "''")
-            )
-        ).collect()
-        if result and result[0] and result[0][0]:
-            return list(result[0][0])
-    except Exception:
-        pass
-    return None
-
-
-_embed_udf = F.udf(_embed_chunk, T.ArrayType(T.DoubleType()))
 
 
 @dp.materialized_view(
@@ -65,9 +36,12 @@ def gold_policy_embeddings():
         SILVER_POLICY_CHUNKS_TABLE,
     ).where(F.col("chunk_text").isNotNull() & (F.trim(F.col("chunk_text")) != ""))
 
-    existing = spark.read.table(GOLD_POLICY_CHUNKS_TABLE).select("chunk_id").where(
-        F.col("embedding_status") == F.lit("COMPLETED")
-    )
+    if spark.catalog.tableExists(GOLD_POLICY_CHUNKS_TABLE):
+        existing = spark.read.table(GOLD_POLICY_CHUNKS_TABLE).select("chunk_id").where(
+            F.col("embedding_status") == F.lit("COMPLETED")
+        )
+    else:
+        existing = spark.createDataFrame([], silver.select("chunk_id").schema)
 
     new_chunks = silver.join(
         existing,
@@ -78,7 +52,7 @@ def gold_policy_embeddings():
     result = (
         new_chunks.withColumn(
             "embedding_vector",
-            _embed_udf(F.col("chunk_text")),
+            F.expr(f"ai_query('{EMBEDDING_MODEL}', chunk_text)"),
         )
         .withColumn(
             "embedding_status",

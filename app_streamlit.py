@@ -149,7 +149,14 @@ def main() -> None:
     start = time.perf_counter()
 
     try:
-        raw = load_gold_features(claim_id=claim_id)
+        from pyspark.sql import SparkSession
+
+        spark = SparkSession.builder.getOrCreate()
+        raw = load_gold_features(spark=spark)
+        if "claim_id" in raw.columns:
+            raw = raw.loc[raw["claim_id"].astype(str) == claim_id].copy()
+        else:
+            raw = pd.DataFrame()
     except Exception:
         raw = pd.DataFrame()
 
