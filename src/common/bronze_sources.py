@@ -127,6 +127,24 @@ BRONZE_SOURCES: Final[dict[str, BronzeSource]] = {
         # No PHI — procedure cost benchmarks are operational reference data.
         phi_columns=frozenset(),
     ),
+    "dx_px_mapping": BronzeSource(
+        local_filename="dx_px_mapping.csv",
+        volume_subdirectory="dx_px_mapping",
+        expected_row_count=36,
+        required_columns=(
+            "diagnosis_code",
+            "procedure_code",
+            "compatible",
+            "procedure_category",
+            "pair_risk_prior",
+        ),
+        canonical_dataset="dx_px_mapping",
+        # No PHI — standalone Dx-Px compatibility reference table.
+        # diagnosis_code and procedure_code are medical terminology without
+        # patient linkage; they become PHI only when combined with patient_id
+        # in the claims table (§ 164.501).
+        phi_columns=frozenset(),
+    ),
 }
 
 DATASET_KEYS: Final[tuple[str, ...]] = tuple(BRONZE_SOURCES)
