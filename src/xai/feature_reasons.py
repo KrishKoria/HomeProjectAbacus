@@ -84,4 +84,14 @@ FEATURE_REASONS: dict[str, str] = {
         "This provider had a low claim volume, making their historical denial "
         "patterns less statistically reliable for risk assessment."
     ),
+    "dx_px_compatible": (
+        "The diagnosis-procedure pair was checked against the claim coding "
+        "compatibility reference. Incompatible combinations increase medical-necessity "
+        "review risk because the submitted diagnosis may not support the billed procedure."
+    ),
+    "dx_px_pair_risk_prior": (
+        "The diagnosis-procedure pair carried an elevated synthetic prior risk score. "
+        "Higher prior-risk pairings are treated as stronger coding-review signals before "
+        "historical provider behavior is considered."
+    ),
 }

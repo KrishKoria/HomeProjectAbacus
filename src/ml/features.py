@@ -74,6 +74,26 @@ def load_gold_features(
     return spark.table(table_fqn).toPandas()
 
 
+def load_gold_features_for_claim(
+    spark,
+    claim_id: str,
+    feature_columns: tuple[str, ...] = FEATURE_COLUMNS,
+    catalog: str = "healthcare",
+    gold_schema: str = "gold",
+) -> pd.DataFrame:
+    table_fqn = f"{catalog}.{gold_schema}.claim_features"
+    selected_columns = ("claim_id", *feature_columns)
+    frame = spark.table(table_fqn).select(*selected_columns)
+    try:
+        from pyspark.sql import functions as F
+
+        frame = frame.where(F.col("claim_id").cast("string") == F.lit(str(claim_id)))
+    except ModuleNotFoundError:
+        claim_id_value = str(claim_id).replace("'", "''")
+        frame = frame.where(f"CAST(claim_id AS STRING) = '{claim_id_value}'")
+    return frame.limit(1).toPandas()
+
+
 def fill_nulls(df: pd.DataFrame, fill_values: dict[str, float | int] | None = None) -> pd.DataFrame:
     values = fill_values if fill_values is not None else DEFAULT_FILL_VALUES
     filled = df.copy()
@@ -151,6 +171,7 @@ __all__ = [
     "extract_provider_groups",
     "fill_nulls",
     "load_gold_features",
+    "load_gold_features_for_claim",
     "prepare_training_data",
     "stratified_split",
     "temporal_split",
