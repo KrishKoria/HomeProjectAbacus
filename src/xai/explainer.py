@@ -21,13 +21,19 @@ def explain(
     """
     import shap
 
-    explainer = shap.TreeExplainer(_unwrap_for_shap(model))
+    raw = _unwrap_for_shap(model)
+    explainer = shap.TreeExplainer(raw)
     shap_values = explainer.shap_values(X)
-    if shap_values.ndim == 1:
-        shap_values = np.expand_dims(shap_values, axis=0)
+
+    # Normalise: TreeExplainer returns a list [neg_class, pos_class] for
+    # native XGBoost / LightGBM, and a plain ndarray for sklearn wrappers.
+    if isinstance(shap_values, list):
+        sample_values = shap_values[1][0] if len(shap_values) > 1 else shap_values[0][0]
+    else:
+        sample_values = shap_values[0] if shap_values.ndim > 1 else shap_values
 
     results: list[dict[str, Any]] = []
-    for feature, value in zip(feature_names, shap_values[0]):
+    for feature, value in zip(feature_names, sample_values):
         direction = "increases_risk" if value > 0 else "decreases_risk"
         reason = FEATURE_REASONS.get(
             feature,
