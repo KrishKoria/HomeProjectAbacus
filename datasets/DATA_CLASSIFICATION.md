@@ -84,6 +84,20 @@ See 45 CFR § 164.504(e) and § 164.314(a) for BAA requirements.
 | `expected_cost` | Not PHI | Regional cost benchmark | Operational reference data | Standard access control |
 | `region` | Not PHI | Geographic region | Provider/operational region, not patient address | Standard access control |
 
+### dx_px_mapping.csv — Dx-Px Compatibility Reference (36 records)
+
+| Column | PHI? | Classifier | CFR Basis | Production Handling |
+|---|---|---|---|---|
+| `diagnosis_code` | Not PHI | Medical terminology code | Standalone code without patient linkage — same classification as diagnosis.csv | Standard access control |
+| `procedure_code` | Not PHI | Procedure reference key | Standalone code without patient linkage — same classification as cost.csv | Standard access control |
+| `compatible` | Not PHI | Compatibility flag (0/1) | Coding rule, no patient data | Standard access control |
+| `procedure_category` | Not PHI | Procedure category label | Medical terminology grouping | Standard access control |
+| `pair_risk_prior` | Not PHI | Synthetic pair-risk prior | Deterministic rule-derived score, no patient linkage | Standard access control |
+
+> **PHI distinction:** Same as diagnosis.csv and cost.csv — standalone reference codes without
+> patient linkage are medical terminology, not PHI per § 164.501. The diagnosis_code and
+> procedure_code in this mapping table cannot identify any individual.
+
 ---
 
 ## Production PHI Handling Requirements
