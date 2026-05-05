@@ -48,7 +48,9 @@ packages = [
     "src.common",
     "src.framework",
     "src.ml",
+    "src.rag",
     "src.scripts",
+    "src.xai",
 ]
 
 [tool.setuptools.package-dir]
@@ -57,7 +59,9 @@ packages = [
 "src.common" = "src/common"
 "src.framework" = "src/framework"
 "src.ml" = "src/ml"
+"src.rag" = "src/rag"
 "src.scripts" = "src/scripts"
+"src.xai" = "src/xai"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
