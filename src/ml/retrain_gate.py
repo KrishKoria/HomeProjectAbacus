@@ -136,6 +136,12 @@ def _feature_columns_from_run(run_id: str) -> list[str]:
         payload = mlflow.artifacts.load_dict(
             f"runs:/{run_id}/feature_columns.json")
     except Exception:
+        logger.warning(
+            "[%s] Could not load feature_columns.json for run_id=%s",
+            get_ml_diagnostic_id("registry_model_load_failed"),
+            run_id,
+            exc_info=True,
+        )
         return []
     columns = payload.get("columns", []) if isinstance(payload, dict) else []
     return [str(column) for column in columns]
@@ -188,7 +194,12 @@ def _current_gold_version(spark, gold_table: str) -> int:
                     return -1  # view, but no last_altered available
                 # Not a view — fall through to DESCRIBE HISTORY
         except Exception:
-            pass  # fall through to DESCRIBE HISTORY
+            logger.warning(
+                "[%s] Could not resolve Gold object type metadata for version lookup",
+                get_ml_diagnostic_id("gold_object_metadata_failed"),
+                exc_info=True,
+            )
+            # fall through to DESCRIBE HISTORY
     try:
         row = spark.sql(f"DESCRIBE HISTORY {gold_table} LIMIT 1").collect()[0]
         return int(row["version"] if isinstance(row, dict) else row.version)
@@ -232,35 +243,52 @@ def _current_gold_object_metadata(spark, gold_table: str) -> tuple[str, str | No
     return ("unknown", None)
 
 
-def compute_fingerprint(spark, gold_table: str, feature_columns: list[str]) -> str:
+def compute_fingerprint(
+    spark,
+    gold_table: str,
+    feature_columns: list[str],
+    row_count: int | None = None,
+) -> str:
     # The caller must supply the non-PHI model feature list; this function never
     # introspects arbitrary table columns on its own.
     columns = sorted(feature_columns)
     frame = spark.table(gold_table).select(*columns)
-    row_count = frame.count()
+    resolved_row_count = int(row_count) if row_count is not None else None
     try:
         from pyspark.sql import functions as F
 
-        row_digest = F.sha2(
-            F.concat_ws(
-                "||",
-                *[F.coalesce(F.col(column).cast("string"), F.lit("<NULL>")) for column in columns],
-            ),
-            256,
+        row_digest = F.xxhash64(
+            *[F.coalesce(F.col(column).cast("string"), F.lit("<NULL>")) for column in columns]
         )
-        aggregate_row = (
-            frame.select(row_digest.alias("_row_digest"))
-            .agg(
-                F.sha2(
-                    F.concat_ws("||", F.sort_array(F.collect_list(F.col("_row_digest")))),
-                    256,
-                ).alias("content_hash")
-            )
-            .collect()[0]
+        aggregate_exprs = [
+            F.sum(row_digest.cast("decimal(38,0)")).alias("hash_sum"),
+            F.sum(F.abs(row_digest).cast("decimal(38,0)")).alias("hash_abs_sum"),
+            F.min(row_digest).alias("hash_min"),
+            F.max(row_digest).alias("hash_max"),
+        ]
+        if resolved_row_count is None:
+            aggregate_exprs.append(F.count(F.lit(1)).alias("row_count"))
+        aggregate_row = frame.agg(*aggregate_exprs).collect()[0]
+        aggregate_data = (
+            aggregate_row
+            if isinstance(aggregate_row, dict)
+            else aggregate_row.asDict(recursive=True)
         )
-        content_hash = aggregate_row["content_hash"] if isinstance(aggregate_row, dict) else aggregate_row.content_hash
+        if resolved_row_count is None:
+            resolved_row_count = int(aggregate_data.get("row_count", 0))
+        content_hash_payload = {
+            "hash_sum": str(aggregate_data.get("hash_sum") or "0"),
+            "hash_abs_sum": str(aggregate_data.get("hash_abs_sum") or "0"),
+            "hash_min": str(aggregate_data.get("hash_min") or "0"),
+            "hash_max": str(aggregate_data.get("hash_max") or "0"),
+        }
+        content_hash = sha256(
+            json.dumps(content_hash_payload, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
     except ModuleNotFoundError:
         rows = [row.asDict(recursive=True) for row in frame.collect()]
+        if resolved_row_count is None:
+            resolved_row_count = len(rows)
         sorted_rows = sorted(
             rows,
             key=lambda row: json.dumps(row, sort_keys=True, default=str),
@@ -280,7 +308,7 @@ def compute_fingerprint(spark, gold_table: str, feature_columns: list[str]) -> s
         ) from exc
     payload = {
         "columns": columns,
-        "row_count": row_count,
+        "row_count": int(resolved_row_count or 0),
         "content_hash": content_hash or "",
     }
     return sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
@@ -327,11 +355,20 @@ def decide_retrain(
 
     current_gold_version = _current_gold_version(spark, gold_table)
     current_fingerprint = compute_fingerprint(
-        spark, gold_table, feature_columns)
+        spark,
+        gold_table,
+        feature_columns,
+        row_count=current_row_count,
+    )
 
     try:
         champion = _resolve_champion_alias(client, registered_model_name, champion_alias)
     except Exception as exc:
+        logger.warning(
+            "[%s] Champion alias lookup failed",
+            get_ml_diagnostic_id("mlflow_version_resolution_failed"),
+            exc_info=True,
+        )
         return RetrainDecision.error(
             reason="mlflow champion alias lookup failed",
             error_detail=str(exc),
@@ -364,6 +401,11 @@ def decide_retrain(
     try:
         champion_run = _resolve_champion_run(client, champion_run_id)
     except Exception as exc:
+        logger.warning(
+            "[%s] Champion run lookup failed",
+            get_ml_diagnostic_id("mlflow_version_resolution_failed"),
+            exc_info=True,
+        )
         return RetrainDecision.error(
             reason="mlflow champion run lookup failed",
             error_detail=str(exc),

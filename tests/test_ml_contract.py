@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import Final, get_origin, get_type_hints
 from unittest import mock
 
 import numpy as np
@@ -118,6 +119,13 @@ class FeaturePreparationTests(unittest.TestCase):
         }
         self.assertEqual(set(FEATURE_COLUMNS), expected_features)
 
+    def test_ml_constants_are_typed_final(self):
+        import src.ml as ml
+
+        type_hints = get_type_hints(ml)
+        self.assertEqual(get_origin(type_hints["FEATURE_COLUMNS"]), Final)
+        self.assertEqual(get_origin(type_hints["TARGET_COLUMN"]), Final)
+
     def test_load_gold_features_for_claim_filters_in_spark_before_to_pandas(self):
         from src.ml import FEATURE_COLUMNS
         from src.ml.features import load_gold_features_for_claim
@@ -198,6 +206,18 @@ class ModelTrainingTests(unittest.TestCase):
         self.assertTrue(hasattr(model, "predict_proba"))
         preds = model.predict(self.X_test)
         self.assertEqual(len(preds), len(self.y_test))
+
+    def test_train_xgboost_keeps_early_stopping_when_eval_set_is_provided(self):
+        from src.ml.train import train_xgboost
+
+        model = train_xgboost(self.X_train, self.y_train, X_val=self.X_test, y_val=self.y_test)
+        self.assertEqual(model.get_params().get("early_stopping_rounds"), 50)
+
+    def test_train_xgboost_omits_early_stopping_without_eval_set(self):
+        from src.ml.train import train_xgboost
+
+        model = train_xgboost(self.X_train, self.y_train)
+        self.assertIsNone(model.get_params().get("early_stopping_rounds"))
 
     def test_logistic_regression_training_converges(self):
         from src.ml.train import train_logistic_regression

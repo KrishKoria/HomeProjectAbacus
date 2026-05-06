@@ -384,11 +384,11 @@ class RetrainGateTests(unittest.TestCase):
 
         class _FakeFunctions:
             @staticmethod
-            def sha2(*_args, **_kwargs):
+            def xxhash64(*_args, **_kwargs):
                 return _Expr()
 
             @staticmethod
-            def concat_ws(*_args, **_kwargs):
+            def abs(*_args, **_kwargs):
                 return _Expr()
 
             @staticmethod
@@ -404,11 +404,19 @@ class RetrainGateTests(unittest.TestCase):
                 return _Expr()
 
             @staticmethod
-            def sort_array(*_args, **_kwargs):
+            def sum(*_args, **_kwargs):
                 return _Expr()
 
             @staticmethod
-            def collect_list(*_args, **_kwargs):
+            def min(*_args, **_kwargs):
+                return _Expr()
+
+            @staticmethod
+            def max(*_args, **_kwargs):
+                return _Expr()
+
+            @staticmethod
+            def count(*_args, **_kwargs):
                 return _Expr()
 
         fake_pyspark = ModuleType("pyspark")
@@ -460,6 +468,102 @@ class RetrainGateTests(unittest.TestCase):
         self.assertEqual(decision.decision_status, "error")
         self.assertIsNone(decision.should_retrain)
         self.assertIsNotNone(decision.error_detail)
+
+    def test_decide_retrain_passes_precomputed_row_count_to_fingerprint(self) -> None:
+        from src.ml.retrain_gate import decide_retrain
+
+        fake_spark = mock.MagicMock()
+        fake_spark.table.return_value.count.return_value = 10
+        fake_spark.sql.return_value.collect.return_value = [{"version": 5}]
+        fake_client = mock.MagicMock()
+        fake_client.get_model_version_by_alias.return_value = None
+
+        with mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="abc123") as fingerprint_mock:
+            decide_retrain(
+                fake_spark,
+                gold_table="healthcare.gold.claim_features",
+                feature_columns=["a"],
+                registered_model_name="healthcare.ml.claim_denial_model",
+                champion_alias="champion",
+                mlflow_client=fake_client,
+            )
+
+        fingerprint_mock.assert_called_once_with(
+            fake_spark,
+            "healthcare.gold.claim_features",
+            ["a"],
+            row_count=10,
+        )
+
+    def test_feature_columns_from_run_logs_warning_on_artifact_load_failure(self) -> None:
+        from src.ml.retrain_gate import _feature_columns_from_run
+
+        with mock.patch("src.ml.retrain_gate.mlflow.artifacts.load_dict", side_effect=RuntimeError("boom")):
+            with self.assertLogs("src.ml.retrain_gate", level="WARNING") as captured:
+                result = _feature_columns_from_run("run-123")
+
+        self.assertEqual(result, [])
+        self.assertTrue(
+            any("Could not load feature_columns.json" in message for message in captured.output),
+            captured.output,
+        )
+
+    def test_decide_retrain_logs_warning_on_alias_lookup_exception(self) -> None:
+        from src.ml.retrain_gate import decide_retrain
+
+        fake_spark = mock.MagicMock()
+        fake_spark.table.return_value.count.return_value = 10
+        fake_spark.sql.return_value.collect.return_value = [{"version": 5}]
+        fake_client = mock.MagicMock()
+        fake_client.get_model_version_by_alias.side_effect = RuntimeError("alias down")
+
+        with mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="abc123"):
+            with self.assertLogs("src.ml.retrain_gate", level="WARNING") as captured:
+                decision = decide_retrain(
+                    fake_spark,
+                    gold_table="healthcare.gold.claim_features",
+                    feature_columns=["a"],
+                    registered_model_name="healthcare.ml.claim_denial_model",
+                    champion_alias="champion",
+                    mlflow_client=fake_client,
+                )
+
+        self.assertEqual(decision.decision_status, "error")
+        self.assertTrue(
+            any("Champion alias lookup failed" in message for message in captured.output),
+            captured.output,
+        )
+
+    def test_decide_retrain_logs_warning_on_run_lookup_exception(self) -> None:
+        from src.ml.retrain_gate import decide_retrain
+
+        fake_spark = mock.MagicMock()
+        fake_spark.table.return_value.count.return_value = 10
+        fake_spark.sql.return_value.collect.return_value = [{"version": 5}]
+        fake_client = mock.MagicMock()
+        fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
+        fake_client.get_run.side_effect = RuntimeError("run down")
+
+        with (
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="abc123"),
+            mock.patch("src.ml.retrain_gate._resolve_champion_alias", return_value=SimpleNamespace(run_id="run-1")),
+            mock.patch("src.ml.retrain_gate._resolve_champion_run", side_effect=RuntimeError("run down")),
+        ):
+            with self.assertLogs("src.ml.retrain_gate", level="WARNING") as captured:
+                decision = decide_retrain(
+                    fake_spark,
+                    gold_table="healthcare.gold.claim_features",
+                    feature_columns=["a"],
+                    registered_model_name="healthcare.ml.claim_denial_model",
+                    champion_alias="champion",
+                    mlflow_client=fake_client,
+                )
+
+        self.assertEqual(decision.decision_status, "error")
+        self.assertTrue(
+            any("Champion run lookup failed" in message for message in captured.output),
+            captured.output,
+        )
 
     def test_decide_retrain_skips_when_fingerprint_changes_below_row_count_threshold(self) -> None:
         from src.ml.retrain_gate import decide_retrain
