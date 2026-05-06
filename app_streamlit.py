@@ -26,6 +26,562 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 # PHI safety — list of patterns that must never appear in rendered output
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Theme — OKLCH dark palette injected via st.markdown
+# ---------------------------------------------------------------------------
+_THEME_CSS: str = """\
+<style>
+/* ===== CSS Custom Properties ===== */
+:root {
+  --bg-base: oklch(0.14 0.008 60);
+  --bg-surface: oklch(0.19 0.01 60);
+  --bg-elevated: oklch(0.24 0.012 60);
+  --border-subtle: oklch(0.27 0.01 60);
+  --border-default: oklch(0.34 0.015 60);
+  --text-primary: oklch(0.90 0.005 60);
+  --text-secondary: oklch(0.62 0.01 60);
+  --text-tertiary: oklch(0.48 0.012 60);
+
+  --accent-red: oklch(0.55 0.20 25);
+  --accent-orange: oklch(0.62 0.16 65);
+  --accent-green: oklch(0.58 0.18 145);
+  --accent-blue: oklch(0.55 0.13 260);
+  --accent-teal: oklch(0.55 0.12 200);
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", monospace;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* ===== Streamlit Base Overrides ===== */
+.stApp {
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+.main .block-container {
+  max-width: 1400px;
+  padding: 1.5rem 2.5rem;
+}
+
+.stApp header {
+  background: var(--bg-surface) !important;
+  backdrop-filter: none !important;
+}
+
+section[data-testid="stSidebar"] {
+  display: none;
+}
+
+h1, h2, h3, h4 {
+  color: var(--text-primary) !important;
+  font-family: var(--font-sans);
+}
+
+h1 { font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-weight: 600; }
+h3 { font-weight: 600; }
+
+p, li, label, .stMarkdown {
+  color: var(--text-primary);
+}
+
+small, .stCaption {
+  color: var(--text-secondary) !important;
+}
+
+.stButton > button {
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-family: var(--font-sans);
+  transition: all 0.15s ease;
+}
+
+.stButton > button[kind="primary"] {
+  background: var(--accent-blue) !important;
+  border-color: var(--accent-blue) !important;
+  color: #fff !important;
+}
+
+.stButton > button[kind="primary"]:hover {
+  background: oklch(0.50 0.14 260) !important;
+  border-color: oklch(0.50 0.14 260) !important;
+}
+
+div[data-testid="stTextInput"] input {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+}
+
+div[data-testid="stTextInput"] input:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 1px var(--accent-blue);
+}
+
+div[data-testid="stSelectbox"] > div {
+  background: var(--bg-surface);
+}
+
+.stSelectbox label, .stTextInput label {
+  color: var(--text-secondary) !important;
+  font-size: 0.85rem;
+}
+
+div[data-testid="stAlert"] {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+div[data-testid="stAlert"] [data-testid="stNotification"] {
+  color: var(--text-primary);
+}
+
+.stProgress > div {
+  background: var(--bg-elevated) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.stProgress > div > div {
+  background: var(--accent-blue) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+div[data-testid="stExpander"] {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+div[data-testid="stExpander"] summary {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+div[data-testid="stExpander"] summary:hover {
+  color: var(--accent-blue);
+}
+
+hr, .stDivider {
+  border-color: var(--border-subtle) !important;
+}
+
+/* ===== Status Bar ===== */
+.status-bar {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 1.5rem;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot--ok {
+  background: var(--accent-green);
+  box-shadow: 0 0 5px oklch(0.58 0.18 145 / 0.4);
+}
+
+.status-dot--degraded {
+  background: var(--accent-orange);
+  box-shadow: 0 0 5px oklch(0.62 0.16 65 / 0.4);
+}
+
+.status-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ===== Risk Gauge Section ===== */
+.risk-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.risk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.risk-gauge-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.risk-gauge-value--low { color: var(--accent-green); }
+.risk-gauge-value--medium { color: var(--accent-orange); }
+.risk-gauge-value--high { color: var(--accent-red); }
+
+.risk-badge {
+  display: inline-block;
+  padding: 0.2rem 0.7rem;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.risk-badge--low {
+  background: oklch(0.58 0.18 145 / 0.18);
+  color: var(--accent-green);
+}
+
+.risk-badge--medium {
+  background: oklch(0.62 0.16 65 / 0.18);
+  color: var(--accent-orange);
+}
+
+.risk-badge--high {
+  background: oklch(0.55 0.20 25 / 0.20);
+  color: var(--accent-red);
+}
+
+.risk-meta {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.risk-meta-item {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.risk-meta-item span {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.risk-bar-track {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  margin-top: 0.75rem;
+  position: relative;
+}
+
+.risk-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease-out;
+}
+
+.risk-bar-fill--low { background: var(--accent-green); }
+.risk-bar-fill--medium { background: var(--accent-orange); }
+.risk-bar-fill--high { background: var(--accent-red); }
+
+.risk-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* ===== Feature Breakdown Section ===== */
+.feature-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.feature-section-header {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  letter-spacing: 0.02em;
+}
+
+.feature-group-heading {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin: 0.75rem 0 0.5rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.feature-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 0.5rem;
+}
+
+.feature-row:last-child {
+  border-bottom: none;
+}
+
+.feature-icon {
+  width: 1.25rem;
+  text-align: center;
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.feature-icon--inc {
+  color: var(--accent-red);
+}
+
+.feature-icon--dec {
+  color: var(--accent-green);
+}
+
+.feature-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  min-width: 7rem;
+}
+
+.feature-value {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  min-width: 3rem;
+}
+
+.feature-bar-wrap {
+  flex: 1;
+  min-width: 8rem;
+  padding-top: 0.35rem;
+}
+
+.feature-bar-track {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.feature-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease-out;
+}
+
+.feature-bar-fill--inc {
+  background: var(--accent-red);
+}
+
+.feature-bar-fill--dec {
+  background: var(--accent-green);
+}
+
+.feature-reason {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+  margin-top: 0.2rem;
+  width: 100%;
+}
+
+/* ===== Policy Section ===== */
+.policy-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.policy-source-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: oklch(0.55 0.13 260 / 0.18);
+  color: var(--accent-blue);
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.policy-narrative {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.policy-card {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.policy-card:last-child {
+  margin-bottom: 0;
+}
+
+.policy-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.policy-card-source {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.policy-card-relevance {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent-blue);
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+}
+
+.policy-card-text {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  font-family: var(--font-sans);
+}
+
+/* ===== Latency Waterfall Section ===== */
+.latency-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.latency-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.35rem 0;
+}
+
+.latency-label {
+  width: 140px;
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.latency-track {
+  flex: 1;
+  height: 18px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.latency-bar {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  min-width: 2px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.latency-bar--blue { background: var(--accent-blue); }
+.latency-bar--teal { background: var(--accent-teal); }
+.latency-bar--orange { background: var(--accent-orange); }
+
+.latency-ms {
+  width: 70px;
+  text-align: right;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.latency-total {
+  font-weight: 700;
+  color: var(--text-primary);
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+}
+
+/* ===== Dataframe Override ===== */
+div[data-testid="stDataFrame"] {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+div[data-testid="stDataFrame"] th {
+  background: var(--bg-elevated) !important;
+  color: var(--text-primary) !important;
+  font-weight: 600;
+}
+
+div[data-testid="stDataFrame"] td {
+  color: var(--text-primary) !important;
+  background: var(--bg-surface) !important;
+}
+
+/* ===== Error state styling ===== */
+.stException {
+  background: oklch(0.55 0.20 25 / 0.12) !important;
+  border: 1px solid oklch(0.55 0.20 25 / 0.25) !important;
+  border-radius: var(--radius-md) !important;
+}
+</style>"""
 _FORBIDDEN_PHI_PATTERNS: Final[list[str]] = [
     "patient_id",
     "patient_name",
@@ -38,7 +594,65 @@ _DEFAULT_MODEL_NAME: Final[str] = "healthcare.ml.claim_denial_model"
 _DEFAULT_MODEL_ALIAS: Final[str] = "champion"
 _SAMPLE_CLAIM_LIMIT: Final[int] = 25
 _MAX_DETAILS_LEN: Final[int] = 200
+_STATUS_CACHE_TTL_SECONDS: Final[int] = 30
 
+
+
+def _inject_theme_css() -> None:
+    """Inject the OKLCH dark theme CSS into the Streamlit app."""
+    st.markdown(_THEME_CSS, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
+# Value-formatting helpers
+# ---------------------------------------------------------------------------
+_BOOLEAN_FEATURES: frozenset[str] = frozenset({
+    "is_procedure_missing",
+    "is_amount_missing",
+    "high_cost_flag",
+    "severity_procedure_mismatch",
+    "specialty_diagnosis_mismatch",
+    "provider_location_missing",
+    "dx_px_compatible",
+})
+
+
+def _format_feature_value(value: object, feature_name: str) -> str:
+    """Format a feature value for display, typed by semantics."""
+    if value is None:
+        return "—"  # em dash
+    if isinstance(value, float) and value != value:  # NaN
+        return "—"
+    if feature_name in _BOOLEAN_FEATURES:
+        return "✓" if value else "—"  # check vs dash
+    if isinstance(value, (int, float)):
+        if "count" in feature_name:
+            return f"{int(value):,}"
+        if abs(value) >= 100:
+            return f"{value:,.1f}"
+        if abs(value) >= 1:
+            return f"{value:.2f}"
+        return f"{value:.4f}"
+    return str(value)
+
+
+def _feature_display_name(name: str) -> str:
+    """Convert snake_case feature name to Title Case."""
+    return name.replace("_", " ").title()
+
+
+def _risk_css_class(risk: str) -> str:
+    """CSS modifier suffix for the risk level."""
+    return {"LOW": "low", "MEDIUM": "medium", "HIGH": "high"}.get(risk, "low")
+
+
+def _risk_accent_color(risk: str) -> str:
+    """OKLCH accent color string for the risk level."""
+    return {
+        "LOW": "oklch(0.58 0.18 145)",
+        "MEDIUM": "oklch(0.62 0.16 65)",
+        "HIGH": "oklch(0.55 0.20 25)",
+    }.get(risk, "oklch(0.62 0.01 60)")
 
 def _assert_no_phi(text: str, context: str = "") -> None:
     """Raise AssertionError if *text* contains known PHI markers."""
@@ -220,13 +834,18 @@ def _load_claim_features(claim_id: str) -> pd.DataFrame:
     return _query_sql(query, [claim_id])
 
 
-def _check_gold_connectivity() -> tuple[bool, str]:
+@st.cache_data(ttl=_STATUS_CACHE_TTL_SECONDS)
+def _check_gold_connectivity_cached(table_name: str) -> tuple[bool, str]:
     try:
-        query = f"SELECT 1 FROM {_quote_table_name(_gold_table_name())} LIMIT 1"
+        query = f"SELECT 1 FROM {_quote_table_name(table_name)} LIMIT 1"
         _query_sql(query)
-        return True, _gold_table_name()
+        return True, table_name
     except Exception as exc:
         return False, str(exc)
+
+
+def _check_gold_connectivity() -> tuple[bool, str]:
+    return _check_gold_connectivity_cached(_gold_table_name())
 
 
 def _check_model_availability() -> tuple[bool, str]:
@@ -237,55 +856,338 @@ def _check_model_availability() -> tuple[bool, str]:
     return False, error_text
 
 
-def _check_vector_search_availability() -> tuple[bool, str]:
+@st.cache_data(ttl=_STATUS_CACHE_TTL_SECONDS)
+def _check_vector_search_availability_cached(index_name: str) -> tuple[bool, str]:
     try:
         from databricks.sdk import WorkspaceClient
 
-        WorkspaceClient().vector_search_indexes.get_index(index_name=_vector_index_name())
-        return True, _vector_index_name()
+        WorkspaceClient().vector_search_indexes.get_index(index_name=index_name)
+        return True, index_name
     except Exception as exc:
         return False, str(exc)
 
 
-def _render_status(label: str, ok: bool, detail: str) -> None:
-    if ok:
-        st.success(f"{label}: connected")
-    else:
-        st.warning(f"{label}: degraded ({detail[:_MAX_DETAILS_LEN]})")
+def _check_vector_search_availability() -> tuple[bool, str]:
+    return _check_vector_search_availability_cached(_vector_index_name())
 
 
-def _risk_color(level: str) -> str:
-    return {"LOW": "green", "MEDIUM": "orange", "HIGH": "red"}.get(level, "gray")
-
-
-def _direction_arrow(direction: str) -> str:
-    return "↑" if direction == "increases_risk" else "↓"
-
-
-def _direction_color(direction: str) -> str:
-    return "red" if direction == "increases_risk" else "green"
+def _summarize_latency(
+    feature_lookup_ms: float,
+    risk_inference_ms: float,
+    shap_ms: float,
+    policy_retrieval_ms: float,
+    narrative_ms: float,
+    total_ms: float,
+) -> dict[str, float]:
+    return {
+        "feature_lookup_ms": feature_lookup_ms,
+        "risk_inference_ms": risk_inference_ms,
+        "shap_ms": shap_ms,
+        "policy_retrieval_ms": policy_retrieval_ms,
+        "narrative_ms": narrative_ms,
+        "risk_path_ms": feature_lookup_ms + risk_inference_ms,
+        "explanation_ms": shap_ms + policy_retrieval_ms + narrative_ms,
+        "total_ms": total_ms,
+    }
 
 
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Rendering helpers
+# ---------------------------------------------------------------------------
+def _render_status_indicators(
+    gold_ok: bool, gold_detail: str,
+    model_ok: bool, model_detail: str,
+    vector_ok: bool, vector_detail: str,
+) -> None:
+    """Compact inline status bar with colored dots."""
+    def _format_status_detail(ok: bool, detail: str) -> str:
+        if ok:
+            return "Connected"
+        return f"Degraded: {detail[:_MAX_DETAILS_LEN]}"
+
+    gold_label = _format_status_detail(gold_ok, gold_detail)
+    model_label = _format_status_detail(model_ok, model_detail)
+    vector_label = _format_status_detail(vector_ok, vector_detail)
+
+    gold_dot = "status-dot--ok" if gold_ok else "status-dot--degraded"
+    model_dot = "status-dot--ok" if model_ok else "status-dot--degraded"
+    vector_dot = "status-dot--ok" if vector_ok else "status-dot--degraded"
+
+    st.markdown(
+        f"""<div class="status-bar">
+  <div class="status-item">
+    <div class="status-dot {gold_dot}"></div>
+    <span class="status-label">Gold Data</span>
+    <span>{gold_label}</span>
+  </div>
+  <div class="status-item">
+    <div class="status-dot {model_dot}"></div>
+    <span class="status-label">Model</span>
+    <span>{model_label}</span>
+  </div>
+  <div class="status-item">
+    <div class="status-dot {vector_dot}"></div>
+    <span class="status-label">Vector Search</span>
+    <span>{vector_label}</span>
+  </div>
+</div>""",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_risk_gauge(claim_id: str, prob: float, risk: str, total_ms: float) -> None:
+    """Full-width risk section: probability, bar, badge, metadata."""
+    css_class = _risk_css_class(risk)
+    prob_pct = prob * 100
+
+    st.markdown(
+        f"""<div class="risk-section">
+  <div class="risk-header">
+    <div>
+      <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.25rem">
+        Denial Probability
+      </div>
+      <div class="risk-gauge-value risk-gauge-value--{css_class}">
+        {prob_pct:.1f}%
+      </div>
+      <span class="risk-badge risk-badge--{css_class}">{risk}</span>
+    </div>
+    <div class="risk-meta">
+      <div class="risk-meta-item">
+        Claim <span>{claim_id}</span>
+      </div>
+      <div class="risk-meta-item">
+        Total <span>{total_ms:.0f} ms</span>
+      </div>
+    </div>
+  </div>
+  <div class="risk-bar-track">
+    <div class="risk-bar-fill risk-bar-fill--{css_class}" style="width:{min(prob_pct, 100)}%"></div>
+  </div>
+  <div class="risk-bar-labels">
+    <span>0%</span><span>100%</span>
+  </div>
+</div>""",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_feature_breakdown(
+    shap_explanations: list[dict[str, object]],
+    feature_dict: dict[str, object],
+) -> None:
+    """Two-group feature list: Risk Drivers and Risk Mitigators."""
+    drivers = [e for e in shap_explanations if e.get("direction") == "increases_risk"]
+    mitigators = [e for e in shap_explanations if e.get("direction") == "decreases_risk"]
+
+    html_parts: list[str] = [
+        '<div class="feature-section">',
+        '<div class="feature-section-header">Key Risk Factors</div>',
+    ]
+
+    if drivers:
+        html_parts.append('<div class="feature-group-heading">Risk Drivers ↑</div>')
+        for entry in drivers:
+            html_parts.append(_render_feature_row(entry, feature_dict))
+
+    if mitigators:
+        html_parts.append('<div class="feature-group-heading">Risk Mitigators ↓</div>')
+        for entry in mitigators:
+            html_parts.append(_render_feature_row(entry, feature_dict))
+
+    html_parts.append("</div>")
+    st.markdown("\n".join(html_parts), unsafe_allow_html=True)
+
+
+def _render_feature_row(entry: dict[str, object], feature_dict: dict[str, object]) -> str:
+    """Single feature row as an HTML string."""
+    feature = str(entry["feature"])
+    importance = float(entry["importance"])  # type: ignore[arg-type]
+    direction = str(entry["direction"])
+    reason = str(entry["reason"])
+
+    _assert_no_phi(reason, f"shap_reason_{feature}")
+
+    actual_value = feature_dict.get(feature)
+    formatted_value = _format_feature_value(actual_value, feature)
+    display_name = _feature_display_name(feature)
+
+    icon_cls = "feature-icon--inc" if direction == "increases_risk" else "feature-icon--dec"
+    icon = "↑" if direction == "increases_risk" else "↓"
+    bar_cls = "feature-bar-fill--inc" if direction == "increases_risk" else "feature-bar-fill--dec"
+    bar_width = min(importance * 100, 100)
+
+    return f"""<div class="feature-row">
+  <div class="feature-icon {icon_cls}">{icon}</div>
+  <div class="feature-name">{display_name}</div>
+  <div class="feature-value">{formatted_value}</div>
+  <div class="feature-bar-wrap">
+    <div class="feature-bar-track">
+      <div class="feature-bar-fill {bar_cls}" style="width:{bar_width:.1f}%"></div>
+    </div>
+  </div>
+  <div class="feature-reason">{reason}</div>
+</div>"""
+
+
+def _render_policy_guidance(rag_result: dict[str, object] | None) -> None:
+    """Narrative + compact policy cards."""
+    if rag_result is None:
+        st.info("Policy retrieval is not available. Check Vector Search connectivity.")
+        return
+
+    narrative = rag_result.get("narrative")
+    policy_chunks = rag_result.get("policy_chunks", [])
+    source = str(rag_result.get("source", "none"))
+
+    source_label = {"llm": "AI-Generated", "template": "Template"}.get(source, source.title())
+    source_badge = (
+        f'<span class="policy-source-badge">{source_label}</span>'
+        if source != "none"
+        else ""
+    )
+
+    html_parts: list[str] = [
+        '<div class="policy-section">',
+        f'<div class="feature-section-header">Policy Guidance{source_badge}</div>',
+    ]
+
+    if narrative:
+        narrative_text = str(narrative)
+        _assert_no_phi(narrative_text, "rag_narrative")
+        html_parts.append(
+            f'<div class="policy-narrative">{narrative_text}</div>'
+        )
+
+    chunks = list(policy_chunks) if isinstance(policy_chunks, (list, tuple)) else []
+    if chunks:
+        for i, chunk in enumerate(chunks):
+            if not isinstance(chunk, dict):
+                continue
+            chunk_text = str(chunk.get("chunk_text", ""))
+            _assert_no_phi(chunk_text, f"policy_chunk_{i}")
+
+            doc_path = chunk.get("document_path", "Unknown")
+            chunk_idx = chunk.get("chunk_index", "?")
+            relevance = float(chunk.get("relevance_score", 0))
+
+            html_parts.append(
+                f"""<div class="policy-card">
+  <div class="policy-card-header">
+    <span class="policy-card-source">{doc_path} §{chunk_idx}</span>
+    <span class="policy-card-relevance">{relevance:.2f}</span>
+  </div>
+  <div class="policy-card-text">{chunk_text}</div>
+</div>"""
+            )
+    elif narrative is None:
+        st.info("No matching policy documents found for this claim.")
+        html_parts.append("</div>")
+        st.markdown("\n".join(html_parts), unsafe_allow_html=True)
+        return
+
+    html_parts.append("</div>")
+    st.markdown("\n".join(html_parts), unsafe_allow_html=True)
+
+
+def _render_latency_waterfall(latency: dict[str, float]) -> None:
+    """Horizontal bar chart of 5 timing phases."""
+    phases: list[tuple[str, float, str]] = [
+        ("Feature Lookup", latency.get("feature_lookup_ms", 0), "blue"),
+        ("Risk Inference", latency.get("risk_inference_ms", 0), "teal"),
+        ("SHAP Explanation", latency.get("shap_ms", 0), "orange"),
+        ("Policy Retrieval", latency.get("policy_retrieval_ms", 0), "blue"),
+        ("Narrative Synthesis", latency.get("narrative_ms", 0), "teal"),
+    ]
+    total = latency.get("total_ms", 0)
+
+    if total <= 0:
+        st.caption("Timing data unavailable.")
+        return
+
+    html_parts: list[str] = [
+        '<div class="latency-section">',
+        '<div class="feature-section-header">Timing Breakdown</div>',
+    ]
+
+    for label, ms, color in phases:
+        pct = (ms / total * 100) if total > 0 else 0
+        html_parts.append(
+            f"""<div class="latency-row">
+  <div class="latency-label">{label}</div>
+  <div class="latency-track">
+    <div class="latency-bar latency-bar--{color}" style="width:{max(pct, 0.5):.1f}%"></div>
+  </div>
+  <div class="latency-ms">{ms:.0f} ms</div>
+</div>"""
+        )
+
+    html_parts.append(
+        f"""<div class="latency-row latency-total">
+  <div class="latency-label">Total</div>
+  <div class="latency-track"></div>
+  <div class="latency-ms">{total:.0f} ms</div>
+</div>"""
+    )
+
+    html_parts.append("</div>")
+    st.markdown("\n".join(html_parts), unsafe_allow_html=True)
+
+
+def _render_full_feature_table(
+    shap_explanations: list[dict[str, object]],
+    feature_dict: dict[str, object],
+    all_features: tuple[str, ...],
+) -> None:
+    """Expandable dataframe with all features, values, SHAP, direction."""
+    shap_by_feature: dict[str, tuple[float, str]] = {}
+    for entry in shap_explanations:
+        feat = str(entry["feature"])
+        shap_by_feature[feat] = (
+            float(entry["shap_value"]),  # type: ignore[arg-type]
+            str(entry["direction"]),
+        )
+
+    rows: list[dict[str, object]] = []
+    for feat in all_features:
+        shap_val, direction = shap_by_feature.get(feat, (None, None))
+        rows.append({
+            "Feature": _feature_display_name(feat),
+            "Value": _format_feature_value(feature_dict.get(feat), feat),
+            "SHAP Value": f"{shap_val:.4f}" if shap_val is not None else "—",
+            "Direction": direction if direction else "—",
+        })
+
+    df = pd.DataFrame(rows)
+    with st.expander("All Features (22)", expanded=False):
+        st.dataframe(
+            df,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Feature": st.column_config.TextColumn(width="medium"),
+                "Value": st.column_config.TextColumn(width="small"),
+                "SHAP Value": st.column_config.TextColumn(width="small"),
+                "Direction": st.column_config.TextColumn(width="small"),
+            },
+        )
+
 def main() -> None:
     _init_session()
+    _inject_theme_css()
 
     st.title("Claim Denial Risk Analyzer")
-    st.caption("SHAP explanations + RAG policy retrieval powered by Databricks")
+    st.caption("SHAP feature attribution with policy retrieval via Llama 3.3 70B on Databricks")
 
     # --- Runtime health ---
-    status_col_1, status_col_2, status_col_3 = st.columns(3)
     gold_ok, gold_detail = _check_gold_connectivity()
     model_ok, model_detail = _check_model_availability()
     vector_ok, vector_detail = _check_vector_search_availability()
-    with status_col_1:
-        _render_status("Gold Data", gold_ok, gold_detail)
-    with status_col_2:
-        _render_status("Model", model_ok, model_detail)
-    with status_col_3:
-        _render_status("Vector Search", vector_ok, vector_detail)
+    _render_status_indicators(gold_ok, gold_detail, model_ok, model_detail, vector_ok, vector_detail)
 
     # --- Input ---
     sample_claim_ids: list[str] = []
@@ -346,11 +1248,19 @@ def main() -> None:
         st.error(f"ML module unavailable. Diagnostic: {exc}")
         return
 
-    start = time.perf_counter()
+    total_start = time.perf_counter()
+    feature_lookup_ms = 0.0
+    risk_inference_ms = 0.0
+    shap_ms = 0.0
+    policy_retrieval_ms = 0.0
+    narrative_ms = 0.0
 
+    feature_lookup_start = time.perf_counter()
     try:
         raw = _load_claim_features(claim_id)
+        feature_lookup_ms = (time.perf_counter() - feature_lookup_start) * 1000.0
     except Exception as exc:
+        feature_lookup_ms = (time.perf_counter() - feature_lookup_start) * 1000.0
         st.error(
             "Feature lookup failed. "
             f"Check SQL warehouse/app permissions and connectivity.\n\nDiagnostic: {str(exc)[:_MAX_DETAILS_LEN]}"
@@ -358,10 +1268,9 @@ def main() -> None:
         return
 
     if raw.empty:
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
         st.error(
             f"Claim ID **{claim_id}** not found in `{_gold_table_name()}`. "
-            f"(lookup took {elapsed_ms:.0f} ms)"
+            f"(lookup took {feature_lookup_ms:.0f} ms)"
         )
         return
 
@@ -372,7 +1281,9 @@ def main() -> None:
     try:
         from src.ml.predict import predict_single
 
+        risk_inference_start = time.perf_counter()
         prediction = predict_single(model, feature_dict)
+        risk_inference_ms = (time.perf_counter() - risk_inference_start) * 1000.0
     except Exception as exc:
         st.error(f"Prediction failed. Diagnostic: {exc}")
         return
@@ -381,13 +1292,16 @@ def main() -> None:
     risk = prediction["risk_level"]
 
     # --- SHAP explanation ---
+    shap_start = time.perf_counter()
     try:
         from src.xai.explainer import explain
         import numpy as np
 
         X_row = np.array([[float(feature_dict.get(c, 0.0)) for c in FEATURE_COLUMNS]])
         shap_explanations = explain(model, X_row, list(FEATURE_COLUMNS), top_n=5)
+        shap_ms = (time.perf_counter() - shap_start) * 1000.0
     except Exception as exc:
+        shap_ms = (time.perf_counter() - shap_start) * 1000.0
         logger.exception("SHAP explanation failed")
         shap_explanations = []
         st.warning(f"Explanation unavailable (diagnostic: {exc}). Showing prediction only.")
@@ -404,72 +1318,51 @@ def main() -> None:
             retriever=retriever,
             top_k=5,
         )
+        rag_timing = rag_result.get("timing", {}) if isinstance(rag_result, dict) else {}
+        policy_retrieval_ms = float(rag_timing.get("retrieval_ms", 0.0) or 0.0)
+        narrative_ms = float(rag_timing.get("synthesis_ms", 0.0) or 0.0)
     except Exception as exc:
         logger.exception("RAG retrieval failed")
         st.warning(f"Policy retrieval unavailable (diagnostic: {exc}).")
 
-    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    total_ms = (time.perf_counter() - total_start) * 1000.0
+    latency = _summarize_latency(
+        feature_lookup_ms=feature_lookup_ms,
+        risk_inference_ms=risk_inference_ms,
+        shap_ms=shap_ms,
+        policy_retrieval_ms=policy_retrieval_ms,
+        narrative_ms=narrative_ms,
+        total_ms=total_ms,
+    )
+    logger.debug(
+        "claim_latency claim_id=%s feature_lookup_ms=%.2f risk_inference_ms=%.2f shap_ms=%.2f "
+        "policy_retrieval_ms=%.2f narrative_ms=%.2f risk_path_ms=%.2f explanation_ms=%.2f total_ms=%.2f",
+        claim_id,
+        latency["feature_lookup_ms"],
+        latency["risk_inference_ms"],
+        latency["shap_ms"],
+        latency["policy_retrieval_ms"],
+        latency["narrative_ms"],
+        latency["risk_path_ms"],
+        latency["explanation_ms"],
+        latency["total_ms"],
+    )
 
     # --- Render results ---
     st.divider()
 
-    # Prediction
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Denial Probability", f"{prob * 100:.1f}%")
-    with col2:
-        st.markdown(
-            f"**Risk Level:** "
-            f"<span style='color:{_risk_color(risk)};font-weight:bold;font-size:1.2em'>"
-            f"{risk}</span>",
-            unsafe_allow_html=True,
-        )
-    with col3:
-        st.metric("Latency", f"{elapsed_ms:.0f} ms")
+    _render_risk_gauge(claim_id, prob, risk, latency["total_ms"])
 
-    # Explanation
-    st.subheader("Why this assessment?")
     if shap_explanations:
-        for entry in shap_explanations:
-            reason_text = entry["reason"]
-            _assert_no_phi(reason_text, f"shap_reason_{entry['feature']}")
-
-            bar_width = min(entry["importance"] * 100, 100)
-            arrow = _direction_arrow(entry["direction"])
-            color = _direction_color(entry["direction"])
-
-            st.markdown(
-                f"**<span style='color:{color}'>{arrow}</span> "
-                f"{reason_text}**",
-                unsafe_allow_html=True,
-            )
-            st.progress(bar_width / 100, text=f"{entry['importance']:.3f}")
+        _render_feature_breakdown(shap_explanations, feature_dict)
     else:
         st.info("No SHAP explanations available for this claim.")
 
-    # Policy
-    st.subheader("Policy Guidance")
-    if rag_result and rag_result.get("narrative"):
-        narrative = rag_result["narrative"]
-        _assert_no_phi(narrative, "rag_narrative")
-        st.markdown(narrative)
+    _render_policy_guidance(rag_result)
+    _render_latency_waterfall(latency)
 
-        policy_chunks = rag_result.get("policy_chunks", [])
-        if policy_chunks:
-            st.caption(f"Retrieved {len(policy_chunks)} policy snippet(s)")
-            for i, chunk in enumerate(policy_chunks):
-                with st.expander(
-                    f"{chunk.get('document_path', 'Unknown')} "
-                    f"§{chunk.get('chunk_index', '?')} "
-                    f"(relevance: {chunk.get('relevance_score', 0):.2f})"
-                ):
-                    chunk_text = str(chunk.get("chunk_text", ""))
-                    _assert_no_phi(chunk_text, f"policy_chunk_{i}")
-                    st.text(chunk_text)
-        elif rag_result.get("source") != "none":
-            st.info("No matching policy documents found for this claim.")
-    else:
-        st.info("Policy retrieval is not available. Check Vector Search connectivity.")
+    if feature_dict:
+        _render_full_feature_table(shap_explanations, feature_dict, FEATURE_COLUMNS)
 
 
 if __name__ == "__main__":

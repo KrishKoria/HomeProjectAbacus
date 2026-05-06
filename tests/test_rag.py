@@ -212,6 +212,8 @@ class RetrieveAndExplainTests(unittest.TestCase):
         self.assertIn("No SHAP explanations", result["narrative"])
         self.assertEqual(result["source"], "none")
         self.assertEqual(result["policy_chunks"], [])
+        self.assertEqual(result["timing"]["retrieval_ms"], 0.0)
+        self.assertEqual(result["timing"]["synthesis_ms"], 0.0)
 
     def test_full_flow_with_no_databricks(self) -> None:
         """End-to-end flow succeeds even without Databricks runtime."""
@@ -226,6 +228,11 @@ class RetrieveAndExplainTests(unittest.TestCase):
         self.assertIn("policy_chunks", result)
         self.assertIn("policy_citations", result)
         self.assertIn("source", result)
+        self.assertIn("timing", result)
+        self.assertIn("retrieval_ms", result["timing"])
+        self.assertIn("synthesis_ms", result["timing"])
+        self.assertGreaterEqual(result["timing"]["retrieval_ms"], 0.0)
+        self.assertGreaterEqual(result["timing"]["synthesis_ms"], 0.0)
         self.assertEqual(result["explanations"], self.shap_reasons)
 
     def test_query_phi_scrubbed_before_retrieval(self) -> None:

@@ -7,6 +7,20 @@ import numpy as np
 from src.ml.evaluate import _unwrap_for_shap
 from src.xai.feature_reasons import FEATURE_REASONS
 
+_EXPLAINER_CACHE: dict[int, Any] = {}
+
+
+def _cached_tree_explainer(raw_model: Any):
+    import shap
+
+    model_key = id(raw_model)
+    explainer = _EXPLAINER_CACHE.get(model_key)
+    if explainer is not None:
+        return explainer
+    explainer = shap.TreeExplainer(raw_model)
+    _EXPLAINER_CACHE[model_key] = explainer
+    return explainer
+
 
 def explain(
     model: Any,
@@ -19,10 +33,8 @@ def explain(
     Returns a list of (feature, importance, reason, direction) dicts sorted
     by descending absolute SHAP value, limited to *top_n*.
     """
-    import shap
-
     raw = _unwrap_for_shap(model)
-    explainer = shap.TreeExplainer(raw)
+    explainer = _cached_tree_explainer(raw)
     shap_values = explainer.shap_values(X)
 
     # Normalise: TreeExplainer returns a list [neg_class, pos_class] for
