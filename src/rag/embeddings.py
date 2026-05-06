@@ -91,7 +91,7 @@ class EmbeddingProvider:
         w = WorkspaceClient()
         response = w.serving_endpoints.query(
             name=self.endpoint_name,
-            inputs=texts,
+            input=texts,
         )
         embeddings: list[list[float]] = []
         for pred in (response.predictions or []):

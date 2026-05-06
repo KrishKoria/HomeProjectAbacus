@@ -1168,7 +1168,7 @@ def _render_full_feature_table(
         st.dataframe(
             df,
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "Feature": st.column_config.TextColumn(width="medium"),
                 "Value": st.column_config.TextColumn(width="small"),

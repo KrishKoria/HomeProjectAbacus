@@ -19,7 +19,9 @@ def _workspace_url() -> str:
         hostname = _env("DATABRICKS_SERVER_HOSTNAME")
         if hostname:
             host = f"https://{hostname}"
-    return host.rstrip("/")
+    if host and not host.startswith("https://"):
+        host = f"https://{host}"
+    return host.rstrip("/") if host else ""
 
 
 def _vector_search_client():
@@ -44,6 +46,10 @@ def _vector_search_client():
             disable_notice=True,
         )
 
+    logger.warning(
+        "VectorSearchClient is unconfigured: set DATABRICKS_HOST "
+        "with DATABRICKS_TOKEN or (DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET)"
+    )
     return VectorSearchClient(disable_notice=True)
 
 
@@ -71,15 +77,57 @@ def _manifest_column_names(manifest: Any) -> list[str]:
     return names
 
 
+_EMBEDDING_ENDPOINT = "databricks-gte-large-en"
+_EMBEDDING_DIM = 768
+
+
+def _generate_query_embedding(query_text: str) -> list[float]:
+    """Generate a 768-dim embedding vector for the given query text.
+
+    Uses the Databricks GTE Foundation Model endpoint so that callers
+    can pass ``query_vector`` when the Vector Search index does not have
+    a query-time model endpoint wired.
+    """
+    from src.rag.embeddings import EmbeddingProvider
+
+    provider = EmbeddingProvider(
+        endpoint_name=_EMBEDDING_ENDPOINT, embedding_dim=_EMBEDDING_DIM
+    )
+    embeddings = provider.embed_batch([query_text])
+    if not embeddings:
+        logger.error("GTE embedding returned empty result for query text")
+        return []
+    return embeddings[0]
+
 def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list[dict[str, Any]]:
     from databricks.sdk import WorkspaceClient
+    from databricks.sdk.errors.platform import InvalidParameterValue
 
-    response = WorkspaceClient().vector_search_indexes.query_index(
-        index_name=index_name,
-        columns=_RESULT_COLUMNS,
-        query_text=query_text,
-        num_results=top_k,
-    )
+    w = WorkspaceClient()
+
+    def _do_query(**kwargs: Any):
+        return w.vector_search_indexes.query_index(
+            index_name=index_name,
+            columns=_RESULT_COLUMNS,
+            num_results=top_k,
+            **kwargs,
+        )
+
+    try:
+        response = _do_query(query_text=query_text)
+    except InvalidParameterValue as exc:
+        if "query vector" in str(exc).lower():
+            logger.info(
+                "Index %s has no query-time model endpoint; generating embedding",
+                index_name,
+            )
+            query_vector = _generate_query_embedding(query_text)
+            if not query_vector:
+                return []
+            response = _do_query(query_vector=query_vector)
+        else:
+            raise
+
     payload = _as_dict(response)
     manifest = payload.get("manifest") if payload else _field(response, "manifest", {})
     result = payload.get("result") if payload else _field(response, "result", {})
@@ -175,11 +223,27 @@ class PolicyRetriever:
             logger.warning("Vector Search index %s not found", self.index_name)
             return []
 
-        raw = endpoint.similarity_search(
-            query_text=query_text,
-            columns=_RESULT_COLUMNS,
-            num_results=top_k,
-        )
+        # Try query_text first; fall back to query_vector if the index
+        # does not have a query-time model endpoint wired.
+        try:
+            raw = endpoint.similarity_search(
+                query_text=query_text,
+                columns=_RESULT_COLUMNS,
+                num_results=top_k,
+            )
+        except Exception:
+            logger.info(
+                "similarity_search with query_text failed; retrying with query_vector"
+            )
+            query_vector = _generate_query_embedding(query_text)
+            if not query_vector:
+                return []
+            raw = endpoint.similarity_search(
+                query_vector=query_vector,
+                columns=_RESULT_COLUMNS,
+                num_results=top_k,
+            )
+
         result = raw.get("result", {})
         data = result.get("data_array", [])
         return [
