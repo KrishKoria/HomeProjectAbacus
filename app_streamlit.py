@@ -4,6 +4,7 @@ Databricks-hosted: ``streamlit run app_streamlit.py`` on a Databricks workspace.
 """
 from __future__ import annotations
 
+import html
 import logging
 import os
 import time
@@ -958,7 +959,7 @@ def _render_risk_gauge(claim_id: str, prob: float, risk: str, total_ms: float) -
     </div>
     <div class="risk-meta">
       <div class="risk-meta-item">
-        Claim <span>{claim_id}</span>
+        Claim <span>{html.escape(claim_id)}</span>
       </div>
       <div class="risk-meta-item">
         Total <span>{total_ms:.0f} ms</span>
@@ -1008,7 +1009,7 @@ def _render_feature_row(entry: dict[str, object], feature_dict: dict[str, object
     feature = str(entry["feature"])
     importance = float(entry["importance"])  # type: ignore[arg-type]
     direction = str(entry["direction"])
-    reason = str(entry["reason"])
+    reason = html.escape(str(entry["reason"]))
 
     _assert_no_phi(reason, f"shap_reason_{feature}")
 
@@ -1057,7 +1058,7 @@ def _render_policy_guidance(rag_result: dict[str, object] | None) -> None:
     ]
 
     if narrative:
-        narrative_text = str(narrative)
+        narrative_text = html.escape(str(narrative))
         _assert_no_phi(narrative_text, "rag_narrative")
         html_parts.append(
             f'<div class="policy-narrative">{narrative_text}</div>'
@@ -1068,10 +1069,10 @@ def _render_policy_guidance(rag_result: dict[str, object] | None) -> None:
         for i, chunk in enumerate(chunks):
             if not isinstance(chunk, dict):
                 continue
-            chunk_text = str(chunk.get("chunk_text", ""))
+            chunk_text = html.escape(str(chunk.get("chunk_text", "")))
             _assert_no_phi(chunk_text, f"policy_chunk_{i}")
 
-            doc_path = chunk.get("document_path", "Unknown")
+            doc_path = html.escape(str(chunk.get("document_path", "Unknown")))
             chunk_idx = chunk.get("chunk_index", "?")
             relevance = float(chunk.get("relevance_score", 0))
 
