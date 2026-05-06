@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Final
 
 from src.common.bronze_pipeline_config import (
@@ -9,6 +10,8 @@ from src.common.bronze_pipeline_config import (
     validate_identifier,
 )
 from src.common.observability import MESSAGE_EVENT_LOG_SQL_BRIDGE
+
+logger = logging.getLogger(__name__)
 
 
 ANALYTICS_OBSERVABILITY_TABLES: Final[tuple[str, ...]] = (
@@ -215,33 +218,21 @@ def build_latest_failures(dataframe):
 def build_refresh_plans(dataframe):
     """Shape refresh planning telemetry from ``planning_information`` event-log rows."""
     from pyspark.sql import functions as F
-    from pyspark.sql.types import StringType
 
     origin_update_id = _nested_event_log_path(dataframe, "origin", "update_id")
     origin_pipeline_id = _nested_event_log_path(dataframe, "origin", "pipeline_id")
     details_update_id = _nested_event_log_path(dataframe, "details", "update_id")
     planning_flow_name = _nested_event_log_path(dataframe, "details", "planning_information.flow_name")
     planning_dataset = _nested_event_log_path(dataframe, "details", "planning_information.dataset_name")
-    planning_strategy = _nested_event_log_path(dataframe, "details", "planning_information.strategy")
-
-    _REFRESH_STRATEGY_KEYWORDS: Final[dict[str, str]] = {
-        "FULL_RECOMPUTE": "FULL_RECOMPUTE",
-        "ROW_BASED": "ROW_BASED",
-        "APPEND_ONLY": "APPEND_ONLY",
-        "GROUP_AGGREGATE": "GROUP_AGGREGATE",
-        "NO_OP": "NO_OP",
-    }
-
-    def _extract_strategy(raw_message: str | None) -> str | None:
-        if raw_message is None:
-            return None
-        upper = raw_message.upper()
-        for keyword in _REFRESH_STRATEGY_KEYWORDS:
-            if keyword in upper:
-                return keyword
-        return None
-
-    extract_udf = F.udf(_extract_strategy, StringType())
+    message_upper = F.upper(F.coalesce(F.col("message"), F.lit("")))
+    refresh_technique = (
+        F.when(message_upper.contains("FULL_RECOMPUTE"), F.lit("FULL_RECOMPUTE"))
+        .when(message_upper.contains("ROW_BASED"), F.lit("ROW_BASED"))
+        .when(message_upper.contains("APPEND_ONLY"), F.lit("APPEND_ONLY"))
+        .when(message_upper.contains("GROUP_AGGREGATE"), F.lit("GROUP_AGGREGATE"))
+        .when(message_upper.contains("NO_OP"), F.lit("NO_OP"))
+        .otherwise(F.lit(None).cast("string"))
+    )
 
     return (
         dataframe.where(F.col("event_type") == "planning_information")
@@ -250,7 +241,7 @@ def build_refresh_plans(dataframe):
             F.coalesce(origin_update_id, details_update_id).alias("update_id"),
             F.coalesce(origin_pipeline_id, F.lit(None).cast("string")).alias("pipeline_id"),
             F.coalesce(planning_flow_name, planning_dataset, F.lit(None).cast("string")).alias("dataset_or_flow"),
-            extract_udf(F.col("message")).alias("refresh_technique"),
+            refresh_technique.alias("refresh_technique"),
             F.col("message").alias("planner_message"),
         )
     )
@@ -299,7 +290,11 @@ def write_observability_tables(
                     validate_identifier(analytics_schema, "analytics_schema")
                     spark.sql(f"DROP TABLE IF EXISTS {table_fqn}")
             except Exception:
-                pass
+                logger.warning(
+                    "Unable to inspect or reset existing pipeline-stage table state for %s; continuing with append.",
+                    table_fqn,
+                    exc_info=True,
+                )
             dataframe.write.mode("append").saveAsTable(table_fqn)
         else:
             dataframe.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(table_fqn)

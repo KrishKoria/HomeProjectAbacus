@@ -120,6 +120,11 @@ def unpersist_if_available(dataframe) -> None:
     try:
         dataframe.unpersist()
     except Exception:
+        logger.warning(
+            "[%s] Could not unpersist DataFrame cache; continuing.",
+            format_claimops_diagnostic_id(DIAGNOSTIC_DOMAIN_BRONZE, 103),
+            exc_info=True,
+        )
         return
 
 
@@ -174,8 +179,8 @@ __all__ = [
     "RESCUED_DATA_COLUMN",
     "binary_file_autoloader_options",
     "bronze_table_name",
-    "bronze_volume_root",
     "bronze_volume_path",
+    "bronze_volume_root",
     "cache_if_available",
     "csv_autoloader_options",
     "escape_backtick_identifier",
