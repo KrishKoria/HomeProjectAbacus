@@ -84,8 +84,8 @@ class GoldPolicyEmbeddingsContractTests(unittest.TestCase):
     def test_ai_query_uses_row_tolerant_error_handling(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
         self.assertIn("failOnError => false", source)
-        self.assertIn("_embedding_result.response", source)
-        self.assertIn("_embedding_result.errorStatus", source)
+        self.assertIn("_embedding_result.result", source)
+        self.assertIn("_embedding_result.errorMessage", source)
 
     def test_gold_config_clustering(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")

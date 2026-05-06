@@ -55,11 +55,11 @@ def gold_policy_embeddings():
             "_embedding_result",
             F.expr(f"ai_query('{EMBEDDING_MODEL}', chunk_text, failOnError => false)"),
         )
-        .withColumn("embedding_vector", F.col("_embedding_result.response"))
+        .withColumn("embedding_vector", F.col("_embedding_result.result"))
         .withColumn(
             "embedding_status",
             F.when(
-                F.col("_embedding_result.errorStatus").isNull(),
+                F.col("_embedding_result.errorMessage").isNull(),
                 F.lit("COMPLETED"),
             ).otherwise(F.lit("FAILED")),
         )
