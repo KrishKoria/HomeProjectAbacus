@@ -402,17 +402,32 @@ def decide_retrain(
     champion_fingerprint = champion_params.get("training_data_fingerprint", "")
 
     if champion_fingerprint != current_fingerprint:
-        if previous_training_row_count is not None and not _row_count_threshold_exceeded(
-            current_row_count, previous_training_row_count
-        ):
-            return RetrainDecision.skip(
-                reason="fingerprint changed but row_count delta below retrain threshold",
-                current_row_count=current_row_count,
-                current_gold_version=current_gold_version,
-                current_fingerprint=current_fingerprint,
-                champion_run_id=champion_run_id,
-                previous_training_row_count=previous_training_row_count,
+        if previous_training_row_count is not None:
+            row_count_identical = current_row_count == previous_training_row_count
+            row_count_above_threshold = _row_count_threshold_exceeded(
+                current_row_count, previous_training_row_count
             )
+
+            if row_count_identical:
+                return RetrainDecision.retrain(
+                    reason="data content changed (reference data shift, same claim count)",
+                    current_row_count=current_row_count,
+                    current_gold_version=current_gold_version,
+                    current_fingerprint=current_fingerprint,
+                    champion_run_id=champion_run_id,
+                    previous_training_row_count=previous_training_row_count,
+                )
+
+            if not row_count_above_threshold:
+                return RetrainDecision.skip(
+                    reason="fingerprint changed but row_count delta below retrain threshold",
+                    current_row_count=current_row_count,
+                    current_gold_version=current_gold_version,
+                    current_fingerprint=current_fingerprint,
+                    champion_run_id=champion_run_id,
+                    previous_training_row_count=previous_training_row_count,
+                )
+
         return RetrainDecision.retrain(
             reason="data fingerprint changed",
             current_row_count=current_row_count,

@@ -436,6 +436,33 @@ class RetrainGateTests(unittest.TestCase):
         self.assertEqual(decision.decision_status, "retrain")
         self.assertTrue(decision.should_retrain)
 
+    def test_decide_retrain_retrains_when_fingerprint_changes_same_row_count(self) -> None:
+        from src.ml.retrain_gate import decide_retrain
+
+        # Same row count, different fingerprint = reference data shift -> retrain
+        fake_spark = self._FakeSpark([{"a": i} for i in range(1000)])
+        fake_client = mock.MagicMock()
+        fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
+        fake_client.get_run.return_value = SimpleNamespace(
+            data=SimpleNamespace(params={"training_data_fingerprint": "old", "training_row_count": "1000"})
+        )
+        with (
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="new"),
+            mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
+        ):
+            decision = decide_retrain(
+                fake_spark,
+                gold_table="healthcare.gold.claim_features",
+                feature_columns=["a"],
+                registered_model_name="healthcare.ml.claim_denial_model",
+                champion_alias="champion",
+                mlflow_client=fake_client,
+            )
+
+        # 1000 == 1000, fingerprint changed -> reference data shift -> retrain
+        self.assertEqual(decision.decision_status, "retrain")
+        self.assertIn("reference data shift", decision.reason)
+
     def test_decide_retrain_retrains_when_feature_columns_changed_regardless_of_row_count(self) -> None:
         from src.ml.retrain_gate import decide_retrain
 
