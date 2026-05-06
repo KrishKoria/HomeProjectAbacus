@@ -1014,7 +1014,7 @@ def _render_feature_row(entry: dict[str, object], feature_dict: dict[str, object
     _assert_no_phi(reason, f"shap_reason_{feature}")
 
     actual_value = feature_dict.get(feature)
-    formatted_value = _format_feature_value(actual_value, feature)
+    formatted_value = html.escape(_format_feature_value(actual_value, feature))
     display_name = _feature_display_name(feature)
 
     icon_cls = "feature-icon--inc" if direction == "increases_risk" else "feature-icon--dec"
