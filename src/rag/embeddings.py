@@ -89,16 +89,18 @@ class EmbeddingProvider:
             )
 
         w = WorkspaceClient()
-        response = w.serving_endpoints.query(
-            name=self.endpoint_name,
-            input=texts,
-        )
         embeddings: list[list[float]] = []
-        for pred in (response.predictions or []):
-            emb = getattr(pred, "embedding", None) or getattr(pred, "data", None)
-            if emb is None and hasattr(pred, "__getitem__"):
-                emb = pred[0] if isinstance(pred, (list, tuple)) else None
-            embeddings.append(list(emb) if emb else [0.0] * self.embedding_dim)
+        for text in texts:
+            response = w.serving_endpoints.query(
+                name=self.endpoint_name,
+                input=text,
+            )
+            data = response.data or []
+            if data:
+                emb = data[0].embedding
+                embeddings.append(list(emb) if emb else [0.0] * self.embedding_dim)
+            else:
+                embeddings.append([0.0] * self.embedding_dim)
         return embeddings
 
 

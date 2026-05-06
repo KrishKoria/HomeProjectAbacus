@@ -53,7 +53,7 @@ def _synthesize_via_llm(
     """Call Llama 70B on Databricks for natural-language synthesis."""
     try:
         from databricks.sdk import WorkspaceClient
-        from databricks.sdk.service.serving import ChatMessage
+        from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
     except ImportError:
         raise RuntimeError("databricks-sdk not available for LLM call")
 
@@ -77,8 +77,8 @@ def _synthesize_via_llm(
     response = w.serving_endpoints.query(
         name=model_endpoint,
         messages=[
-            ChatMessage(role="system", content=_SYSTEM_PROMPT),
-            ChatMessage(role="user", content=user_message),
+            ChatMessage(role=ChatMessageRole.SYSTEM, content=_SYSTEM_PROMPT),
+            ChatMessage(role=ChatMessageRole.USER, content=user_message),
         ],
         temperature=temperature,
         max_tokens=300,
@@ -87,7 +87,8 @@ def _synthesize_via_llm(
     narrative = ""
     choices = getattr(response, "choices", None)
     if choices and len(choices) > 0:
-        narrative = choices[0].get("message", {}).get("content", "")
+        message = choices[0].message
+        narrative = message.content if message else ""
 
     citations = [
         f"{c.get('document_path', '')} §{c.get('chunk_index', 0)}"
