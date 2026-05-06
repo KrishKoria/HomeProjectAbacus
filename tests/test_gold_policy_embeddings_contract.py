@@ -24,7 +24,9 @@ class GoldPolicyEmbeddingsContractTests(unittest.TestCase):
 
     def test_pipeline_reads_from_silver_policy_chunks(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
-        self.assertIn("healthcare.silver.policy_chunks", source)
+        self.assertIn("silver_table_name", source)
+        self.assertIn("SILVER_SCHEMA_DEFAULT", source)
+        self.assertNotIn('SILVER_POLICY_CHUNKS_TABLE = "healthcare.silver.policy_chunks"', source)
         self.assertIn("read_silver_snapshot", source)
 
     def test_pipeline_writes_to_gold_policy_chunks(self) -> None:
@@ -33,7 +35,7 @@ class GoldPolicyEmbeddingsContractTests(unittest.TestCase):
 
     def test_embedding_dimension_is_768(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
-        self.assertIn("EMBEDDING_DIM = 768", source)
+        self.assertIn("EMBEDDING_DIM: Final[int] = 768", source)
 
     def test_embedding_model_is_gte_large_en(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
@@ -76,6 +78,14 @@ class GoldPolicyEmbeddingsContractTests(unittest.TestCase):
     def test_table_properties_non_phi(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
         self.assertIn('"NON-PHI"', source)
+        self.assertIn('"pipelines.channel"', source)
+        self.assertIn('"PREVIEW"', source)
+
+    def test_ai_query_uses_row_tolerant_error_handling(self) -> None:
+        source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
+        self.assertIn("failOnError => false", source)
+        self.assertIn("_embedding_result.response", source)
+        self.assertIn("_embedding_result.errorStatus", source)
 
     def test_gold_config_clustering(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
