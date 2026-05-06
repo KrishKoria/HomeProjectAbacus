@@ -17,7 +17,7 @@ from common.silver_pipeline_config import SILVER_SCHEMA_DEFAULT, silver_table_na
 GOLD_POLICY_CHUNKS_TABLE: Final[str] = gold_table_name(CATALOG_DEFAULT, "policy_chunks")
 SILVER_POLICY_CHUNKS_TABLE: Final[str] = silver_table_name(CATALOG_DEFAULT, "policy_chunks", SILVER_SCHEMA_DEFAULT)
 EMBEDDING_MODEL: Final[str] = "databricks-gte-large-en"
-EMBEDDING_DIM: Final[int] = 768
+EMBEDDING_DIM: Final[int] = 1024
 _PIPELINE_CHANNEL_PREVIEW: Final[str] = "PREVIEW"
 
 
@@ -32,7 +32,7 @@ def _embedding_mv_table_properties() -> dict[str, str]:
     refresh_policy="incremental",
     comment=(
         "Gold policy chunks table with populated embedding vectors from "
-        f"Databricks GTE ({EMBEDDING_MODEL}). Vectors are 768-dimensional "
+        f"Databricks GTE ({EMBEDDING_MODEL}). Vectors are 1024-dimensional "
         "float64 arrays stored via array<double>. The table is clustered by "
         "chunk_id for efficient delta-sync to the Vector Search index. "
         "Embedding status tracks incremental processing state: COMPLETED "

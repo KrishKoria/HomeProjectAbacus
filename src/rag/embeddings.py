@@ -12,12 +12,13 @@ class EmbeddingProvider:
 
     Handles batching, retries with exponential backoff, and rate-limit
     responses for the ``databricks-gte-large-en`` embedding endpoint.
+    The GTE-large model outputs 1024-dimensional embeddings.
     """
 
     def __init__(
         self,
         endpoint_name: str = "databricks-gte-large-en",
-        embedding_dim: int = 768,
+        embedding_dim: int = 1024,
         max_retries: int = 3,
         base_delay: float = 1.0,
     ) -> None:

@@ -339,7 +339,7 @@ class VectorIndexScriptTests(unittest.TestCase):
             source_table_name="healthcare.gold.policy_chunks_vs",
             index_name="healthcare.gold.policy_chunks_index",
             primary_key="chunk_id",
-            embedding_dimension=768,
+            embedding_dimension=1024,
             embedding_vector_column="embedding_vector",
             model_endpoint_name_for_query="databricks-gte-large-en",
             pipeline_type="TRIGGERED",

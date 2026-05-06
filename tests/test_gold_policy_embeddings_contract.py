@@ -33,9 +33,9 @@ class GoldPolicyEmbeddingsContractTests(unittest.TestCase):
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
         self.assertIn("policy_chunks", source)
 
-    def test_embedding_dimension_is_768(self) -> None:
+    def test_embedding_dimension_is_1024(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")
-        self.assertIn("EMBEDDING_DIM: Final[int] = 768", source)
+        self.assertIn("EMBEDDING_DIM: Final[int] = 1024", source)
 
     def test_embedding_model_is_gte_large_en(self) -> None:
         source = GOLD_EMBEDDING_PATH.read_text(encoding="utf-8")

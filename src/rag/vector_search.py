@@ -78,11 +78,11 @@ def _manifest_column_names(manifest: Any) -> list[str]:
 
 
 _EMBEDDING_ENDPOINT = "databricks-gte-large-en"
-_EMBEDDING_DIM = 768
+_EMBEDDING_DIM = 1024
 
 
 def _generate_query_embedding(query_text: str) -> list[float]:
-    """Generate a 768-dim embedding vector for the given query text.
+    """Generate a 1024-dim embedding vector for the given query text.
 
     Uses the Databricks GTE Foundation Model endpoint so that callers
     can pass ``query_vector`` when the Vector Search index does not have
