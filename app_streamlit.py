@@ -910,9 +910,9 @@ def _render_status_indicators(
             return "Connected"
         return f"Degraded: {detail[:_MAX_DETAILS_LEN]}"
 
-    gold_label = _format_status_detail(gold_ok, gold_detail)
-    model_label = _format_status_detail(model_ok, model_detail)
-    vector_label = _format_status_detail(vector_ok, vector_detail)
+    gold_label = html.escape(_format_status_detail(gold_ok, gold_detail))
+    model_label = html.escape(_format_status_detail(model_ok, model_detail))
+    vector_label = html.escape(_format_status_detail(vector_ok, vector_detail))
 
     gold_dot = "status-dot--ok" if gold_ok else "status-dot--degraded"
     model_dot = "status-dot--ok" if model_ok else "status-dot--degraded"
