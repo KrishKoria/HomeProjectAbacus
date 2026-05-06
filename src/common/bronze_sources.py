@@ -154,4 +154,4 @@ DATASET_KEYS: Final[tuple[str, ...]] = tuple(BRONZE_SOURCES)
 # Used by the bootstrap notebook to create the policies/ volume folder.
 POLICY_SOURCE: Final[PolicySource] = PolicySource(volume_subdirectory="policies")
 
-__all__ = ["BronzeSource", "BRONZE_SOURCES", "DATASET_KEYS", "PolicySource", "POLICY_SOURCE"]
+__all__ = ["BRONZE_SOURCES", "BronzeSource", "DATASET_KEYS", "POLICY_SOURCE", "PolicySource"]
