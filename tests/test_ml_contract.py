@@ -561,7 +561,7 @@ class RegistryLoadTests(unittest.TestCase):
         from src.ml.predict import load_from_registry
 
         fake_mlflow = mock.MagicMock()
-        fake_mlflow.pyfunc.load_model.side_effect = ModuleNotFoundError("No module named 'xgboost'")
+        fake_mlflow.sklearn.load_model.side_effect = ModuleNotFoundError("No module named 'xgboost'")
         fake_mlflow.pyfunc.get_model_dependencies.return_value = "/tmp/model/requirements.txt"
 
         with mock.patch.dict(sys.modules, {"mlflow": fake_mlflow}):

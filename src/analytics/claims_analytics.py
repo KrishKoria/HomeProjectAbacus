@@ -648,6 +648,7 @@ __all__ = [
     "HIGH_COST_THRESHOLD_RATIO",
     "PHI_COLUMNS_BY_TABLE",
     "TABLE_SENSITIVITY_CLASSIFICATIONS",
+    "_build_claims_provider_cost_enriched",
     "analytics_table_name",
     "build_and_persist_claims_assets",
     "build_bronze_pipeline_audit",
@@ -667,5 +668,4 @@ __all__ = [
     "build_silver_claims_cost_enriched",
     "raw_bronze_table_name",
     "trusted_table_name",
-    "_build_claims_provider_cost_enriched",
 ]

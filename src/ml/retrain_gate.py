@@ -270,21 +270,14 @@ def compute_fingerprint(spark, gold_table: str, feature_columns: list[str]) -> s
             for row in sorted_rows
         ]
         content_hash = sha256("||".join(row_hashes).encode("utf-8")).hexdigest()
-    except Exception:
+    except Exception as exc:
         logger.warning(
-            "Spark aggregate fingerprint unavailable; falling back to local deterministic hashing",
+            "Spark aggregate fingerprint unavailable; failing closed",
             exc_info=True,
         )
-        rows = [row.asDict(recursive=True) for row in frame.collect()]
-        sorted_rows = sorted(
-            rows,
-            key=lambda row: json.dumps(row, sort_keys=True, default=str),
-        )
-        row_hashes = [
-            sha256(json.dumps(row, sort_keys=True, default=str).encode("utf-8")).hexdigest()
-            for row in sorted_rows
-        ]
-        content_hash = sha256("||".join(row_hashes).encode("utf-8")).hexdigest()
+        raise RuntimeError(
+            f"Spark aggregate fingerprint failed for {gold_table}; aborting retrain decision."
+        ) from exc
     payload = {
         "columns": columns,
         "row_count": row_count,

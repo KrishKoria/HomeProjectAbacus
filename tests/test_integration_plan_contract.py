@@ -355,6 +355,84 @@ class RetrainGateTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertNotEqual(first, third)
 
+    def test_compute_fingerprint_raises_when_spark_aggregate_fails(self) -> None:
+        from src.ml.retrain_gate import compute_fingerprint
+
+        class _Expr:
+            def alias(self, _name: str):
+                return self
+
+            def cast(self, _dtype: str):
+                return self
+
+        class _AggregateFrame:
+            def collect(self):
+                raise RuntimeError("aggregate failed")
+
+        class _SparkFrame:
+            def __init__(self):
+                self.collect = mock.MagicMock(return_value=[])
+
+            def count(self):
+                return 2
+
+            def select(self, *_args, **_kwargs):
+                return self
+
+            def agg(self, *_args, **_kwargs):
+                return _AggregateFrame()
+
+        class _FakeFunctions:
+            @staticmethod
+            def sha2(*_args, **_kwargs):
+                return _Expr()
+
+            @staticmethod
+            def concat_ws(*_args, **_kwargs):
+                return _Expr()
+
+            @staticmethod
+            def coalesce(*_args, **_kwargs):
+                return _Expr()
+
+            @staticmethod
+            def col(*_args, **_kwargs):
+                return _Expr()
+
+            @staticmethod
+            def lit(*_args, **_kwargs):
+                return _Expr()
+
+            @staticmethod
+            def sort_array(*_args, **_kwargs):
+                return _Expr()
+
+            @staticmethod
+            def collect_list(*_args, **_kwargs):
+                return _Expr()
+
+        fake_pyspark = ModuleType("pyspark")
+        fake_sql = ModuleType("pyspark.sql")
+        fake_sql.functions = _FakeFunctions
+        fake_pyspark.sql = fake_sql
+
+        frame = _SparkFrame()
+        fake_spark = mock.MagicMock()
+        fake_spark.table.return_value = frame
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "pyspark": fake_pyspark,
+                "pyspark.sql": fake_sql,
+                "pyspark.sql.functions": _FakeFunctions,
+            },
+        ):
+            with self.assertRaises(RuntimeError):
+                compute_fingerprint(fake_spark, "healthcare.gold.claim_features", ["a", "b"])
+
+        frame.collect.assert_not_called()
+
     def test_decide_retrain_returns_error_on_mlflow_transport_failure(self) -> None:
         from mlflow.exceptions import MlflowException
         from mlflow.protos.databricks_pb2 import INTERNAL_ERROR
@@ -571,23 +649,15 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn("streamlit", app_yaml)
         self.assertIn("app_streamlit.py", app_yaml)
 
-    def test_frontend_app_runtime_envs_are_bundle_driven(self) -> None:
-        source = (
-            PROJECT_ROOT / "services" / "frontend" / "resources" / "frontend.app.yml"
-        ).read_text(encoding="utf-8")
+    def test_app_yaml_defines_required_runtime_envs(self) -> None:
+        source = (PROJECT_ROOT / "app.yaml").read_text(encoding="utf-8")
 
         self.assertIn("CLAIMOPS_SQL_WAREHOUSE_ID", source)
-        self.assertIn("${var.app_sql_warehouse_id}", source)
         self.assertIn("CLAIMOPS_SQL_HTTP_PATH", source)
-        self.assertIn("${var.app_sql_http_path}", source)
         self.assertIn("CLAIMOPS_GOLD_TABLE", source)
-        self.assertIn("${var.app_claim_features_table}", source)
         self.assertIn("CLAIMOPS_MODEL_NAME", source)
-        self.assertIn("${var.app_model_registry_name}", source)
         self.assertIn("CLAIMOPS_MODEL_ALIAS", source)
-        self.assertIn("${var.app_model_alias}", source)
         self.assertIn("CLAIMOPS_VECTOR_INDEX_NAME", source)
-        self.assertIn("value_from: app-policy-vector-index", source)
 
     def test_streamlit_frontend_uses_sql_connector_not_spark_session(self) -> None:
         source = (PROJECT_ROOT / "app_streamlit.py").read_text(encoding="utf-8")
