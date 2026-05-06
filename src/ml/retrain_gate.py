@@ -260,30 +260,12 @@ def compute_fingerprint(
         row_digest = F.xxhash64(
             *[F.coalesce(F.col(column).cast("string"), F.lit("<NULL>")) for column in columns]
         )
-        aggregate_exprs = [
-            F.sum(row_digest.cast("decimal(38,0)")).alias("hash_sum"),
-            F.sum(F.abs(row_digest).cast("decimal(38,0)")).alias("hash_abs_sum"),
-            F.min(row_digest).alias("hash_min"),
-            F.max(row_digest).alias("hash_max"),
-        ]
+        digest_rows = frame.select(row_digest.alias("digest")).collect()
+        row_digests = sorted(int(r["digest"]) for r in digest_rows)
         if resolved_row_count is None:
-            aggregate_exprs.append(F.count(F.lit(1)).alias("row_count"))
-        aggregate_row = frame.agg(*aggregate_exprs).collect()[0]
-        aggregate_data = (
-            aggregate_row
-            if isinstance(aggregate_row, dict)
-            else aggregate_row.asDict(recursive=True)
-        )
-        if resolved_row_count is None:
-            resolved_row_count = int(aggregate_data.get("row_count", 0))
-        content_hash_payload = {
-            "hash_sum": str(aggregate_data.get("hash_sum") or "0"),
-            "hash_abs_sum": str(aggregate_data.get("hash_abs_sum") or "0"),
-            "hash_min": str(aggregate_data.get("hash_min") or "0"),
-            "hash_max": str(aggregate_data.get("hash_max") or "0"),
-        }
+            resolved_row_count = len(row_digests)
         content_hash = sha256(
-            json.dumps(content_hash_payload, sort_keys=True, default=str).encode("utf-8")
+            ",".join(str(d) for d in row_digests).encode("utf-8")
         ).hexdigest()
     except ModuleNotFoundError:
         rows = [row.asDict(recursive=True) for row in frame.collect()]
@@ -300,11 +282,11 @@ def compute_fingerprint(
         content_hash = sha256("||".join(row_hashes).encode("utf-8")).hexdigest()
     except Exception as exc:
         logger.warning(
-            "Spark aggregate fingerprint unavailable; failing closed",
+            "Spark fingerprint collect unavailable; failing closed",
             exc_info=True,
         )
         raise RuntimeError(
-            f"Spark aggregate fingerprint failed for {gold_table}; aborting retrain decision."
+            f"Spark fingerprint collect failed for {gold_table}; aborting retrain decision."
         ) from exc
     payload = {
         "columns": columns,
@@ -354,12 +336,6 @@ def decide_retrain(
         raise ValueError(f"[{diag_id}] {gold_table} has zero rows")
 
     current_gold_version = _current_gold_version(spark, gold_table)
-    current_fingerprint = compute_fingerprint(
-        spark,
-        gold_table,
-        feature_columns,
-        row_count=current_row_count,
-    )
 
     try:
         champion = _resolve_champion_alias(client, registered_model_name, champion_alias)
@@ -374,7 +350,7 @@ def decide_retrain(
             error_detail=str(exc),
             current_row_count=current_row_count,
             current_gold_version=current_gold_version,
-            current_fingerprint=current_fingerprint,
+            current_fingerprint="",
             champion_run_id=None,
         )
 
@@ -383,7 +359,7 @@ def decide_retrain(
             reason="no champion model found",
             current_row_count=current_row_count,
             current_gold_version=current_gold_version,
-            current_fingerprint=current_fingerprint,
+            current_fingerprint="",
             champion_run_id=None,
         )
 
@@ -394,7 +370,7 @@ def decide_retrain(
             error_detail="champion model version missing run_id",
             current_row_count=current_row_count,
             current_gold_version=current_gold_version,
-            current_fingerprint=current_fingerprint,
+            current_fingerprint="",
             champion_run_id=None,
         )
 
@@ -411,7 +387,7 @@ def decide_retrain(
             error_detail=str(exc),
             current_row_count=current_row_count,
             current_gold_version=current_gold_version,
-            current_fingerprint=current_fingerprint,
+            current_fingerprint="",
             champion_run_id=champion_run_id,
         )
 
@@ -420,7 +396,7 @@ def decide_retrain(
             reason="champion run not found (orphaned reference)",
             current_row_count=current_row_count,
             current_gold_version=current_gold_version,
-            current_fingerprint=current_fingerprint,
+            current_fingerprint="",
             champion_run_id=champion_run_id,
         )
 
@@ -433,6 +409,55 @@ def decide_retrain(
             previous_training_row_count = None
     else:
         previous_training_row_count = None
+
+    previous_gold_version_raw = champion_params.get("gold_table_version")
+    previous_gold_version: int | None = None
+    if previous_gold_version_raw is not None:
+        try:
+            previous_gold_version = int(previous_gold_version_raw)
+        except (ValueError, TypeError):
+            pass
+
+    if (
+        previous_training_row_count is not None
+        and previous_gold_version is not None
+        and current_row_count == previous_training_row_count
+        and current_gold_version == previous_gold_version
+    ):
+        champion_feature_columns = _feature_columns_from_run(champion_run_id)
+        if feature_columns and not champion_feature_columns:
+            return RetrainDecision.retrain(
+                reason="champion feature_columns metadata missing",
+                current_row_count=current_row_count,
+                current_gold_version=current_gold_version,
+                current_fingerprint="",
+                champion_run_id=champion_run_id,
+                previous_training_row_count=previous_training_row_count,
+            )
+        if champion_feature_columns and champion_feature_columns != list(feature_columns):
+            return RetrainDecision.retrain(
+                reason="feature columns changed",
+                current_row_count=current_row_count,
+                current_gold_version=current_gold_version,
+                current_fingerprint="",
+                champion_run_id=champion_run_id,
+                previous_training_row_count=previous_training_row_count,
+            )
+        return RetrainDecision.skip(
+            reason="no data changes (version and row count match)",
+            current_row_count=current_row_count,
+            current_gold_version=current_gold_version,
+            current_fingerprint="",
+            champion_run_id=champion_run_id,
+            previous_training_row_count=previous_training_row_count,
+        )
+
+    current_fingerprint = compute_fingerprint(
+        spark,
+        gold_table,
+        feature_columns,
+        row_count=current_row_count,
+    )
 
     champion_fingerprint = champion_params.get("training_data_fingerprint", "")
 

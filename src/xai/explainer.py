@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import weakref
 from typing import Any
 
 import numpy as np
@@ -7,18 +8,17 @@ import numpy as np
 from src.ml.evaluate import _unwrap_for_shap
 from src.xai.feature_reasons import FEATURE_REASONS
 
-_EXPLAINER_CACHE: dict[int, Any] = {}
+_EXPLAINER_CACHE: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 def _cached_tree_explainer(raw_model: Any):
     import shap
 
-    model_key = id(raw_model)
-    explainer = _EXPLAINER_CACHE.get(model_key)
+    explainer = _EXPLAINER_CACHE.get(raw_model)
     if explainer is not None:
         return explainer
     explainer = shap.TreeExplainer(raw_model)
-    _EXPLAINER_CACHE[model_key] = explainer
+    _EXPLAINER_CACHE[raw_model] = explainer
     return explainer
 
 

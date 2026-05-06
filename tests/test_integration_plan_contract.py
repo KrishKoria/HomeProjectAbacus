@@ -186,19 +186,18 @@ class RetrainGateTests(unittest.TestCase):
         fake_spark.table.return_value.count.return_value = 10
         fake_spark.sql.return_value.collect.return_value = [{"version": 5}]
 
-        with mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="abc123"):
-            decision = decide_retrain(
-                fake_spark,
-                gold_table="healthcare.gold.claim_features",
-                feature_columns=["a", "b"],
-                registered_model_name="healthcare.ml.claim_denial_model",
-                champion_alias="champion",
-                mlflow_client=mock.MagicMock(
-                    get_model_version_by_alias=mock.MagicMock(
-                        side_effect=MlflowException("Not found", RESOURCE_DOES_NOT_EXIST)
-                    )
-                ),
-            )
+        decision = decide_retrain(
+            fake_spark,
+            gold_table="healthcare.gold.claim_features",
+            feature_columns=["a", "b"],
+            registered_model_name="healthcare.ml.claim_denial_model",
+            champion_alias="champion",
+            mlflow_client=mock.MagicMock(
+                get_model_version_by_alias=mock.MagicMock(
+                    side_effect=MlflowException("Not found", RESOURCE_DOES_NOT_EXIST)
+                )
+            ),
+        )
 
         self.assertEqual(decision.decision_status, "retrain")
         self.assertTrue(decision.should_retrain)
@@ -355,40 +354,23 @@ class RetrainGateTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertNotEqual(first, third)
 
-    def test_compute_fingerprint_raises_when_spark_aggregate_fails(self) -> None:
+    def test_compute_fingerprint_raises_when_spark_collect_fails(self) -> None:
         from src.ml.retrain_gate import compute_fingerprint
 
         class _Expr:
             def alias(self, _name: str):
                 return self
 
-            def cast(self, _dtype: str):
-                return self
-
-        class _AggregateFrame:
-            def collect(self):
-                raise RuntimeError("aggregate failed")
-
         class _SparkFrame:
-            def __init__(self):
-                self.collect = mock.MagicMock(return_value=[])
-
-            def count(self):
-                return 2
-
             def select(self, *_args, **_kwargs):
                 return self
 
-            def agg(self, *_args, **_kwargs):
-                return _AggregateFrame()
+            def collect(self):
+                raise RuntimeError("collect failed")
 
         class _FakeFunctions:
             @staticmethod
             def xxhash64(*_args, **_kwargs):
-                return _Expr()
-
-            @staticmethod
-            def abs(*_args, **_kwargs):
                 return _Expr()
 
             @staticmethod
@@ -401,22 +383,6 @@ class RetrainGateTests(unittest.TestCase):
 
             @staticmethod
             def lit(*_args, **_kwargs):
-                return _Expr()
-
-            @staticmethod
-            def sum(*_args, **_kwargs):
-                return _Expr()
-
-            @staticmethod
-            def min(*_args, **_kwargs):
-                return _Expr()
-
-            @staticmethod
-            def max(*_args, **_kwargs):
-                return _Expr()
-
-            @staticmethod
-            def count(*_args, **_kwargs):
                 return _Expr()
 
         fake_pyspark = ModuleType("pyspark")
@@ -439,8 +405,6 @@ class RetrainGateTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 compute_fingerprint(fake_spark, "healthcare.gold.claim_features", ["a", "b"])
 
-        frame.collect.assert_not_called()
-
     def test_decide_retrain_returns_error_on_mlflow_transport_failure(self) -> None:
         from mlflow.exceptions import MlflowException
         from mlflow.protos.databricks_pb2 import INTERNAL_ERROR
@@ -451,19 +415,18 @@ class RetrainGateTests(unittest.TestCase):
         fake_spark.table.return_value.count.return_value = 10
         fake_spark.sql.return_value.collect.return_value = [{"version": 5}]
 
-        with mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="abc123"):
-            decision = decide_retrain(
-                fake_spark,
-                gold_table="healthcare.gold.claim_features",
-                feature_columns=["a"],
-                registered_model_name="healthcare.ml.claim_denial_model",
-                champion_alias="champion",
-                mlflow_client=mock.MagicMock(
-                    get_model_version_by_alias=mock.MagicMock(
-                        side_effect=MlflowException("Backend error", INTERNAL_ERROR)
-                    )
-                ),
-            )
+        decision = decide_retrain(
+            fake_spark,
+            gold_table="healthcare.gold.claim_features",
+            feature_columns=["a"],
+            registered_model_name="healthcare.ml.claim_denial_model",
+            champion_alias="champion",
+            mlflow_client=mock.MagicMock(
+                get_model_version_by_alias=mock.MagicMock(
+                    side_effect=MlflowException("Backend error", INTERNAL_ERROR)
+                )
+            ),
+        )
 
         self.assertEqual(decision.decision_status, "error")
         self.assertIsNone(decision.should_retrain)
@@ -472,13 +435,17 @@ class RetrainGateTests(unittest.TestCase):
     def test_decide_retrain_passes_precomputed_row_count_to_fingerprint(self) -> None:
         from src.ml.retrain_gate import decide_retrain
 
-        fake_spark = mock.MagicMock()
-        fake_spark.table.return_value.count.return_value = 10
-        fake_spark.sql.return_value.collect.return_value = [{"version": 5}]
+        fake_spark = self._FakeSpark([{"a": 1}])
         fake_client = mock.MagicMock()
-        fake_client.get_model_version_by_alias.return_value = None
+        fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
+        fake_client.get_run.return_value = SimpleNamespace(
+            data=SimpleNamespace(params={"training_data_fingerprint": "old", "training_row_count": "1000"})
+        )
 
-        with mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="abc123") as fingerprint_mock:
+        with (
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="new") as fingerprint_mock,
+            mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
+        ):
             decide_retrain(
                 fake_spark,
                 gold_table="healthcare.gold.claim_features",
@@ -492,7 +459,7 @@ class RetrainGateTests(unittest.TestCase):
             fake_spark,
             "healthcare.gold.claim_features",
             ["a"],
-            row_count=10,
+            row_count=1,
         )
 
     def test_feature_columns_from_run_logs_warning_on_artifact_load_failure(self) -> None:
@@ -669,6 +636,38 @@ class RetrainGateTests(unittest.TestCase):
 
         self.assertEqual(decision.decision_status, "retrain")
         self.assertEqual(decision.reason, "feature columns changed")
+
+    def test_decide_retrain_skips_when_version_and_row_count_unchanged(self) -> None:
+        from src.ml.retrain_gate import decide_retrain
+
+        fake_spark = self._FakeSpark([{"a": 1}])
+        fake_client = mock.MagicMock()
+        fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
+        fake_client.get_run.return_value = SimpleNamespace(
+            data=SimpleNamespace(params={
+                "training_data_fingerprint": "old",
+                "training_row_count": "1",
+                "gold_table_version": "5",
+            })
+        )
+
+        with (
+            mock.patch("src.ml.retrain_gate.compute_fingerprint") as fingerprint_mock,
+            mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
+        ):
+            decision = decide_retrain(
+                fake_spark,
+                gold_table="healthcare.gold.claim_features",
+                feature_columns=["a"],
+                registered_model_name="healthcare.ml.claim_denial_model",
+                champion_alias="champion",
+                mlflow_client=fake_client,
+            )
+
+        self.assertEqual(decision.decision_status, "skip")
+        self.assertFalse(decision.should_retrain)
+        self.assertIn("version and row count match", decision.reason)
+        fingerprint_mock.assert_not_called()
 
     def test_current_gold_object_metadata_uses_asdict_for_spark_row(self) -> None:
         from src.ml.retrain_gate import _current_gold_object_metadata
