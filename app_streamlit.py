@@ -1073,7 +1073,7 @@ def _render_policy_guidance(rag_result: dict[str, object] | None) -> None:
             _assert_no_phi(chunk_text, f"policy_chunk_{i}")
 
             doc_path = html.escape(str(chunk.get("document_path", "Unknown")))
-            chunk_idx = chunk.get("chunk_index", "?")
+            chunk_idx = html.escape(str(chunk.get("chunk_index", "?")))
             relevance = float(chunk.get("relevance_score", 0))
 
             html_parts.append(
