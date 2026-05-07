@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 import unittest
 from pathlib import Path
 from types import ModuleType
@@ -460,6 +461,43 @@ class RetrainGateTests(unittest.TestCase):
             "healthcare.gold.claim_features",
             ["a"],
             row_count=1,
+        )
+
+    def test_decide_retrain_returns_error_when_fingerprint_computation_fails(self) -> None:
+        from src.ml.retrain_gate import decide_retrain
+
+        fake_spark = self._FakeSpark([{"a": 1}])
+        fake_client = mock.MagicMock()
+        fake_client.get_model_version_by_alias.return_value = SimpleNamespace(run_id="run-1")
+        fake_client.get_run.return_value = SimpleNamespace(
+            data=SimpleNamespace(params={"training_data_fingerprint": "old", "training_row_count": "1000"})
+        )
+
+        with mock.patch(
+            "src.ml.retrain_gate.compute_fingerprint",
+            side_effect=RuntimeError("fingerprint collect failed"),
+        ):
+            with self.assertLogs("src.ml.retrain_gate", level="WARNING") as captured:
+                decision = decide_retrain(
+                    fake_spark,
+                    gold_table="healthcare.gold.claim_features",
+                    feature_columns=["a"],
+                    registered_model_name="healthcare.ml.claim_denial_model",
+                    champion_alias="champion",
+                    mlflow_client=fake_client,
+                )
+
+        self.assertEqual(decision.decision_status, "error")
+        self.assertIsNone(decision.should_retrain)
+        self.assertEqual(decision.current_row_count, 1)
+        self.assertEqual(decision.current_gold_version, 5)
+        self.assertEqual(decision.champion_run_id, "run-1")
+        self.assertEqual(decision.current_fingerprint, "")
+        self.assertEqual(decision.reason, "retrain fingerprint computation failed")
+        self.assertIn("fingerprint collect failed", decision.error_detail or "")
+        self.assertTrue(
+            any("Retrain gate fingerprint computation failed" in message for message in captured.output),
+            captured.output,
         )
 
     def test_feature_columns_from_run_logs_warning_on_artifact_load_failure(self) -> None:
@@ -1008,24 +1046,58 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn('withColumn("pipeline_stage"', source)
         self.assertNotIn("ThreadPoolExecutor", source)
 
-    def test_spark_python_entrypoints_rely_on_editable_install_not_sys_path(self) -> None:
-        """Scripts under src/scripts/ must NOT manually inject PROJECT_ROOT into
-        sys.path.  Package resolution is handled uniformly by the editable install
-        (``--editable ${workspace.file_path}``) declared in every job/pipeline
-        environment spec, so the old boilerplate is both redundant and inconsistent.
+    def test_all_spark_python_entrypoints_bootstrap_project_root_before_src_import(self) -> None:
+        """Every src/scripts/*.py that imports from src.* MUST bootstrap the
+        project root onto sys.path before the first src.* import.
 
-        Note: load_sample_data.py is exempt from the _SCRIPT_PATH check because it
-        legitimately uses PROJECT_ROOT to locate fixture dataset files on disk, not
-        for sys.path manipulation."""
+        Databricks spark_python_task runs scripts via exec(), which does not
+        set __file__ and may not have the editable install active.  Each
+        entrypoint is therefore self-sufficient with a deterministic bootstrap
+        that falls back to sys._getframe().f_code.co_filename."""
         for path in sorted((PROJECT_ROOT / "src" / "scripts").glob("*.py")):
             source = path.read_text(encoding="utf-8")
             if "from src." not in source and "import src" not in source:
                 continue
 
             with self.subTest(path=path.name):
-                self.assertNotIn("sys.path.insert(0, str(PROJECT_ROOT))", source)
-                if path.name != "load_sample_data.py":
-                    self.assertNotIn("_SCRIPT_PATH.parents[2]", source)
+                self.assertIn(
+                    'globals().get("__file__", sys._getframe().f_code.co_filename)',
+                    source,
+                )
+                self.assertIn("_SCRIPT_PATH.parents[2]", source)
+                self.assertIn(
+                    "if str(_PROJECT_ROOT) not in sys.path:",
+                    source,
+                )
+                self.assertIn(
+                    "sys.path.insert(0, str(_PROJECT_ROOT))",
+                    source,
+                )
+                # Bootstrap must appear before first from src. import
+                bootstrap_pos = source.index(
+                    "sys.path.insert(0, str(_PROJECT_ROOT))"
+                )
+                first_src_import = source.index("from src.")
+                self.assertLess(
+                    bootstrap_pos,
+                    first_src_import,
+                    f"{path.name}: sys.path.insert must come before first "
+                    f"from src. import",
+                )
+
+    def test_setup_entrypoint_bootstraps_project_root_before_src_import(self) -> None:
+        path = PROJECT_ROOT / "src" / "scripts" / "setup_retrain_decisions.py"
+        source = path.read_text(encoding="utf-8")
+
+        self.assertIn('globals().get("__file__", sys._getframe().f_code.co_filename)', source)
+        self.assertIn("_SCRIPT_PATH.parents[2]", source)
+        self.assertIn("if str(_PROJECT_ROOT) not in sys.path:", source)
+        self.assertIn("sys.path.insert(0, str(_PROJECT_ROOT))", source)
+        self.assertIn("from src.framework import HealthCheckResult", source)
+        self.assertLess(
+            source.index("sys.path.insert(0, str(_PROJECT_ROOT))"),
+            source.index("from src.framework import HealthCheckResult"),
+        )
 
     def test_lakeflow_pipelines_install_project_editable_for_common_imports(self) -> None:
         pipeline_yml_files = (
@@ -1064,6 +1136,31 @@ class BundleContractTests(unittest.TestCase):
                     or "job_clusters:" in source
                 )
 
+    def test_hatch_wheel_packages_keep_src_and_common_layout(self) -> None:
+        pyproject_path = PROJECT_ROOT / "pyproject.toml"
+        config = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+        wheel_packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
+
+        self.assertEqual(wheel_packages.count("src"), 1)
+        self.assertEqual(wheel_packages.count("ETL/common"), 1)
+        self.assertEqual(len(wheel_packages), len(set(wheel_packages)))
+
+        for collapsed_package in (
+            "src/analytics",
+            "src/common",
+            "src/framework",
+            "src/ml",
+            "src/rag",
+            "src/scripts",
+            "src/xai",
+        ):
+            with self.subTest(package=collapsed_package):
+                self.assertNotIn(collapsed_package, wheel_packages)
+
+    def test_src_package_marker_exists_for_editable_installs(self) -> None:
+        source = (PROJECT_ROOT / "src" / "__init__.py").read_text(encoding="utf-8").strip()
+        self.assertTrue(source)
+
     def test_rag_vector_index_job_parameters_are_bundle_driven(self) -> None:
         source = (
             PROJECT_ROOT / "services" / "rag" / "vector_index" / "resources" / "vector_index.job.yml"
@@ -1083,10 +1180,8 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn("databricks-vectorsearch", source)
 
     def test_setup_entrypoint_imports_cleanly_without_file_global(self) -> None:
-        """setup_retrain_decisions.py must not rely on __file__ for sys.path
-        manipulation.  The editable install provides the package resolution, so
-        exec'ing the source without __file__ in the namespace must succeed and
-        make HealthCheckResult importable."""
+        """setup_retrain_decisions.py must import cleanly even if __file__ is
+        unavailable in the execution namespace."""
         path = PROJECT_ROOT / "src" / "scripts" / "setup_retrain_decisions.py"
         source = path.read_text(encoding="utf-8")
         namespace: dict[str, object] = {"__name__": "databricks_exec_test"}

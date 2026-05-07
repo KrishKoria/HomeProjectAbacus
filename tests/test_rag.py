@@ -8,6 +8,8 @@ from types import ModuleType
 from types import SimpleNamespace
 from unittest import mock
 
+from src.rag.embeddings import EmbeddingProvider
+from src.rag.policy_labels import policy_display_name, policy_excerpt_label, policy_reference_label
 from src.rag.retriever import _scrub_phi, retrieve_and_explain
 from src.rag.synthesizer import _synthesize_via_template, synthesize
 from src.rag.vector_search import PolicyRetriever
@@ -58,7 +60,22 @@ class PolicyRetrieverTests(unittest.TestCase):
         self.assertEqual(entry["chunk_text"], "Policy rule A")
         self.assertEqual(entry["document_path"], "")
         self.assertEqual(entry["chunk_index"], 0)
-        self.assertEqual(entry["relevance_score"], 0.0)
+        self.assertEqual(entry["relevance_score"], 0.95)
+        self.assertEqual(entry["policy_name"], "Unknown Policy")
+
+    def test_normalize_results_uses_none_for_missing_or_invalid_score(self) -> None:
+        raw = [
+            {"chunk_text": "Policy rule A"},
+            {"chunk_text": "Policy rule B", "score": "bad"},
+        ]
+        normalized = PolicyRetriever._normalize_results(raw)
+        self.assertIsNone(normalized[0]["relevance_score"])
+        self.assertIsNone(normalized[1]["relevance_score"])
+
+    def test_normalize_results_prefers_relevance_score_field(self) -> None:
+        raw = [{"chunk_text": "Policy rule A", "relevance_score": 0.77, "score": 0.95}]
+        normalized = PolicyRetriever._normalize_results(raw)
+        self.assertEqual(normalized[0]["relevance_score"], 0.77)
 
     def test_search_handles_no_databricks_sdk_gracefully(self) -> None:
         retriever = PolicyRetriever()
@@ -137,6 +154,101 @@ class PolicyRetrieverTests(unittest.TestCase):
         self.assertEqual(rows[0]["chunk_id"], "chunk-1")
         self.assertEqual(rows[0]["chunk_text"], "Policy text")
         self.assertEqual(rows[0]["relevance_score"], 0.91)
+        self.assertEqual(rows[0]["policy_name"], "Policy")
+
+    def test_workspace_query_index_uses_trailing_score_when_manifest_omits_score(self) -> None:
+        from src.rag.vector_search import _workspace_query_index
+
+        fake_indexes = mock.MagicMock()
+        fake_indexes.query_index.return_value = SimpleNamespace(
+            as_dict=lambda: {
+                "manifest": {
+                    "columns": [
+                        {"name": "chunk_id"},
+                        {"name": "chunk_text"},
+                        {"name": "document_path"},
+                        {"name": "chunk_index"},
+                    ]
+                },
+                "result": {
+                    "data_array": [
+                        ["chunk-1", "Policy text", "dbfs:/Volumes/x/policies/my_policy.pdf", 0, 0.73],
+                    ]
+                },
+            }
+        )
+        fake_client = mock.MagicMock()
+        fake_client.vector_search_indexes = fake_indexes
+        fake_sdk = ModuleType("databricks.sdk")
+        fake_sdk.WorkspaceClient = mock.Mock(return_value=fake_client)
+
+        with mock.patch.dict(sys.modules, {"databricks.sdk": fake_sdk}):
+            rows = _workspace_query_index("healthcare.gold.policy_chunks_index", "missing fields", 5)
+
+        self.assertEqual(rows[0]["relevance_score"], 0.73)
+        self.assertEqual(rows[0]["policy_name"], "My Policy")
+
+
+class EmbeddingProviderTests(unittest.TestCase):
+    def test_call_endpoint_sends_batch_and_maps_using_index(self) -> None:
+        query_mock = mock.Mock(
+            return_value=SimpleNamespace(
+                data=[
+                    SimpleNamespace(index=1, embedding=[2.0, 2.5]),
+                    SimpleNamespace(index=0, embedding=[1.0, 1.5]),
+                ]
+            )
+        )
+        fake_client = SimpleNamespace(serving_endpoints=SimpleNamespace(query=query_mock))
+        fake_sdk = ModuleType("databricks.sdk")
+        fake_sdk.WorkspaceClient = mock.Mock(return_value=fake_client)
+
+        with mock.patch.dict(sys.modules, {"databricks.sdk": fake_sdk}):
+            provider = EmbeddingProvider(embedding_dim=2)
+            vectors = provider._call_endpoint(["first", "second"])
+
+        fake_sdk.WorkspaceClient.assert_called_once_with()
+        query_mock.assert_called_once_with(
+            name="databricks-gte-large-en",
+            input=["first", "second"],
+        )
+        self.assertEqual(vectors, [[1.0, 1.5], [2.0, 2.5]])
+
+    def test_call_endpoint_uses_zero_vectors_for_empty_or_missing_embeddings(self) -> None:
+        query_mock = mock.Mock(
+            return_value=SimpleNamespace(
+                data=[
+                    SimpleNamespace(index=0, embedding=[]),
+                    SimpleNamespace(embedding=[9.0, 9.5]),
+                ]
+            )
+        )
+        fake_client = SimpleNamespace(serving_endpoints=SimpleNamespace(query=query_mock))
+        fake_sdk = ModuleType("databricks.sdk")
+        fake_sdk.WorkspaceClient = mock.Mock(return_value=fake_client)
+
+        with mock.patch.dict(sys.modules, {"databricks.sdk": fake_sdk}):
+            provider = EmbeddingProvider(embedding_dim=2)
+            vectors = provider._call_endpoint(["a", "b", "c"])
+
+        self.assertEqual(vectors[0], [0.0, 0.0])
+        self.assertEqual(vectors[1], [9.0, 9.5])
+        self.assertEqual(vectors[2], [0.0, 0.0])
+
+
+class PolicyLabelTests(unittest.TestCase):
+    def test_policy_display_name_from_dbfs_path(self) -> None:
+        label = policy_display_name("dbfs:/Volumes/healthcare/bronze/raw_landing/policies/missing_data_field_triage_policy.pdf")
+        self.assertEqual(label, "Missing Data Field Triage Policy")
+
+    def test_policy_display_name_handles_unknown(self) -> None:
+        self.assertEqual(policy_display_name(""), "Unknown Policy")
+        self.assertEqual(policy_display_name(None), "Unknown Policy")
+
+    def test_policy_reference_label_uses_excerpt_index(self) -> None:
+        self.assertEqual(policy_excerpt_label(0), "Excerpt 1")
+        self.assertEqual(policy_excerpt_label("2"), "Excerpt 3")
+        self.assertEqual(policy_reference_label("/tmp/claim_submission_completeness_policy.pdf", 1), "Claim Submission Completeness Policy, Excerpt 2")
 
 
 class SynthesizerTests(unittest.TestCase):

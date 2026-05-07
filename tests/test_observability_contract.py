@@ -472,8 +472,11 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("src.common", readme)
         self.assertIn("PYTHONPATH", readme)
 
-    def test_requirements_matches_runtime_project_dependencies(self) -> None:
-        requirements = set(_read_text("requirements.txt").splitlines())
+    def test_pyproject_declares_runtime_project_dependencies(self) -> None:
+        import tomllib
+
+        pyproject = tomllib.loads(_read_text("pyproject.toml"))
+        dependencies = set(pyproject["project"]["dependencies"])
 
         for dependency in (
             "altair>=6.0.0,<7.0.0",
@@ -483,7 +486,7 @@ class RepositoryContractTests(unittest.TestCase):
             "streamlit>=1.50.0,<2.0.0",
         ):
             with self.subTest(dependency=dependency):
-                self.assertIn(dependency, requirements)
+                self.assertIn(dependency, dependencies)
 
 
 class NotebookContractTests(unittest.TestCase):
