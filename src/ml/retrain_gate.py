@@ -452,12 +452,27 @@ def decide_retrain(
             previous_training_row_count=previous_training_row_count,
         )
 
-    current_fingerprint = compute_fingerprint(
-        spark,
-        gold_table,
-        feature_columns,
-        row_count=current_row_count,
-    )
+    try:
+        current_fingerprint = compute_fingerprint(
+            spark,
+            gold_table,
+            feature_columns,
+            row_count=current_row_count,
+        )
+    except Exception as exc:
+        logger.warning(
+            "[%s] Retrain gate fingerprint computation failed",
+            get_ml_diagnostic_id("gold_metadata_computation_failed"),
+            exc_info=True,
+        )
+        return RetrainDecision.error(
+            reason="retrain fingerprint computation failed",
+            error_detail=str(exc),
+            current_row_count=current_row_count,
+            current_gold_version=current_gold_version,
+            current_fingerprint="",
+            champion_run_id=champion_run_id,
+        )
 
     champion_fingerprint = champion_params.get("training_data_fingerprint", "")
 
