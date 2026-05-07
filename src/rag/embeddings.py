@@ -90,18 +90,38 @@ class EmbeddingProvider:
             )
 
         w = WorkspaceClient()
-        embeddings: list[list[float]] = []
-        for text in texts:
-            response = w.serving_endpoints.query(
-                name=self.endpoint_name,
-                input=text,
-            )
-            data = response.data or []
-            if data:
-                emb = data[0].embedding
-                embeddings.append(list(emb) if emb else [0.0] * self.embedding_dim)
+        response = w.serving_endpoints.query(
+            name=self.endpoint_name,
+            input=texts,
+        )
+        zero_vector = [0.0] * self.embedding_dim
+        embeddings: list[list[float]] = [list(zero_vector) for _ in texts]
+        assigned = [False for _ in texts]
+        fallback_index = 0
+
+        for item in (response.data or []):
+            if isinstance(item, dict):
+                embedding = item.get("embedding")
+                index = item.get("index")
             else:
-                embeddings.append([0.0] * self.embedding_dim)
+                embedding = getattr(item, "embedding", None)
+                index = getattr(item, "index", None)
+
+            target_index: int | None = None
+            if isinstance(index, int) and 0 <= index < len(texts):
+                if assigned[index]:
+                    continue
+                target_index = index
+            else:
+                while fallback_index < len(texts) and assigned[fallback_index]:
+                    fallback_index += 1
+                if fallback_index >= len(texts):
+                    break
+                target_index = fallback_index
+                fallback_index += 1
+
+            embeddings[target_index] = list(embedding) if embedding else list(zero_vector)
+            assigned[target_index] = True
         return embeddings
 
 
