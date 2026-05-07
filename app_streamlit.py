@@ -714,7 +714,10 @@ def _risk_accent_color(risk: str) -> str:
     }.get(risk, "oklch(0.62 0.01 60)")
 
 
-def _format_policy_relevance_label(value: object) -> str | None:
+def _format_policy_relevance_label(
+    value: object,
+    score_kind: object | None = None,
+) -> str | None:
     """Return a compact relevance label or None when score is unavailable."""
     if value is None:
         return None
@@ -724,6 +727,12 @@ def _format_policy_relevance_label(value: object) -> str | None:
         return None
     if score != score:
         return None
+    normalized_kind = str(score_kind).strip().lower() if score_kind is not None else ""
+    # Databricks Vector Search returns a ranking score, not a calibrated match percent.
+    if normalized_kind == "raw":
+        if abs(score) < 0.1:
+            return f"Score {score:.4f}"
+        return f"Score {score:.2f}"
     if 0.0 <= score <= 1.0:
         return f"Match {score * 100:.0f}%"
     return f"Score {score:.2f}"
@@ -1183,7 +1192,10 @@ def _render_policy_guidance(rag_result: dict[str, object] | None) -> None:
 
             policy_name = policy_display_name(chunk.get("document_path"))
             excerpt_label = policy_excerpt_label(chunk.get("chunk_index"))
-            relevance_label = _format_policy_relevance_label(chunk.get("relevance_score"))
+            relevance_label = _format_policy_relevance_label(
+                chunk.get("relevance_score"),
+                chunk.get("relevance_score_kind"),
+            )
             preview_text, is_truncated = _policy_excerpt_preview(full_text_raw)
 
             policy_name_html = html.escape(policy_name)
