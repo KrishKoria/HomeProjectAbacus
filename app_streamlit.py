@@ -7,11 +7,13 @@ from __future__ import annotations
 import html
 import logging
 import os
+import re
 import time
 from typing import Any, Final
 
 import pandas as pd
 import streamlit as st
+from src.rag.policy_labels import policy_display_name, policy_excerpt_label
 
 logger = logging.getLogger(__name__)
 
@@ -443,18 +445,42 @@ hr, .stDivider {
 
 .policy-narrative {
   background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 1rem;
-  line-height: 1.6;
   margin-bottom: 1rem;
+  max-width: 92ch;
+}
+
+.policy-narrative-summary {
+  color: var(--text-primary);
   font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.policy-narrative-list {
+  margin: 0.55rem 0 0;
+  padding-left: 1rem;
+}
+
+.policy-narrative-list li {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  margin-bottom: 0.25rem;
+}
+
+.policy-narrative-list li:last-child {
+  margin-bottom: 0;
 }
 
 .policy-card {
   background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  padding: 0.75rem 1rem;
-  margin-bottom: 0.5rem;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.65rem;
 }
 
 .policy-card:last-child {
@@ -463,33 +489,64 @@ hr, .stDivider {
 
 .policy-card-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 0.4rem;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
 }
 
-.policy-card-source {
-  font-weight: 600;
-  font-size: 0.8rem;
+.policy-card-title-wrap {
+  min-width: 0;
+}
+
+.policy-card-title {
+  font-weight: 700;
+  font-size: 0.84rem;
   color: var(--text-primary);
-  font-family: var(--font-mono);
+  line-height: 1.35;
+}
+
+.policy-card-meta {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  margin-top: 0.1rem;
 }
 
 .policy-card-relevance {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 600;
   color: #fff;
   background: var(--accent-blue);
-  padding: 0.1rem 0.4rem;
+  padding: 0.16rem 0.5rem;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
-.policy-card-text {
+.policy-card-excerpt {
   font-size: 0.82rem;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   line-height: 1.45;
   font-family: var(--font-sans);
+  margin-top: 0.5rem;
+}
+
+.policy-card-details {
+  margin-top: 0.45rem;
+}
+
+.policy-card-details summary {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.policy-card-details-text {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin-top: 0.35rem;
 }
 
 /* ===== Latency Waterfall Section ===== */
@@ -596,6 +653,7 @@ _DEFAULT_MODEL_ALIAS: Final[str] = "champion"
 _SAMPLE_CLAIM_LIMIT: Final[int] = 25
 _MAX_DETAILS_LEN: Final[int] = 200
 _STATUS_CACHE_TTL_SECONDS: Final[int] = 30
+_POLICY_EXCERPT_PREVIEW_CHARS: Final[int] = 340
 
 
 
@@ -654,6 +712,59 @@ def _risk_accent_color(risk: str) -> str:
         "MEDIUM": "oklch(0.62 0.16 65)",
         "HIGH": "oklch(0.55 0.20 25)",
     }.get(risk, "oklch(0.62 0.01 60)")
+
+
+def _format_policy_relevance_label(value: object) -> str | None:
+    """Return a compact relevance label or None when score is unavailable."""
+    if value is None:
+        return None
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    if score != score:
+        return None
+    if 0.0 <= score <= 1.0:
+        return f"Match {score * 100:.0f}%"
+    return f"Score {score:.2f}"
+
+
+def _policy_excerpt_preview(text: str, max_chars: int = _POLICY_EXCERPT_PREVIEW_CHARS) -> tuple[str, bool]:
+    """Return a compact single-line preview and truncation flag."""
+    compact = " ".join(text.split())
+    if len(compact) <= max_chars:
+        return compact, False
+    return compact[: max_chars - 3].rstrip() + "...", True
+
+
+def _policy_narrative_html(text: str) -> str:
+    """Render narrative into a concise summary + sentence list."""
+    compact = " ".join(text.split())
+    if not compact:
+        return ""
+    sentences = [segment.strip() for segment in re.split(r"(?<=[.!?])\s+", compact) if segment.strip()]
+    if not sentences:
+        sentences = [compact]
+
+    summary_html = html.escape(sentences[0])
+    if len(sentences) == 1:
+        return (
+            '<div class="policy-narrative">'
+            f'<div class="policy-narrative-summary">{summary_html}</div>'
+            "</div>"
+        )
+
+    detail_items = "".join(
+        f"<li>{html.escape(sentence)}</li>"
+        for sentence in sentences[1:]
+    )
+    return (
+        '<div class="policy-narrative">'
+        f'<div class="policy-narrative-summary">{summary_html}</div>'
+        f'<ul class="policy-narrative-list">{detail_items}</ul>'
+        "</div>"
+    )
+
 
 def _assert_no_phi(text: str, context: str = "") -> None:
     """Raise AssertionError if *text* contains known PHI markers."""
@@ -1054,35 +1165,56 @@ def _render_policy_guidance(rag_result: dict[str, object] | None) -> None:
 
     html_parts: list[str] = [
         '<div class="policy-section">',
-        f'<div class="feature-section-header">Policy Guidance{source_badge}</div>',
+        f'<div class="feature-section-header">Policy Guidance {source_badge}</div>' if source_badge else '<div class="feature-section-header">Policy Guidance</div>',
     ]
 
     if narrative:
-        narrative_text = html.escape(str(narrative))
+        narrative_text = str(narrative)
         _assert_no_phi(narrative_text, "rag_narrative")
-        html_parts.append(
-            f'<div class="policy-narrative">{narrative_text}</div>'
-        )
+        html_parts.append(_policy_narrative_html(narrative_text))
 
     chunks = list(policy_chunks) if isinstance(policy_chunks, (list, tuple)) else []
     if chunks:
         for i, chunk in enumerate(chunks):
             if not isinstance(chunk, dict):
                 continue
-            chunk_text = html.escape(str(chunk.get("chunk_text", "")))
-            _assert_no_phi(chunk_text, f"policy_chunk_{i}")
+            full_text_raw = str(chunk.get("chunk_text", ""))
+            _assert_no_phi(full_text_raw, f"policy_chunk_{i}")
 
-            doc_path = html.escape(str(chunk.get("document_path", "Unknown")))
-            chunk_idx = html.escape(str(chunk.get("chunk_index", "?")))
-            relevance = float(chunk.get("relevance_score", 0))
+            policy_name = policy_display_name(chunk.get("document_path"))
+            excerpt_label = policy_excerpt_label(chunk.get("chunk_index"))
+            relevance_label = _format_policy_relevance_label(chunk.get("relevance_score"))
+            preview_text, is_truncated = _policy_excerpt_preview(full_text_raw)
+
+            policy_name_html = html.escape(policy_name)
+            excerpt_html = html.escape(excerpt_label)
+            preview_html = html.escape(preview_text)
+            full_text_html = html.escape(full_text_raw)
+            relevance_html = (
+                f'<span class="policy-card-relevance">{html.escape(relevance_label)}</span>'
+                if relevance_label
+                else ""
+            )
+            details_html = (
+                f"""<details class="policy-card-details">
+  <summary>Show full excerpt</summary>
+  <div class="policy-card-details-text">{full_text_html}</div>
+</details>"""
+                if is_truncated
+                else ""
+            )
 
             html_parts.append(
                 f"""<div class="policy-card">
   <div class="policy-card-header">
-    <span class="policy-card-source">{doc_path} §{chunk_idx}</span>
-    <span class="policy-card-relevance">{relevance:.2f}</span>
+    <div class="policy-card-title-wrap">
+      <div class="policy-card-title">{policy_name_html}</div>
+      <div class="policy-card-meta">{excerpt_html}</div>
+    </div>
+    {relevance_html}
   </div>
-  <div class="policy-card-text">{chunk_text}</div>
+  <div class="policy-card-excerpt">{preview_html}</div>
+  {details_html}
 </div>"""
             )
     elif narrative is None:

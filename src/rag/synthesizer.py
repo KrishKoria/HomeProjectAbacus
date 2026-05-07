@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from src.rag.policy_labels import policy_reference_label
+
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
@@ -62,7 +64,7 @@ def _synthesize_via_llm(
         for r in shap_reasons[:5]
     )
     chunks_text = "\n\n".join(
-        f"[{c.get('document_path', 'unknown')} §{c.get('chunk_index', 0)}] "
+        f"[{policy_reference_label(c.get('document_path'), c.get('chunk_index'))}] "
         f"{c.get('chunk_text', '')}"
         for c in policy_chunks
     )
@@ -91,7 +93,7 @@ def _synthesize_via_llm(
         narrative = message.content if message else ""
 
     citations = [
-        f"{c.get('document_path', '')} §{c.get('chunk_index', 0)}"
+        policy_reference_label(c.get("document_path"), c.get("chunk_index"))
         for c in policy_chunks
     ]
 
@@ -141,7 +143,7 @@ def _synthesize_via_template(
         )
 
     citations = [
-        f"{c.get('document_path', '')} §{c.get('chunk_index', 0)}"
+        policy_reference_label(c.get("document_path"), c.get("chunk_index"))
         for c in policy_chunks
     ]
 

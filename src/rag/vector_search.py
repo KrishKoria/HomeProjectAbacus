@@ -4,6 +4,8 @@ import logging
 import os
 from typing import Any
 
+from src.rag.policy_labels import policy_display_name
+
 logger = logging.getLogger(__name__)
 
 _RESULT_COLUMNS = ["chunk_id", "chunk_text", "document_path", "chunk_index"]
@@ -77,6 +79,28 @@ def _manifest_column_names(manifest: Any) -> list[str]:
     return names
 
 
+def _coerce_optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric != numeric:
+        return None
+    return numeric
+
+
+def _extract_relevance_score(entry: dict[str, Any], fallback: Any = None) -> float | None:
+    """Read relevance from either internal or SDK score fields."""
+    score_value = entry.get("relevance_score")
+    if score_value is None:
+        score_value = entry.get("score")
+    if score_value is None:
+        score_value = fallback
+    return _coerce_optional_float(score_value)
+
+
 _EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 _EMBEDDING_DIM = 1024
 
@@ -140,15 +164,18 @@ def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list
             column_names[index]: row[index]
             for index in range(min(len(row), len(column_names)))
         }
-        if "score" not in mapped and len(row) > len(_RESULT_COLUMNS):
-            mapped["score"] = row[-1]
+        fallback_score: Any = row[-1] if len(row) > len(_RESULT_COLUMNS) else None
+        relevance_score = _extract_relevance_score(mapped, fallback=fallback_score)
+        document_path = mapped.get("document_path", "")
+        chunk_index = mapped.get("chunk_index", 0)
         rows.append(
             {
                 "chunk_id": mapped.get("chunk_id"),
                 "chunk_text": mapped.get("chunk_text", ""),
-                "document_path": mapped.get("document_path", ""),
-                "chunk_index": mapped.get("chunk_index", 0),
-                "relevance_score": float(mapped.get("score", 0.0) or 0.0),
+                "document_path": document_path,
+                "chunk_index": chunk_index,
+                "relevance_score": relevance_score,
+                "policy_name": policy_display_name(str(document_path) if document_path is not None else None),
             }
         )
     return rows
@@ -252,7 +279,8 @@ class PolicyRetriever:
                 "chunk_text": row[1],
                 "document_path": row[2],
                 "chunk_index": row[3],
-                "relevance_score": float(row[4]) if len(row) > 4 else 0.0,
+                "relevance_score": _coerce_optional_float(row[4]) if len(row) > 4 else None,
+                "policy_name": policy_display_name(str(row[2]) if len(row) > 2 else None),
             }
             for row in data
         ]
@@ -269,7 +297,8 @@ class PolicyRetriever:
                     "chunk_text": str(item.get("chunk_text", "")),
                     "document_path": str(item.get("document_path", "")),
                     "chunk_index": int(item.get("chunk_index", 0)),
-                    "relevance_score": float(item.get("relevance_score", 0.0)),
+                    "relevance_score": _extract_relevance_score(item),
+                    "policy_name": policy_display_name(item.get("document_path")),
                 }
             )
         return normalized
