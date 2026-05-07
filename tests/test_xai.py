@@ -55,6 +55,9 @@ class ShapExplanationTests(unittest.TestCase):
         )
         cls.model.fit(cls.X_train, cls.y_train)
 
+    def tearDown(self) -> None:
+        xai_explainer._EXPLAINER_CACHE.clear()
+
     def test_explain_returns_correct_structure(self) -> None:
         result = explain(self.model, self.X_train[:1], self.feature_names)
         self.assertIsInstance(result, list)
@@ -87,8 +90,7 @@ class ShapExplanationTests(unittest.TestCase):
             elif entry["shap_value"] < 0:
                 self.assertEqual(entry["direction"], "decreases_risk")
             else:
-                # Zero SHAP value: direction is arbitrary but must be one of the two
-                self.assertIn(entry["direction"], {"increases_risk", "decreases_risk"})
+                self.assertEqual(entry["direction"], "neutral")
 
     def test_explain_fewer_features_than_top_n_returns_all(self) -> None:
         """When top_n exceeds the feature count, all features are returned."""
@@ -103,11 +105,109 @@ class ShapExplanationTests(unittest.TestCase):
         result = explain(self.model, self.X_train[:1], self.feature_names)
         self.assertEqual(len(result), 5)
 
+    def test_explain_rejects_multi_row_input(self) -> None:
+        with self.assertRaisesRegex(ValueError, "supports one claim only"):
+            explain(self.model, self.X_train[:2], self.feature_names)
+
+    def test_explain_accepts_1d_single_sample_input(self) -> None:
+        result = explain(self.model, self.X_train[0], self.feature_names)
+        self.assertEqual(len(result), 5)
+
+    def test_explain_feature_length_mismatch_raises(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Feature names length does not match"):
+            explain(self.model, self.X_train[:1], self.feature_names[:-1])
+
     def test_explain_phi_absence_in_output(self) -> None:
         result = explain(self.model, self.X_train[:1], self.feature_names)
         output_text = " ".join(r["reason"] for r in result)
         for phi_marker in ("patient_id", "XXX-XX", "billed_amount", "@"):
             self.assertNotIn(phi_marker, output_text.lower())
+
+    def test_explain_zero_shap_values_map_to_neutral(self) -> None:
+        class FakeTreeExplainer:
+            def __init__(self, _model) -> None:
+                pass
+
+            def shap_values(self, X):
+                return np.zeros((1, X.shape[1]), dtype=float)
+
+        fake_shap = ModuleType("shap")
+        fake_shap.TreeExplainer = FakeTreeExplainer
+
+        xai_explainer._EXPLAINER_CACHE.clear()
+        with mock.patch.dict(sys.modules, {"shap": fake_shap}):
+            result = explain(self.model, self.X_train[:1], self.feature_names, top_n=3)
+        self.assertEqual([entry["direction"] for entry in result], ["neutral", "neutral", "neutral"])
+
+    def test_explain_legacy_list_output_uses_positive_class(self) -> None:
+        class FakeTreeExplainer:
+            def __init__(self, _model) -> None:
+                pass
+
+            def shap_values(self, X):
+                neg = np.full((1, X.shape[1]), -9.0, dtype=float)
+                pos = np.full((1, X.shape[1]), 3.0, dtype=float)
+                return [neg, pos]
+
+        fake_shap = ModuleType("shap")
+        fake_shap.TreeExplainer = FakeTreeExplainer
+
+        xai_explainer._EXPLAINER_CACHE.clear()
+        with mock.patch.dict(sys.modules, {"shap": fake_shap}):
+            result = explain(self.model, self.X_train[:1], self.feature_names, top_n=3)
+        self.assertEqual([entry["shap_value"] for entry in result], [3.0, 3.0, 3.0])
+        self.assertEqual([entry["direction"] for entry in result], ["increases_risk"] * 3)
+
+    def test_explain_rejects_legacy_list_non_binary_outputs(self) -> None:
+        class FakeTreeExplainer:
+            def __init__(self, _model) -> None:
+                pass
+
+            def shap_values(self, X):
+                one = np.zeros((1, X.shape[1]), dtype=float)
+                return [one, one, one]
+
+        fake_shap = ModuleType("shap")
+        fake_shap.TreeExplainer = FakeTreeExplainer
+
+        xai_explainer._EXPLAINER_CACHE.clear()
+        with mock.patch.dict(sys.modules, {"shap": fake_shap}):
+            with self.assertRaisesRegex(ValueError, "only supported for binary outputs"):
+                explain(self.model, self.X_train[:1], self.feature_names, top_n=3)
+
+    def test_explain_3d_binary_output_uses_positive_class_axis(self) -> None:
+        class FakeTreeExplainer:
+            def __init__(self, _model) -> None:
+                pass
+
+            def shap_values(self, X):
+                out = np.zeros((1, X.shape[1], 2), dtype=float)
+                out[0, :, 1] = 2.5
+                return out
+
+        fake_shap = ModuleType("shap")
+        fake_shap.TreeExplainer = FakeTreeExplainer
+
+        xai_explainer._EXPLAINER_CACHE.clear()
+        with mock.patch.dict(sys.modules, {"shap": fake_shap}):
+            result = explain(self.model, self.X_train[:1], self.feature_names, top_n=3)
+        self.assertEqual([entry["shap_value"] for entry in result], [2.5, 2.5, 2.5])
+
+    def test_explain_rejects_unsupported_3d_output_count(self) -> None:
+        class FakeTreeExplainer:
+            def __init__(self, _model) -> None:
+                pass
+
+            def shap_values(self, X):
+                return np.zeros((1, X.shape[1], 3), dtype=float)
+
+        fake_shap = ModuleType("shap")
+        fake_shap.TreeExplainer = FakeTreeExplainer
+
+        xai_explainer._EXPLAINER_CACHE.clear()
+        with mock.patch.dict(sys.modules, {"shap": fake_shap}):
+            with self.assertRaisesRegex(ValueError, "only supported for binary outputs"):
+                explain(self.model, self.X_train[:1], self.feature_names, top_n=3)
 
     def test_explainer_cache_reuses_tree_explainer_for_same_model(self) -> None:
         class FakeTreeExplainer:

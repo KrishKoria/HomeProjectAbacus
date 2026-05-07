@@ -61,6 +61,7 @@ class PolicyRetrieverTests(unittest.TestCase):
         self.assertEqual(entry["document_path"], "")
         self.assertEqual(entry["chunk_index"], 0)
         self.assertEqual(entry["relevance_score"], 0.95)
+        self.assertEqual(entry["relevance_score_kind"], "raw")
         self.assertEqual(entry["policy_name"], "Unknown Policy")
 
     def test_normalize_results_uses_none_for_missing_or_invalid_score(self) -> None:
@@ -76,6 +77,7 @@ class PolicyRetrieverTests(unittest.TestCase):
         raw = [{"chunk_text": "Policy rule A", "relevance_score": 0.77, "score": 0.95}]
         normalized = PolicyRetriever._normalize_results(raw)
         self.assertEqual(normalized[0]["relevance_score"], 0.77)
+        self.assertEqual(normalized[0]["relevance_score_kind"], "normalized")
 
     def test_search_handles_no_databricks_sdk_gracefully(self) -> None:
         retriever = PolicyRetriever()
@@ -154,6 +156,7 @@ class PolicyRetrieverTests(unittest.TestCase):
         self.assertEqual(rows[0]["chunk_id"], "chunk-1")
         self.assertEqual(rows[0]["chunk_text"], "Policy text")
         self.assertEqual(rows[0]["relevance_score"], 0.91)
+        self.assertEqual(rows[0]["relevance_score_kind"], "raw")
         self.assertEqual(rows[0]["policy_name"], "Policy")
 
     def test_workspace_query_index_uses_trailing_score_when_manifest_omits_score(self) -> None:
@@ -186,7 +189,100 @@ class PolicyRetrieverTests(unittest.TestCase):
             rows = _workspace_query_index("healthcare.gold.policy_chunks_index", "missing fields", 5)
 
         self.assertEqual(rows[0]["relevance_score"], 0.73)
+        self.assertEqual(rows[0]["relevance_score_kind"], "raw")
         self.assertEqual(rows[0]["policy_name"], "My Policy")
+
+    def test_workspace_query_index_caches_query_vector_requirement(self) -> None:
+        from src.rag import vector_search as vector_search_module
+
+        class InvalidParameterValue(Exception):
+            pass
+
+        response = SimpleNamespace(
+            as_dict=lambda: {
+                "manifest": {
+                    "columns": [
+                        {"name": "chunk_id"},
+                        {"name": "chunk_text"},
+                        {"name": "document_path"},
+                        {"name": "chunk_index"},
+                        {"name": "score"},
+                    ]
+                },
+                "result": {"data_array": [["chunk-1", "Policy text", "/policy.pdf", 0, 0.88]]},
+            }
+        )
+        fake_indexes = mock.MagicMock()
+        fake_indexes.query_index.side_effect = [
+            InvalidParameterValue("Please provide query vector"),
+            response,
+            response,
+        ]
+        fake_client = mock.MagicMock()
+        fake_client.vector_search_indexes = fake_indexes
+        fake_sdk = ModuleType("databricks.sdk")
+        fake_sdk.WorkspaceClient = mock.Mock(return_value=fake_client)
+        fake_platform_errors = ModuleType("databricks.sdk.errors.platform")
+        fake_platform_errors.InvalidParameterValue = InvalidParameterValue
+
+        with (
+            mock.patch.dict(
+                sys.modules,
+                {
+                    "databricks.sdk": fake_sdk,
+                    "databricks.sdk.errors.platform": fake_platform_errors,
+                },
+            ),
+            mock.patch.object(vector_search_module, "_QUERY_TEXT_SUPPORT_CACHE", {}),
+            mock.patch.object(vector_search_module, "_generate_query_embedding", return_value=[0.1, 0.2]),
+        ):
+            rows_one = vector_search_module._workspace_query_index("idx_a", "medical necessity", 5)
+            rows_two = vector_search_module._workspace_query_index("idx_a", "eligibility rules", 5)
+
+        self.assertEqual(rows_one[0]["relevance_score"], 0.88)
+        self.assertEqual(rows_two[0]["relevance_score"], 0.88)
+        self.assertEqual(fake_indexes.query_index.call_count, 3)
+        first_call = fake_indexes.query_index.call_args_list[0].kwargs
+        second_call = fake_indexes.query_index.call_args_list[1].kwargs
+        third_call = fake_indexes.query_index.call_args_list[2].kwargs
+        self.assertIn("query_text", first_call)
+        self.assertIn("query_vector", second_call)
+        self.assertIn("query_vector", third_call)
+
+    def test_vector_sdk_fallback_caches_query_vector_requirement(self) -> None:
+        from src.rag import vector_search as vector_search_module
+
+        fake_module = ModuleType("databricks.vector_search.client")
+        fake_module.VectorSearchClient = mock.Mock()
+        fake_endpoint = mock.MagicMock()
+        fake_endpoint.similarity_search.side_effect = [
+            Exception("Index requires query vector"),
+            {"result": {"data_array": [["chunk-1", "Policy text", "/policy.pdf", 0, 0.79]]}},
+            {"result": {"data_array": [["chunk-2", "Policy text 2", "/policy2.pdf", 1, 0.78]]}},
+        ]
+        fake_client = mock.MagicMock()
+        fake_client.get_index.return_value = fake_endpoint
+
+        retriever = PolicyRetriever(index_name="idx_fallback")
+        with (
+            mock.patch.dict(sys.modules, {"databricks.vector_search.client": fake_module}),
+            mock.patch.object(vector_search_module, "_workspace_query_index", side_effect=ImportError("no sdk")),
+            mock.patch.object(vector_search_module, "_vector_search_client", return_value=fake_client),
+            mock.patch.object(vector_search_module, "_generate_query_embedding", return_value=[0.3, 0.4]),
+            mock.patch.object(vector_search_module, "_QUERY_TEXT_SUPPORT_CACHE", {}),
+        ):
+            rows_one = retriever._query_index("medical necessity", 3)
+            rows_two = retriever._query_index("eligibility rules", 3)
+
+        self.assertEqual(rows_one[0]["chunk_id"], "chunk-1")
+        self.assertEqual(rows_two[0]["chunk_id"], "chunk-2")
+        self.assertEqual(fake_endpoint.similarity_search.call_count, 3)
+        first_call = fake_endpoint.similarity_search.call_args_list[0].kwargs
+        second_call = fake_endpoint.similarity_search.call_args_list[1].kwargs
+        third_call = fake_endpoint.similarity_search.call_args_list[2].kwargs
+        self.assertIn("query_text", first_call)
+        self.assertIn("query_vector", second_call)
+        self.assertIn("query_vector", third_call)
 
 
 class EmbeddingProviderTests(unittest.TestCase):
@@ -234,6 +330,40 @@ class EmbeddingProviderTests(unittest.TestCase):
         self.assertEqual(vectors[0], [0.0, 0.0])
         self.assertEqual(vectors[1], [9.0, 9.5])
         self.assertEqual(vectors[2], [0.0, 0.0])
+
+    def test_embed_batch_skips_backoff_when_sdk_is_unavailable(self) -> None:
+        from src.rag import embeddings as embeddings_module
+
+        provider = EmbeddingProvider(embedding_dim=2, max_retries=3, base_delay=1.0)
+        with (
+            mock.patch.object(
+                provider,
+                "_call_endpoint",
+                side_effect=embeddings_module._SdkUnavailableError("sdk missing"),
+            ),
+            mock.patch.object(embeddings_module.time, "sleep") as sleep_mock,
+        ):
+            vectors = provider.embed_batch(["hello"])
+
+        sleep_mock.assert_not_called()
+        self.assertEqual(vectors, [[0.0, 0.0]])
+
+    def test_embed_batch_retries_transient_rate_limit_errors(self) -> None:
+        from src.rag import embeddings as embeddings_module
+
+        provider = EmbeddingProvider(embedding_dim=2, max_retries=2, base_delay=0.5)
+        with (
+            mock.patch.object(
+                provider,
+                "_call_endpoint",
+                side_effect=[embeddings_module._RateLimitError("429"), [[1.0, 2.0]]],
+            ),
+            mock.patch.object(embeddings_module.time, "sleep") as sleep_mock,
+        ):
+            vectors = provider.embed_batch(["hello"])
+
+        sleep_mock.assert_called_once_with(0.5)
+        self.assertEqual(vectors, [[1.0, 2.0]])
 
 
 class PolicyLabelTests(unittest.TestCase):
@@ -305,6 +435,25 @@ class SynthesizerTests(unittest.TestCase):
         result = synthesize([], [])
         self.assertIn("Insufficient information", result["narrative"])
         self.assertEqual(result["source"], "none")
+
+    def test_synthesize_skips_llm_when_no_policy_chunks(self) -> None:
+        expected = {
+            "narrative": "template narrative",
+            "policy_citations": [],
+            "source": "template",
+        }
+        with (
+            mock.patch("src.rag.synthesizer._synthesize_via_llm") as llm_mock,
+            mock.patch(
+                "src.rag.synthesizer._synthesize_via_template",
+                return_value=expected,
+            ) as template_mock,
+        ):
+            result = synthesize(self.shap_reasons, [])
+
+        llm_mock.assert_not_called()
+        template_mock.assert_called_once()
+        self.assertEqual(result, expected)
 
 
 class RetrieveAndExplainTests(unittest.TestCase):
