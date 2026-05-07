@@ -2,6 +2,16 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
+from pathlib import Path
+from typing import Final
+
+_SCRIPT_PATH: Final[Path] = Path(
+    globals().get("__file__", sys._getframe().f_code.co_filename)
+).resolve()
+_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.analytics.claims_analytics import build_and_persist_claims_assets
 from src.common.diagnostics import DIAGNOSTIC_DOMAIN_ANALYTICS, format_claimops_diagnostic_id

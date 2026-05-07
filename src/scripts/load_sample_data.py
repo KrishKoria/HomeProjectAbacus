@@ -10,7 +10,9 @@ from typing import Final
 _SCRIPT_PATH: Final[Path] = Path(
     globals().get("__file__", sys._getframe().f_code.co_filename)
 ).resolve()
-PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.common.bronze_pipeline_config import bronze_volume_root
 from src.common.bronze_sources import BRONZE_SOURCES, POLICY_SOURCE
@@ -52,14 +54,14 @@ def main(argv: list[str] | None = None) -> int:
     copied = 0
     overwrite_flag = str(args.overwrite).lower()
     for source in BRONZE_SOURCES.values():
-        local_path = PROJECT_ROOT / source.local_path
+        local_path = _PROJECT_ROOT / source.local_path
         target_dir = f"{volume_root}/{source.volume_subdirectory}"
         target_path = f"{target_dir}/{local_path.name}"
         dbutils.fs.mkdirs(target_dir)
         dbutils.fs.cp(f"file:{local_path}", target_path, args.overwrite)
         copied += 1
 
-    policy_dir = PROJECT_ROOT / "datasets" / POLICY_SOURCE.volume_subdirectory
+    policy_dir = _PROJECT_ROOT / "datasets" / POLICY_SOURCE.volume_subdirectory
     target_policy_dir = f"{volume_root}/{POLICY_SOURCE.volume_subdirectory}"
     dbutils.fs.mkdirs(target_policy_dir)
     for policy_file in sorted(policy_dir.glob("*.pdf")):
