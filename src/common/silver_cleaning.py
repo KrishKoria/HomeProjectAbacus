@@ -114,14 +114,40 @@ def spark_normalize_severity(column):
 
 def spark_decimal_or_null(column, precision: int, scale: int):
     """Return a Spark expression that casts values to DECIMAL or NULL."""
-    return spark_trim_to_null(column).cast(f"decimal({precision},{scale})")
+    from pyspark.sql import functions as F
+
+    normalized = spark_trim_to_null(column)
+    decimal_type = f"decimal({precision},{scale})"
+    if hasattr(normalized, "try_cast"):
+        return normalized.try_cast(decimal_type)
+
+    integer_digits = precision - scale
+    if scale == 0:
+        numeric_pattern = rf"^[+-]?\d{{1,{precision}}}$"
+    elif integer_digits > 0:
+        numeric_pattern = (
+            rf"^[+-]?((\d{{1,{integer_digits}}}(\.\d{{0,{scale}}})?)|(\.\d{{1,{scale}}}))$"
+        )
+    else:
+        numeric_pattern = rf"^[+-]?((0(\.\d{{0,{scale}}})?)|(\.\d{{1,{scale}}}))$"
+
+    return F.when(
+        normalized.rlike(numeric_pattern),
+        normalized.cast(decimal_type),
+    ).otherwise(F.lit(None).cast(decimal_type))
 
 
 def spark_date_or_null(column, fmt: str = "yyyy-MM-dd"):
     """Return a Spark expression that parses values into DateType or NULL."""
     from pyspark.sql import functions as F
 
-    return F.to_date(spark_trim_to_null(column), fmt)
+    normalized = spark_trim_to_null(column)
+    try_to_timestamp = getattr(F, "try_to_timestamp", None)
+    if try_to_timestamp is not None:
+        if fmt:
+            return try_to_timestamp(normalized, F.lit(fmt)).cast("date")
+        return try_to_timestamp(normalized).cast("date")
+    return F.to_date(normalized, fmt)
 
 
 def spark_bool_or_null(column):

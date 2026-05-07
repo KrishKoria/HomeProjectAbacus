@@ -12,12 +12,13 @@ class EmbeddingProvider:
 
     Handles batching, retries with exponential backoff, and rate-limit
     responses for the ``databricks-gte-large-en`` embedding endpoint.
+    The GTE-large model outputs 1024-dimensional embeddings.
     """
 
     def __init__(
         self,
         endpoint_name: str = "databricks-gte-large-en",
-        embedding_dim: int = 768,
+        embedding_dim: int = 1024,
         max_retries: int = 3,
         base_delay: float = 1.0,
     ) -> None:
@@ -91,14 +92,36 @@ class EmbeddingProvider:
         w = WorkspaceClient()
         response = w.serving_endpoints.query(
             name=self.endpoint_name,
-            inputs=texts,
+            input=texts,
         )
-        embeddings: list[list[float]] = []
-        for pred in (response.predictions or []):
-            emb = getattr(pred, "embedding", None) or getattr(pred, "data", None)
-            if emb is None and hasattr(pred, "__getitem__"):
-                emb = pred[0] if isinstance(pred, (list, tuple)) else None
-            embeddings.append(list(emb) if emb else [0.0] * self.embedding_dim)
+        zero_vector = [0.0] * self.embedding_dim
+        embeddings: list[list[float]] = [list(zero_vector) for _ in texts]
+        assigned = [False for _ in texts]
+        fallback_index = 0
+
+        for item in (response.data or []):
+            if isinstance(item, dict):
+                embedding = item.get("embedding")
+                index = item.get("index")
+            else:
+                embedding = getattr(item, "embedding", None)
+                index = getattr(item, "index", None)
+
+            target_index: int | None = None
+            if isinstance(index, int) and 0 <= index < len(texts):
+                if assigned[index]:
+                    continue
+                target_index = index
+            else:
+                while fallback_index < len(texts) and assigned[fallback_index]:
+                    fallback_index += 1
+                if fallback_index >= len(texts):
+                    break
+                target_index = fallback_index
+                fallback_index += 1
+
+            embeddings[target_index] = list(embedding) if embedding else list(zero_vector)
+            assigned[target_index] = True
         return embeddings
 
 

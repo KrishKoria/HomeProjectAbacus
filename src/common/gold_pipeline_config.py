@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Final, Iterable
 
-from src.common.bronze_pipeline_config import COMMON_DELTA_TABLE_PROPERTIES, table_properties_for_sensitivity
+from src.common.bronze_pipeline_config import table_properties_for_sensitivity
 
 
 GOLD_SCHEMA_DEFAULT: Final[str] = "gold"
@@ -45,8 +45,7 @@ def gold_table_properties(
     they join PHI-adjacent columns (patient_id, billed_amount, diagnosis_code)
     with engineered risk features.
     """
-    properties = dict(COMMON_DELTA_TABLE_PROPERTIES)
-    properties.update(table_properties_for_sensitivity(sensitivity, phi_columns))
+    properties = table_properties_for_sensitivity(sensitivity, phi_columns)
     properties["claimops.layer"] = "gold"
     return properties
 

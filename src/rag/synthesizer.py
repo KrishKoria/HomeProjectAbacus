@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from src.rag.policy_labels import policy_reference_label
+
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
@@ -53,6 +55,7 @@ def _synthesize_via_llm(
     """Call Llama 70B on Databricks for natural-language synthesis."""
     try:
         from databricks.sdk import WorkspaceClient
+        from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
     except ImportError:
         raise RuntimeError("databricks-sdk not available for LLM call")
 
@@ -61,7 +64,7 @@ def _synthesize_via_llm(
         for r in shap_reasons[:5]
     )
     chunks_text = "\n\n".join(
-        f"[{c.get('document_path', 'unknown')} §{c.get('chunk_index', 0)}] "
+        f"[{policy_reference_label(c.get('document_path'), c.get('chunk_index'))}] "
         f"{c.get('chunk_text', '')}"
         for c in policy_chunks
     )
@@ -76,8 +79,8 @@ def _synthesize_via_llm(
     response = w.serving_endpoints.query(
         name=model_endpoint,
         messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
+            ChatMessage(role=ChatMessageRole.SYSTEM, content=_SYSTEM_PROMPT),
+            ChatMessage(role=ChatMessageRole.USER, content=user_message),
         ],
         temperature=temperature,
         max_tokens=300,
@@ -86,10 +89,11 @@ def _synthesize_via_llm(
     narrative = ""
     choices = getattr(response, "choices", None)
     if choices and len(choices) > 0:
-        narrative = choices[0].get("message", {}).get("content", "")
+        message = choices[0].message
+        narrative = message.content if message else ""
 
     citations = [
-        f"{c.get('document_path', '')} §{c.get('chunk_index', 0)}"
+        policy_reference_label(c.get("document_path"), c.get("chunk_index"))
         for c in policy_chunks
     ]
 
@@ -139,7 +143,7 @@ def _synthesize_via_template(
         )
 
     citations = [
-        f"{c.get('document_path', '')} §{c.get('chunk_index', 0)}"
+        policy_reference_label(c.get("document_path"), c.get("chunk_index"))
         for c in policy_chunks
     ]
 

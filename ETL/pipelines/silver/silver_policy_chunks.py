@@ -160,9 +160,12 @@ def _policy_documents_stream():
         F.col("_pipeline_run_id").desc(),
         F.col("_source_file").desc(),
     )
-    extracted = (
-        read_bronze_snapshot(spark, BRONZE_POLICIES_TABLE)
-        .withColumn("_row_priority", F.row_number().over(duplicate_window))
+    ranked = read_bronze_snapshot(spark, BRONZE_POLICIES_TABLE).withColumn(
+        "_row_priority",
+        F.row_number().over(duplicate_window),
+    )
+    primary_extracted = (
+        ranked.where(F.col("_row_priority") == 1)
         .withColumn("extract_result", _extract_policy_text_udf(F.col("content")))
         .withColumn("policy_text", F.col("extract_result.policy_text"))
         .withColumn("extraction_status", F.col("extract_result.status"))
@@ -177,8 +180,16 @@ def _policy_documents_stream():
                 lambda flag: flag.isNotNull(),
             ),
         )
+        .drop("extract_result")
     )
-    return extracted.drop("extract_result")
+    duplicate_rows = (
+        ranked.where(F.col("_row_priority") > 1)
+        .withColumn("policy_text", F.lit(None).cast("string"))
+        .withColumn("extraction_status", F.lit("DUPLICATE_POLICY_PATH"))
+        .withColumn("extraction_error_message", F.lit(None).cast("string"))
+        .withColumn("_data_quality_flags", F.array(F.lit("duplicate_policy_path")))
+    )
+    return primary_extracted.unionByName(duplicate_rows, allowMissingColumns=False)
 
 
 @dp.materialized_view(

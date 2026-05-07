@@ -2,6 +2,21 @@ bundle:
   name: healthcare-claim-ops
   engine: direct
 
+sync:
+  exclude:
+    - docs/**
+    - tests/**
+    - .git/**
+    - __pycache__/**
+    - "*.pyc"
+    - "*.dist-info"
+    - "*.dist-info/**"
+    - .pytest_cache/**
+    - .venv/**
+    - dist/**
+    - build/**
+    - .databricks/**
+
 include:
   - resources/schemas/schemas.yml
   - resources/volumes/volumes.yml

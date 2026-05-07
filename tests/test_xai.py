@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import sys
 import unittest
+from types import ModuleType
+from unittest import mock
 
 import numpy as np
 import xgboost as xgb
 
 from src.ml import FEATURE_COLUMNS
+from src.xai import explainer as xai_explainer
 from src.xai.explainer import explain
 from src.xai.feature_reasons import FEATURE_REASONS
 
@@ -104,6 +108,25 @@ class ShapExplanationTests(unittest.TestCase):
         output_text = " ".join(r["reason"] for r in result)
         for phi_marker in ("patient_id", "XXX-XX", "billed_amount", "@"):
             self.assertNotIn(phi_marker, output_text.lower())
+
+    def test_explainer_cache_reuses_tree_explainer_for_same_model(self) -> None:
+        class FakeTreeExplainer:
+            init_calls = 0
+
+            def __init__(self, _model) -> None:
+                type(self).init_calls += 1
+
+            def shap_values(self, X):
+                return np.ones((1, X.shape[1]), dtype=float)
+
+        fake_shap = ModuleType("shap")
+        fake_shap.TreeExplainer = FakeTreeExplainer
+
+        xai_explainer._EXPLAINER_CACHE.clear()
+        with mock.patch.dict(sys.modules, {"shap": fake_shap}):
+            explain(self.model, self.X_train[:1], self.feature_names, top_n=3)
+            explain(self.model, self.X_train[:1], self.feature_names, top_n=3)
+        self.assertEqual(FakeTreeExplainer.init_calls, 1)
 
 
 if __name__ == "__main__":

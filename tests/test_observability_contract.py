@@ -50,7 +50,7 @@ from src.analytics.claims_analytics import (  # noqa: E402
     analytics_table_name,
     build_and_persist_claims_assets,
 )
-from src.common.bronze_pipeline_config import cache_if_available  # noqa: E402
+from src.common.bronze_pipeline_config import cache_if_available, unpersist_if_available  # noqa: E402
 
 
 def _read_text(relative_path: str) -> str:
@@ -294,6 +294,9 @@ class AnalyticsContractTests(unittest.TestCase):
         self.assertIn('silver_table_name(catalog, "claims"', source)
         self.assertIn("F.broadcast(providers)", source)
         self.assertIn("F.broadcast(cost)", source)
+        self.assertIn("F.broadcast(diagnosis_reference)", source)
+        self.assertIn('on="diagnosis_code"', source)
+        self.assertNotIn('F.broadcast(diagnosis), on="claim_id"', source)
 
     def test_dashboard_json_includes_adjudication_page_and_datasets(self) -> None:
         dashboard_path = PROJECT_ROOT / "src" / "dashboards" / "claims_exploration.lvdash.json"
@@ -365,6 +368,15 @@ class AnalyticsContractTests(unittest.TestCase):
 
         self.assertIs(cache_if_available(frame), frame)
 
+    def test_unpersist_helper_logs_failures(self) -> None:
+        class BrokenFrame:
+            def unpersist(self):
+                raise RuntimeError("broken-unpersist")
+
+        with self.assertLogs("src.common.bronze_pipeline_config", level="WARNING") as captured:
+            unpersist_if_available(BrokenFrame())
+        self.assertTrue(any("Could not unpersist DataFrame cache" in message for message in captured.output))
+
     def test_observability_helpers_keep_sql_bridge_minimal(self) -> None:
         self.assertEqual(
             ANALYTICS_OBSERVABILITY_TABLES,
@@ -405,6 +417,8 @@ class AnalyticsContractTests(unittest.TestCase):
         self.assertIn("cache_if_available", source)
         self.assertIn("persisted = dict(persist_one(item) for item in outputs.items())", source)
         self.assertNotIn("ThreadPoolExecutor", source)
+        self.assertIn("logger.warning", source)
+        self.assertIn("exc_info=True", source)
 
     def test_refresh_plans_parser_extracts_technique_from_planning_information(self) -> None:
         source = _read_text("src/analytics/observability_assets.py")
@@ -412,10 +426,23 @@ class AnalyticsContractTests(unittest.TestCase):
         self.assertIn("build_refresh_plans", source)
         self.assertIn("planning_information", source)
         self.assertIn("refresh_technique", source)
+        self.assertNotIn("F.udf(", source)
         for keyword in ("FULL_RECOMPUTE", "ROW_BASED", "APPEND_ONLY", "GROUP_AGGREGATE", "NO_OP"):
             with self.subTest(keyword=keyword):
                 self.assertIn(keyword, source)
+                self.assertIn(f'message_upper.contains("{keyword}")', source)
         self.assertIn("planner_message", source)
+
+    def test_build_and_persist_claims_assets_unpersists_cached_frames(self) -> None:
+        source = _read_text("src/analytics/claims_analytics.py")
+        function_source = source[
+            source.index("def build_and_persist_claims_assets")
+            : source.index("__all__ = [")
+        ]
+
+        self.assertIn("cached_frames", function_source)
+        self.assertIn("finally:", function_source)
+        self.assertIn("unpersist_if_available(cached_frame)", function_source)
 
 
 class QualityAssetsContractTests(unittest.TestCase):
@@ -445,8 +472,11 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("src.common", readme)
         self.assertIn("PYTHONPATH", readme)
 
-    def test_requirements_matches_runtime_project_dependencies(self) -> None:
-        requirements = set(_read_text("requirements.txt").splitlines())
+    def test_pyproject_declares_runtime_project_dependencies(self) -> None:
+        import tomllib
+
+        pyproject = tomllib.loads(_read_text("pyproject.toml"))
+        dependencies = set(pyproject["project"]["dependencies"])
 
         for dependency in (
             "altair>=6.0.0,<7.0.0",
@@ -456,7 +486,7 @@ class RepositoryContractTests(unittest.TestCase):
             "streamlit>=1.50.0,<2.0.0",
         ):
             with self.subTest(dependency=dependency):
-                self.assertIn(dependency, requirements)
+                self.assertIn(dependency, dependencies)
 
 
 class NotebookContractTests(unittest.TestCase):

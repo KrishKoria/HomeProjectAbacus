@@ -7,6 +7,7 @@ from src.common.bronze_pipeline_config import (
     bronze_table_name as _config_bronze_table_name,
     cache_if_available,
     table_properties_for_sensitivity,
+    unpersist_if_available,
     validate_identifier,
 )
 from src.common.observability import (
@@ -452,12 +453,17 @@ def build_claims_provider_specialty_mismatch(
     from pyspark.sql import functions as F
 
     enriched = enriched if enriched is not None else _build_claims_provider_cost_enriched(spark, catalog, bronze_schema)
-    diagnosis_joined = (
-        diagnosis_joined if diagnosis_joined is not None else build_claims_diagnosis_joined(spark, catalog, bronze_schema)
+    diagnosis_reference = (
+        diagnosis_joined.select("diagnosis_code", "category", "severity").dropDuplicates()
+        if diagnosis_joined is not None
+        else spark.table(trusted_table_name(catalog, "diagnosis", SILVER_SCHEMA_DEFAULT)).select(
+            "diagnosis_code",
+            "category",
+            "severity",
+        )
     )
-    diagnosis = diagnosis_joined.select("claim_id", "category", "severity")
     return (
-        enriched.join(F.broadcast(diagnosis), on="claim_id", how="left")
+        enriched.join(F.broadcast(diagnosis_reference), on="diagnosis_code", how="left")
         .withColumn(
             "specialty_diagnosis_mismatch",
             F.when(F.col("specialty").isNull() | F.col("category").isNull(), F.lit(None).cast("boolean")).otherwise(
@@ -581,65 +587,76 @@ def build_and_persist_claims_assets(
 ) -> dict[str, str]:
     """Build analytics, operational, and feature outputs and persist them to Delta tables."""
     ensure_analytics_schema(spark, catalog, analytics_schema)
-
-    claims_provider_joined = cache_if_available(build_claims_provider_joined(spark, catalog, bronze_schema))
-    claims_diagnosis_joined = cache_if_available(build_claims_diagnosis_joined(spark, catalog, bronze_schema))
-    claims_provider_cost_enriched = cache_if_available(_build_claims_provider_cost_enriched(spark, catalog, bronze_schema))
-    claims = cache_if_available(spark.table(silver_table_name(catalog, "claims", SILVER_SCHEMA_DEFAULT)))
-    mismatch = cache_if_available(
-        build_claims_provider_specialty_mismatch(
-            spark,
-            catalog,
-            bronze_schema,
-            enriched=claims_provider_cost_enriched,
-            diagnosis_joined=claims_diagnosis_joined,
+    cached_frames: list[object] = []
+    try:
+        claims_provider_joined = cache_if_available(build_claims_provider_joined(spark, catalog, bronze_schema))
+        cached_frames.append(claims_provider_joined)
+        claims_diagnosis_joined = cache_if_available(build_claims_diagnosis_joined(spark, catalog, bronze_schema))
+        cached_frames.append(claims_diagnosis_joined)
+        claims_provider_cost_enriched = cache_if_available(
+            _build_claims_provider_cost_enriched(spark, catalog, bronze_schema)
         )
-    )
-
-    outputs = {
-        "claims_provider_joined": claims_provider_joined,
-        "claims_diagnosis_joined": claims_diagnosis_joined,
-        "claims_by_specialty_summary": build_claims_by_specialty_summary(
-            spark, catalog, bronze_schema, claims_provider_joined
-        ),
-        "claims_by_region_summary": build_claims_by_region_summary(spark, catalog, bronze_schema, claims_provider_joined),
-        "claims_by_diagnosis_summary": build_claims_by_diagnosis_summary(
-            spark, catalog, bronze_schema, claims_diagnosis_joined
-        ),
-        "claims_provider_specialty_mismatch": mismatch,
-        "high_cost_claims_summary": build_high_cost_claims_summary(
-            spark,
-            catalog,
-            bronze_schema,
-            enriched=claims_provider_cost_enriched,
-        ),
-        "claims_dashboard_summary": build_claims_dashboard_summary(
-            spark,
-            catalog,
-            bronze_schema,
-            enriched=claims_provider_cost_enriched,
-        ),
-        "claims_adjudication_summary": build_claims_adjudication_summary(spark, catalog, bronze_schema, claims),
-        "claims_denial_reason_summary": build_claims_denial_reason_summary(spark, catalog, bronze_schema, claims),
-        "claims_revenue_daily_summary": build_claims_revenue_daily_summary(spark, catalog, bronze_schema, claims),
-        "bronze_pipeline_audit": build_bronze_pipeline_audit(spark, catalog, bronze_schema),
-        "ops_data_freshness": build_ops_data_freshness(spark, catalog, bronze_schema),
-        "silver_claims_cost_enriched": claims_provider_cost_enriched,
-        "silver_claim_lineage": build_silver_claim_lineage(spark, catalog, bronze_schema),
-    }
-
-    persisted: dict[str, str] = {}
-    for table_key, dataframe in outputs.items():
-        table_fqn = analytics_table_name(catalog, analytics_schema, table_key)
-        sensitivity = TABLE_SENSITIVITY_CLASSIFICATIONS[table_key]
-        properties = table_properties_for_sensitivity(
-            sensitivity,
-            PHI_COLUMNS_BY_TABLE.get(table_key, ()),
+        cached_frames.append(claims_provider_cost_enriched)
+        claims = cache_if_available(spark.table(silver_table_name(catalog, "claims", SILVER_SCHEMA_DEFAULT)))
+        cached_frames.append(claims)
+        mismatch = cache_if_available(
+            build_claims_provider_specialty_mismatch(
+                spark,
+                catalog,
+                bronze_schema,
+                enriched=claims_provider_cost_enriched,
+            )
         )
-        write_managed_table(dataframe, table_fqn, spark=spark, table_properties=properties)
-        persisted[table_key] = _log_dataset_ready(table_fqn, sensitivity)
+        cached_frames.append(mismatch)
 
-    return persisted
+        outputs = {
+            "claims_provider_joined": claims_provider_joined,
+            "claims_diagnosis_joined": claims_diagnosis_joined,
+            "claims_by_specialty_summary": build_claims_by_specialty_summary(
+                spark, catalog, bronze_schema, claims_provider_joined
+            ),
+            "claims_by_region_summary": build_claims_by_region_summary(
+                spark, catalog, bronze_schema, claims_provider_joined
+            ),
+            "claims_by_diagnosis_summary": build_claims_by_diagnosis_summary(
+                spark, catalog, bronze_schema, claims_diagnosis_joined
+            ),
+            "claims_provider_specialty_mismatch": mismatch,
+            "high_cost_claims_summary": build_high_cost_claims_summary(
+                spark,
+                catalog,
+                bronze_schema,
+                enriched=claims_provider_cost_enriched,
+            ),
+            "claims_dashboard_summary": build_claims_dashboard_summary(
+                spark,
+                catalog,
+                bronze_schema,
+                enriched=claims_provider_cost_enriched,
+            ),
+            "claims_adjudication_summary": build_claims_adjudication_summary(spark, catalog, bronze_schema, claims),
+            "claims_denial_reason_summary": build_claims_denial_reason_summary(spark, catalog, bronze_schema, claims),
+            "claims_revenue_daily_summary": build_claims_revenue_daily_summary(spark, catalog, bronze_schema, claims),
+            "bronze_pipeline_audit": build_bronze_pipeline_audit(spark, catalog, bronze_schema),
+            "ops_data_freshness": build_ops_data_freshness(spark, catalog, bronze_schema),
+            "silver_claims_cost_enriched": claims_provider_cost_enriched,
+            "silver_claim_lineage": build_silver_claim_lineage(spark, catalog, bronze_schema),
+        }
+
+        persisted: dict[str, str] = {}
+        for table_key, dataframe in outputs.items():
+            table_fqn = analytics_table_name(catalog, analytics_schema, table_key)
+            sensitivity = TABLE_SENSITIVITY_CLASSIFICATIONS[table_key]
+            properties = table_properties_for_sensitivity(
+                sensitivity,
+                PHI_COLUMNS_BY_TABLE.get(table_key, ()),
+            )
+            write_managed_table(dataframe, table_fqn, spark=spark, table_properties=properties)
+            persisted[table_key] = _log_dataset_ready(table_fqn, sensitivity)
+        return persisted
+    finally:
+        for cached_frame in cached_frames:
+            unpersist_if_available(cached_frame)
 
 
 __all__ = [
@@ -648,6 +665,7 @@ __all__ = [
     "HIGH_COST_THRESHOLD_RATIO",
     "PHI_COLUMNS_BY_TABLE",
     "TABLE_SENSITIVITY_CLASSIFICATIONS",
+    "_build_claims_provider_cost_enriched",
     "analytics_table_name",
     "build_and_persist_claims_assets",
     "build_bronze_pipeline_audit",
@@ -667,5 +685,4 @@ __all__ = [
     "build_silver_claims_cost_enriched",
     "raw_bronze_table_name",
     "trusted_table_name",
-    "_build_claims_provider_cost_enriched",
 ]

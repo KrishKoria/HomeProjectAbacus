@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 HIPAA PHI Column Registry - Abacus Insights Bronze Layer.
 
@@ -12,8 +14,6 @@ The default registry preserves the current `healthcare.bronze.*` contract, while
 the builder functions allow the same source manifest to be projected into a
 different Databricks catalog/schema for staging or future S3-backed workspaces.
 """
-
-from __future__ import annotations
 
 from typing import Final
 

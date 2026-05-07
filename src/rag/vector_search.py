@@ -4,6 +4,8 @@ import logging
 import os
 from typing import Any
 
+from src.rag.policy_labels import policy_display_name
+
 logger = logging.getLogger(__name__)
 
 _RESULT_COLUMNS = ["chunk_id", "chunk_text", "document_path", "chunk_index"]
@@ -19,7 +21,9 @@ def _workspace_url() -> str:
         hostname = _env("DATABRICKS_SERVER_HOSTNAME")
         if hostname:
             host = f"https://{hostname}"
-    return host.rstrip("/")
+    if host and not host.startswith("https://"):
+        host = f"https://{host}"
+    return host.rstrip("/") if host else ""
 
 
 def _vector_search_client():
@@ -44,6 +48,10 @@ def _vector_search_client():
             disable_notice=True,
         )
 
+    logger.warning(
+        "VectorSearchClient is unconfigured: set DATABRICKS_HOST "
+        "with DATABRICKS_TOKEN or (DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET)"
+    )
     return VectorSearchClient(disable_notice=True)
 
 
@@ -71,15 +79,79 @@ def _manifest_column_names(manifest: Any) -> list[str]:
     return names
 
 
+def _coerce_optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric != numeric:
+        return None
+    return numeric
+
+
+def _extract_relevance_score(entry: dict[str, Any], fallback: Any = None) -> float | None:
+    """Read relevance from either internal or SDK score fields."""
+    score_value = entry.get("relevance_score")
+    if score_value is None:
+        score_value = entry.get("score")
+    if score_value is None:
+        score_value = fallback
+    return _coerce_optional_float(score_value)
+
+
+_EMBEDDING_ENDPOINT = "databricks-gte-large-en"
+_EMBEDDING_DIM = 1024
+
+
+def _generate_query_embedding(query_text: str) -> list[float]:
+    """Generate a 1024-dim embedding vector for the given query text.
+
+    Uses the Databricks GTE Foundation Model endpoint so that callers
+    can pass ``query_vector`` when the Vector Search index does not have
+    a query-time model endpoint wired.
+    """
+    from src.rag.embeddings import EmbeddingProvider
+
+    provider = EmbeddingProvider(
+        endpoint_name=_EMBEDDING_ENDPOINT, embedding_dim=_EMBEDDING_DIM
+    )
+    embeddings = provider.embed_batch([query_text])
+    if not embeddings:
+        logger.error("GTE embedding returned empty result for query text")
+        return []
+    return embeddings[0]
+
 def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list[dict[str, Any]]:
     from databricks.sdk import WorkspaceClient
+    from databricks.sdk.errors.platform import InvalidParameterValue
 
-    response = WorkspaceClient().vector_search_indexes.query_index(
-        index_name=index_name,
-        columns=_RESULT_COLUMNS,
-        query_text=query_text,
-        num_results=top_k,
-    )
+    w = WorkspaceClient()
+
+    def _do_query(**kwargs: Any):
+        return w.vector_search_indexes.query_index(
+            index_name=index_name,
+            columns=_RESULT_COLUMNS,
+            num_results=top_k,
+            **kwargs,
+        )
+
+    try:
+        response = _do_query(query_text=query_text)
+    except InvalidParameterValue as exc:
+        if "query vector" in str(exc).lower():
+            logger.info(
+                "Index %s has no query-time model endpoint; generating embedding",
+                index_name,
+            )
+            query_vector = _generate_query_embedding(query_text)
+            if not query_vector:
+                return []
+            response = _do_query(query_vector=query_vector)
+        else:
+            raise
+
     payload = _as_dict(response)
     manifest = payload.get("manifest") if payload else _field(response, "manifest", {})
     result = payload.get("result") if payload else _field(response, "result", {})
@@ -92,15 +164,18 @@ def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list
             column_names[index]: row[index]
             for index in range(min(len(row), len(column_names)))
         }
-        if "score" not in mapped and len(row) > len(_RESULT_COLUMNS):
-            mapped["score"] = row[-1]
+        fallback_score: Any = row[-1] if len(row) > len(_RESULT_COLUMNS) else None
+        relevance_score = _extract_relevance_score(mapped, fallback=fallback_score)
+        document_path = mapped.get("document_path", "")
+        chunk_index = mapped.get("chunk_index", 0)
         rows.append(
             {
                 "chunk_id": mapped.get("chunk_id"),
                 "chunk_text": mapped.get("chunk_text", ""),
-                "document_path": mapped.get("document_path", ""),
-                "chunk_index": mapped.get("chunk_index", 0),
-                "relevance_score": float(mapped.get("score", 0.0) or 0.0),
+                "document_path": document_path,
+                "chunk_index": chunk_index,
+                "relevance_score": relevance_score,
+                "policy_name": policy_display_name(str(document_path) if document_path is not None else None),
             }
         )
     return rows
@@ -175,11 +250,27 @@ class PolicyRetriever:
             logger.warning("Vector Search index %s not found", self.index_name)
             return []
 
-        raw = endpoint.similarity_search(
-            query_text=query_text,
-            columns=_RESULT_COLUMNS,
-            num_results=top_k,
-        )
+        # Try query_text first; fall back to query_vector if the index
+        # does not have a query-time model endpoint wired.
+        try:
+            raw = endpoint.similarity_search(
+                query_text=query_text,
+                columns=_RESULT_COLUMNS,
+                num_results=top_k,
+            )
+        except Exception:
+            logger.info(
+                "similarity_search with query_text failed; retrying with query_vector"
+            )
+            query_vector = _generate_query_embedding(query_text)
+            if not query_vector:
+                return []
+            raw = endpoint.similarity_search(
+                query_vector=query_vector,
+                columns=_RESULT_COLUMNS,
+                num_results=top_k,
+            )
+
         result = raw.get("result", {})
         data = result.get("data_array", [])
         return [
@@ -188,7 +279,8 @@ class PolicyRetriever:
                 "chunk_text": row[1],
                 "document_path": row[2],
                 "chunk_index": row[3],
-                "relevance_score": float(row[4]) if len(row) > 4 else 0.0,
+                "relevance_score": _coerce_optional_float(row[4]) if len(row) > 4 else None,
+                "policy_name": policy_display_name(str(row[2]) if len(row) > 2 else None),
             }
             for row in data
         ]
@@ -205,7 +297,8 @@ class PolicyRetriever:
                     "chunk_text": str(item.get("chunk_text", "")),
                     "document_path": str(item.get("document_path", "")),
                     "chunk_index": int(item.get("chunk_index", 0)),
-                    "relevance_score": float(item.get("relevance_score", 0.0)),
+                    "relevance_score": _extract_relevance_score(item),
+                    "policy_name": policy_display_name(item.get("document_path")),
                 }
             )
         return normalized

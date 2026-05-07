@@ -50,10 +50,15 @@ class XaiRagIntegrationTests(unittest.TestCase):
         self.assertIn("narrative", result)
         self.assertIn("policy_citations", result)
         self.assertIn("source", result)
+        self.assertIn("timing", result)
 
         self.assertEqual(result["explanations"], shap_explanations)
         self.assertIsInstance(result["policy_chunks"], list)
         self.assertGreater(len(result["narrative"]), 0)
+        self.assertIn("retrieval_ms", result["timing"])
+        self.assertIn("synthesis_ms", result["timing"])
+        self.assertGreaterEqual(result["timing"]["retrieval_ms"], 0.0)
+        self.assertGreaterEqual(result["timing"]["synthesis_ms"], 0.0)
 
     def test_end_to_end_empty_chunks_still_produces_explanations(self) -> None:
         """When no policies match, explanations still surface."""

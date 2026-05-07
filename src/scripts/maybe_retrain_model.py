@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
+from typing import Final
+
+_SCRIPT_PATH: Final[Path] = Path(
+    globals().get("__file__", sys._getframe().f_code.co_filename)
+).resolve()
+_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.common.diagnostics import get_ml_diagnostic_id
 from src.ml import FEATURE_COLUMNS

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Final, Iterable
 
-from src.common.bronze_pipeline_config import COMMON_DELTA_TABLE_PROPERTIES, table_properties_for_sensitivity
+from src.common.bronze_pipeline_config import table_properties_for_sensitivity
 
 
 SILVER_SCHEMA_DEFAULT: Final[str] = "silver"
@@ -66,8 +66,7 @@ def silver_table_properties(
     phi_columns: Iterable[str] = (),
 ) -> dict[str, str]:
     """Return Silver/Quarantine Delta table properties with layer metadata."""
-    properties = dict(COMMON_DELTA_TABLE_PROPERTIES)
-    properties.update(table_properties_for_sensitivity(sensitivity, phi_columns))
+    properties = table_properties_for_sensitivity(sensitivity, phi_columns)
     properties["claimops.layer"] = "silver"
     return properties
 

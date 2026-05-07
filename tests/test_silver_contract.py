@@ -42,6 +42,8 @@ from common.silver_cleaning import (  # noqa: E402
     parse_bool_value,
     parse_date_value,
     parse_decimal_value,
+    spark_date_or_null,
+    spark_decimal_or_null,
 )
 from common.silver_pipeline_config import (  # noqa: E402
     POLICY_CHUNK_OVERLAP_TOKENS,
@@ -133,6 +135,35 @@ class SilverCleaningTests(unittest.TestCase):
         self.assertEqual(normalize_title_value("rn pa do np ent ob/gyn md"), "RN PA DO NP ENT OB/GYN MD")
         self.assertEqual(normalize_title_value("entitlement medical"), "Entitlement Medical")
 
+    def test_spark_decimal_and_date_helpers_are_ansi_safe(self) -> None:
+        try:
+            from pyspark.sql import SparkSession, functions as F
+        except ModuleNotFoundError:
+            self.skipTest("pyspark is not installed in the local test environment")
+
+        spark = SparkSession.builder.master("local[1]").appName("silver-ansi-cast-safety-test").getOrCreate()
+        original_ansi = spark.conf.get("spark.sql.ansi.enabled", "false")
+        try:
+            spark.conf.set("spark.sql.ansi.enabled", "true")
+            frame = spark.createDataFrame(
+                [
+                    ("12.30", "2024-02-22"),
+                    ("bad-decimal", "bad-date"),
+                ],
+                ["raw_decimal", "raw_date"],
+            )
+            parsed = frame.select(
+                spark_decimal_or_null(F.col("raw_decimal"), 18, 2).alias("parsed_decimal"),
+                spark_date_or_null(F.col("raw_date")).alias("parsed_date"),
+            ).collect()
+            self.assertEqual(parsed[0]["parsed_decimal"], Decimal("12.30"))
+            self.assertEqual(parsed[0]["parsed_date"], date(2024, 2, 22))
+            self.assertIsNone(parsed[1]["parsed_decimal"])
+            self.assertIsNone(parsed[1]["parsed_date"])
+        finally:
+            spark.conf.set("spark.sql.ansi.enabled", original_ansi)
+            spark.stop()
+
 
 class PolicyChunkingTests(unittest.TestCase):
     def test_policy_chunk_pipeline_udfs_do_not_capture_common_modules(self) -> None:
@@ -191,6 +222,21 @@ class PolicyChunkingTests(unittest.TestCase):
         self.assertIn('F.col("path")', source)
         self.assertIn('F.col("chunk.chunk_index").cast("string")', source)
         self.assertIn('F.col("chunk.chunk_text")', source)
+
+    def test_duplicate_rows_skip_pdf_extraction_and_are_unioned_back(self) -> None:
+        source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_policy_chunks.py"
+        source = source_path.read_text(encoding="utf-8")
+
+        self.assertIn('ranked.where(F.col("_row_priority") == 1)', source)
+        self.assertIn('_extract_policy_text_udf(F.col("content"))', source)
+        self.assertIn('ranked.where(F.col("_row_priority") > 1)', source)
+        self.assertIn('F.lit("DUPLICATE_POLICY_PATH")', source)
+        self.assertIn("unionByName", source)
+
+    def test_duplicate_rows_have_explicit_duplicate_quality_flag(self) -> None:
+        source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_policy_chunks.py"
+        source = source_path.read_text(encoding="utf-8")
+        self.assertIn('F.array(F.lit("duplicate_policy_path"))', source)
 
     def test_policy_text_is_normalized_before_chunking(self) -> None:
         self.assertEqual(

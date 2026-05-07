@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from src.rag.synthesizer import synthesize
@@ -53,6 +54,10 @@ def retrieve_and_explain(
             "narrative": "No SHAP explanations available to drive policy retrieval.",
             "policy_citations": [],
             "source": "none",
+            "timing": {
+                "retrieval_ms": 0.0,
+                "synthesis_ms": 0.0,
+            },
         }
 
     # Build PHI-safe query from top-5 reasons
@@ -62,14 +67,18 @@ def retrieve_and_explain(
     logger.debug("RAG query (PHI-scrubbed): %s", query_text[:200])
 
     # Retrieve policy chunks
+    retrieval_start = time.perf_counter()
     policy_chunks = retriever.search(query_text, top_k=top_k)
+    retrieval_ms = (time.perf_counter() - retrieval_start) * 1000.0
 
     # Synthesize explanation
+    synthesis_start = time.perf_counter()
     synthesis = synthesize(
         shap_reasons=shap_reasons,
         policy_chunks=policy_chunks,
         model_endpoint=model_endpoint,
     )
+    synthesis_ms = (time.perf_counter() - synthesis_start) * 1000.0
 
     return {
         "explanations": shap_reasons,
@@ -77,4 +86,8 @@ def retrieve_and_explain(
         "narrative": synthesis["narrative"],
         "policy_citations": synthesis["policy_citations"],
         "source": synthesis["source"],
+        "timing": {
+            "retrieval_ms": retrieval_ms,
+            "synthesis_ms": synthesis_ms,
+        },
     }

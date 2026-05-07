@@ -136,7 +136,8 @@ def train_xgboost(
     """Fit the primary XGBoost classifier with optional early-stopping eval set."""
     training_params = {**XGBOOST_DEFAULT_PARAMS, **
                        (params or {}), "random_state": random_seed}
-    training_params.pop("early_stopping_rounds", 50)
+    if X_val is None or y_val is None:
+        training_params.pop("early_stopping_rounds", None)
     model = XGBClassifier(**training_params)
     fit_kwargs: dict[str, Any] = {}
     if X_val is not None and y_val is not None:

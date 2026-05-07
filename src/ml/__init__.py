@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-FEATURE_COLUMNS = (
+from typing import Final
+
+FEATURE_COLUMNS: Final[tuple[str, ...]] = (
     # Original 13 features
     "is_procedure_missing",
     "is_amount_missing",
@@ -29,6 +31,6 @@ FEATURE_COLUMNS = (
     "dx_px_pair_risk_prior",
 )
 
-TARGET_COLUMN = "denial_label"
+TARGET_COLUMN: Final[str] = "denial_label"
 
 __all__ = ["FEATURE_COLUMNS", "TARGET_COLUMN"]
