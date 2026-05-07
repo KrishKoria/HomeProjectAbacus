@@ -38,12 +38,6 @@ def normalize_title_value(value: object) -> str | None:
     return titled
 
 
-def normalize_severity_value(value: object) -> str | None:
-    """Normalize severity labels to High/Low style casing."""
-    normalized = normalize_title_value(value)
-    return normalized if normalized in {"High", "Low"} else normalized
-
-
 def parse_decimal_value(value: object, scale: str = "0.01") -> Decimal | None:
     """Parse a scalar into a quantized Decimal or None."""
     normalized = normalize_nullable_string(value)
@@ -185,7 +179,6 @@ __all__ = [
     "build_quality_flags",
     "normalize_code_value",
     "normalize_nullable_string",
-    "normalize_severity_value",
     "normalize_title_value",
     "parse_bool_value",
     "parse_date_value",

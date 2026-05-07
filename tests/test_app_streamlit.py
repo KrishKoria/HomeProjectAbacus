@@ -85,6 +85,38 @@ class StreamlitPolicyGuidanceTests(unittest.TestCase):
         self.assertIsNone(app_streamlit._format_policy_relevance_label(None))
         self.assertIsNone(app_streamlit._format_policy_relevance_label("bad"))
 
+    def test_policy_relevance_label_helper_formats_raw_vector_score(self) -> None:
+        self.assertEqual(
+            app_streamlit._format_policy_relevance_label(0.0042, "raw"),
+            "Score 0.0042",
+        )
+
+    def test_render_policy_guidance_uses_raw_score_label_for_vector_scores(self) -> None:
+        rag_result = {
+            "source": "llm",
+            "narrative": "Short policy narrative.",
+            "policy_chunks": [
+                {
+                    "document_path": "dbfs:/Volumes/healthcare/bronze/raw_landing/policies/medical_necessity_by_diagnosis_policy.pdf",
+                    "chunk_index": 0,
+                    "relevance_score": 0.0042,
+                    "relevance_score_kind": "raw",
+                    "chunk_text": "Policy text.",
+                }
+            ],
+        }
+
+        with (
+            mock.patch.object(app_streamlit.st, "markdown") as markdown_mock,
+            mock.patch.object(app_streamlit.st, "info") as info_mock,
+        ):
+            app_streamlit._render_policy_guidance(rag_result)
+
+        info_mock.assert_not_called()
+        rendered_html = markdown_mock.call_args.args[0]
+        self.assertIn("Score 0.0042", rendered_html)
+        self.assertNotIn("Match 0%", rendered_html)
+
     def test_render_policy_guidance_formats_narrative_as_summary_and_list(self) -> None:
         rag_result = {
             "source": "llm",

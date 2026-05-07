@@ -50,6 +50,10 @@ class EmbeddingProvider:
         for attempt in range(self.max_retries + 1):
             try:
                 return self._call_endpoint(texts)
+            except _SdkUnavailableError:
+                # Local/non-Databricks runtime: skip retry backoff and
+                # let embed_batch() return the zero-vector fallback.
+                raise
             except _RateLimitError:
                 if attempt == self.max_retries:
                     raise
@@ -85,7 +89,7 @@ class EmbeddingProvider:
         try:
             from databricks.sdk import WorkspaceClient
         except ImportError:
-            raise _RateLimitError(
+            raise _SdkUnavailableError(
                 "databricks-sdk not available; using fallback embeddings"
             )
 
@@ -127,3 +131,7 @@ class EmbeddingProvider:
 
 class _RateLimitError(Exception):
     """Signals a 429 or other transient error from the embedding endpoint."""
+
+
+class _SdkUnavailableError(Exception):
+    """Signals that Databricks SDK is unavailable in this runtime."""

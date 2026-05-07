@@ -1,121 +1,83 @@
-## Deferred decisions ledger
-
-All "deliberately not implemented" decisions live in [`docs/deferred.md`](docs/deferred.md) — `claim_type`, `ServiceVerifier` Protocol, `ops_service_*` tables, `verify_gold.py`, ETL constant parameterization, `build_analytics` CLI args, DAB `model_version` lookup variable. Read that file before proposing any of those features; each entry names the trigger that justifies reviving it. The `claim_type` block above is the most load-bearing; everything else is in `docs/deferred.md`.
-
-## Project quick-reference
-
-- **What it is:** AI-Powered Claim Denial Prevention & Remediation System (Databricks + Spark + Delta Lake + MLflow + Streamlit).
-- **Layers:** Bronze (raw ingest) → Silver (trusted) → Gold (`healthcare.gold.claim_features`, 13 features) → ML (`healthcare.ml.claim_denial_model@champion`).
-- **Release gate (ARCHITECTURE.md §13):** Recall@HIGH ≥ 0.80, Precision ≥ 0.70, ROC-AUC ≥ 0.85; gate-failing models are not pickled or registered.
-- **Train command (Databricks notebook):** `from src.scripts.train_denial_model import main; main(["--tune"])`.
-- **Load champion (anywhere):** `from src.ml.predict import load_from_registry; model = load_from_registry()`.
-- **Test command:** `uv run pytest -q` (94 passed, 1 skipped baseline).
-- **ML deps install:** `uv sync --group ml`.
-
-## Hard rules (already in place)
-
-- Every code module starts with `from __future__ import annotations`.
-- Module constants are typed `Final[...]`.
-- `__all__` is alphabetically sorted.
-- ETL/common files are one-line proxies: `from src.common.xxx import *  # noqa: F401,F403`.
-- Logs never interpolate PHI — use `MESSAGE_TEMPLATE_*` + `render_*` helpers and reference identifiers (claim_id, provider_id) only.
-- Bare `except Exception` blocks must call `logger.warning(..., exc_info=True)` — never silent swallow.
-## Deferred decisions ledger
-
-All "deliberately not implemented" decisions live in [`docs/deferred.md`](docs/deferred.md) — `claim_type`, `ServiceVerifier` Protocol, `ops_service_*` tables, `verify_gold.py`, ETL constant parameterization, `build_analytics` CLI args, DAB `model_version` lookup variable. Read that file before proposing any of those features; each entry names the trigger that justifies reviving it. The `claim_type` block above is the most load-bearing; everything else is in `docs/deferred.md`.
-
-## Project quick-reference
-
-- **What it is:** AI-Powered Claim Denial Prevention & Remediation System (Databricks + Spark + Delta Lake + MLflow + Streamlit).
-- **Layers:** Bronze (raw ingest) → Silver (trusted) → Gold (`healthcare.gold.claim_features`, 13 features) → ML (`healthcare.ml.claim_denial_model@champion`).
-- **Release gate (ARCHITECTURE.md §13):** Recall@HIGH ≥ 0.80, Precision ≥ 0.70, ROC-AUC ≥ 0.85; gate-failing models are not pickled or registered.
-- **Train command (Databricks notebook):** `from src.scripts.train_denial_model import main; main(["--tune"])`.
-- **Load champion (anywhere):** `from src.ml.predict import load_from_registry; model = load_from_registry()`.
-- **Test command:** `uv run pytest -q` (94 passed, 1 skipped baseline).
-- **ML deps install:** `uv sync --group ml`.
-
-## Hard rules (already in place)
-
-- Every code module starts with `from __future__ import annotations`.
-- Module constants are typed `Final[...]`.
-- `__all__` is alphabetically sorted.
-- ETL/common files are one-line proxies: `from src.common.xxx import *  # noqa: F401,F403`.
-- Logs never interpolate PHI — use `MESSAGE_TEMPLATE_*` + `render_*` helpers and reference identifiers (claim_id, provider_id) only.
-- Bare `except Exception` blocks must call `logger.warning(..., exc_info=True)` — never silent swallow.
-
-
 <claude-mem-context>
 # Memory Context
 
-# [homeprojectabacus] recent context, 2026-05-07 1:47pm GMT+5:30
+# [homeprojectabacus] recent context, 2026-05-07 10:22pm GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (19,037t read) | 228,523t work | 92% savings
+Stats: 50 obs (13,507t read) | 463,201t work | 97% savings
 
 ### May 7, 2026
-S115 Primary session user requested to write and execute an implementation plan for migrating homeprojectabacus from setuptools to Hatchling build system with dual import path support (src.* and common.*) (May 7, 1:06 PM)
-S116 Debug ModuleNotFoundError: No module named 'src' in Databricks job task create_retrain_decisions for healthcare-claim-ops project (May 7, 1:09 PM)
-649 1:13p 🔵 Confirmed pyproject.toml uses hatchling build backend with correct package config
-650 1:14p 🔵 Egg-info theory fully invalidated - no egg-info in any bundle or sync artifact
-S117 Debug and fix ModuleNotFoundError: No module named 'src' in Databricks job task create_retrain_decisions (May 7, 1:16 PM)
-S118 Debug and fix ModuleNotFoundError: No module named 'src' in Databricks job (create_retrain_decisions task) for the healthcare-claim-ops dev bundle (May 7, 1:16 PM)
-652 1:16p 🔵 Untracked src/__init__.py discovered as potential fix for missing package resolution
-651 " 🔵 Stale egg-info metadata causes Databricks bundle import failure
-653 " 🔵 Databricks job uses --editable install of workspace file path for package resolution
-654 " 🔵 src/scripts/__init__.py already exists with future annotations import
-655 1:17p ✅ Sync excludes added to databricks.yml for packaging artifacts; pyproject.toml version bumped to 0.1.2
-656 " ✅ Temporary debug script created to diagnose src package import resolution on Databricks
-657 " 🔵 Old homeprojectabacus 0.1.0 editable install was broken (missing RECORD file)
-658 " 🔵 Pre-existing test environment issue with opentelemetry causes 26 test failures unrelated to src import
-659 1:18p 🔵 Databricks bundle sync snapshot timestamps confirm stale deployment
-663 " 🔵 uv sync fully reinstalled local environment with all dependency groups
-660 " 🔵 egg-info directory not included in Databricks bundle sync
-661 " 🔵 pyproject.toml uses hatchling with src package but egg-info never synced
-662 1:19p 🔵 pyproject.toml synced to Databricks but egg-info excluded from bundle
-S119 Debug and fix ModuleNotFoundError: No module named 'src' in Databricks job create_retrain_decisions task (May 7, 1:19 PM)
-664 " 🔵 All 57 tests pass after fresh uv sync, confirming local environment is healthy
-665 " 🔵 Wheel build succeeds but Python script fails to find dist artifacts
-666 1:20p ✅ Full bundle sync completed to Databricks dev workspace
-667 " ✅ Databricks bundle deployed to dev workspace with all fixes
-668 1:21p 🔵 DEBUG PROVEN: editable install fails to expose src package in Databricks serverless job
-S120 Debug ModuleNotFoundError for src package in Databricks serverless job — transition to plan mode for clean-state redeployment (May 7, 1:22 PM)
-S121 Debug and fix ModuleNotFoundError: No module named 'src' in Databricks job create_retrain_decisions — conclusive findings after failed scorched-earth approach (May 7, 1:25 PM)
-669 1:28p ✅ Reverted aborted wheel-library contingency changes from job definition
-670 " ✅ Removed egg-info sync excludes from databricks.yml to eliminate validation warnings
-671 1:29p ✅ Verified clean state: all contingency changes reverted, tests passing, wheel building
-672 " ⚖️ Destroyed entire Databricks dev deployment to clear cached environment state
-673 " ✅ Local bundle cache cleaned after deployment destruction
-674 " ✅ Bundle validation passes cleanly with no warnings after cleanup
-675 1:30p 🔵 Bundle destroy broke deployment: gold.policy_chunks_index table no longer exists
-676 1:31p 🔵 Bundle summary reveals deployment is partially deployed despite destroy error
-677 " 🔵 DEFINITIVE PROOF: bundle destroy+redeploy does not fix the ModuleNotFoundError
-678 " ⚖️ Scorched-earth cache-clear approach ruled out — must change import mechanism or environment config
-679 1:32p 🔵 Job JSON confirms --editable resolve path and task configuration are correct
-680 1:33p 🔵 Workspace inspection confirms all source files correctly deployed including src/__init__.py
-S122 Create 6-step plan for sys.path bootstrap fix for ModuleNotFoundError in Databricks spark_python_task (May 7, 1:33 PM)
-681 1:34p 🔵 All 11 spark_python_task entrypoints across 6 jobs depend on the broken --editable install
-686 1:35p ✅ Sys.path bootstrap plan communicated for spark_python_task import fix
-682 1:36p 🔴 Databricks spark_python_task cannot import src module despite correct packaging
-683 " 🔵 Confirmed spark_python_task job definition using --editable dependency
-684 1:37p 🔵 Every src/scripts/ entry-point script imports from src.* at module level
-685 1:38p 🔵 All 6 Databricks job YAML files use spark_python_task with --editable dependency
-687 1:39p ⚖️ Decision: sys.path bootstrap in each entry-point script to fix spark_python_task import failure
-S123 Fix `ModuleNotFoundError: No module named 'src'` in Databricks spark_python_task — entry-point scripts under src/scripts/ fail to import from src.* at runtime despite correct packaging and --editable dependency configuration (May 7, 1:40 PM)
-688 1:42p 🔵 Databricks editable install executes at job runtime, not deploy time
-689 1:43p 🔵 Databricks documentation confirms --editable dependency format is correct
-S124 Continued planning the sys.path bootstrap fix for Databricks spark_python_task ModuleNotFoundError (May 7, 1:43 PM)
-692 1:44p ✅ Written formal implementation plan for sys.path bootstrap in 10 entry-point scripts
-690 " 🔵 Confirmed exact contract test assertions that need updating for bootstrap fix
-691 " 🔴 Sys.path bootstrap added to setup_retrain_decisions.py
-693 1:45p 🔴 Contract tests updated to allow bootstrap pattern for setup_retrain_decisions.py
-694 " 🔴 All 58 tests pass after bootstrap fix: +1 new test, 0 failures
-695 " 🔴 Bundle validation passes after bootstrap fix — deploy-ready
-696 " 🔵 Bundle deploy blocked by missing gold.policy_chunks_index table — pre-existing collateral damage
-697 1:47p 🔴 ModuleNotFoundError resolved — create_retrain_decisions task succeeds with sys.path bootstrap
-698 " 🔴 ModuleNotFoundError fix complete and verified on Databricks serverless runtime
+710 1:59p 🟣 maybe_retrain_model.py bootstrap added — seventh script updated
+711 " 🟣 train_denial_model.py bootstrap added — eighth script updated
+712 2:00p 🟣 All 9 entry-point scripts now have sys.path bootstrap applied
+713 2:01p ✅ Task 6 completed — all 9 entry-point scripts bootstrapped for Databricks spark_python_task
+714 " ✅ All 9 bootstrapped scripts pass py_compile syntax check
+715 2:02p ✅ Task 8 started — updating contract tests for all bootstrapped scripts
+716 " 🔵 Existing contract test asserts scripts must NOT use sys.path.insert — conflicts with new bootstrap pattern
+717 " 🔵 load_sample_data.py uses public PROJECT_ROOT (not _PROJECT_ROOT) — naming inconsistency
+718 2:03p 🔄 load_sample_data.py fully migrated to _PROJECT_ROOT private naming convention
+719 2:14p 🔵 Databricks Vector Search index creation fails due to async sync race condition
+720 " 🔵 Serena code intelligence tools initialized in workspace homeprojectabacus
+721 2:15p 🔴 Serena project activation does not persist across subsequent tool calls
+722 " 🔵 Symbols mapped for create_vector_index.py — the Databricks Vector Search bug target
+723 " 🔵 _create_index and _sync_existing_index are the root cause of the async race condition
+724 2:16p 🔵 Full async race condition flow charted in create_vector_index.py
+725 " 🔵 Researching Databricks SDK for index status polling via Context7
+726 " 🔵 Databricks SDK has built-in long-running operation polling — VectorSearchClient is lower-level
+727 " 🔵 Databricks Vector Search index provides built-in wait_until_ready() and status polling via describe()
+728 2:17p ⚖️ Fix plan: add wait_until_ready() before sync in create_vector_index.py
+729 2:21p 🔵 Confirmed: DELTA_SYNC indexes auto-sync — explicit sync() after create is unnecessary
+730 " 🔵 Confirmed: Databricks create_delta_sync_index examples never call sync() after creation
+731 2:24p 🔵 Claude-Mem semantic search failing with ChromaDB connection error
+732 2:27p 🔵 Symbol map of app_streamlit.py retrieved for frontend investigation
+733 2:30p 🔵 pyproject.toml dependency structure confirmed — sklearn isolated to [dependency-groups].ml
+734 2:31p ✅ All ML dependencies moved from [dependency-groups].ml to main dependencies in pyproject.toml
+735 2:39p 🔵 Databricks bundle state reveals Streamlit app created manually outside bundle management
+736 2:43p ✅ 23 files modified in session — sys.path bootstrap applied to 9 spark_python_task scripts
+737 " ✅ Session generated 1901 insertions across 24 files — major changes to scripts, tests, and dependencies
+738 " 🔴 compute_fingerprint wrapped in try/except in retrain_gate.py to prevent crash on failure
+739 2:44p 🔄 Vector search result scoring refactored with NaN-safe relevance extraction
+740 2:45p 🟣 Policy labels module added for human-readable document display names
+S137 Session request was "caveman:caveman ultra" - no work details observed yet (May 7, 2:45 PM)
+741 8:57p 🔵 HomeProjectAbacus: AI-Powered Healthcare Claim Denial Prevention System
+742 9:00p ✅ CLAUDE.md written with comprehensive project documentation
+743 9:01p ✅ CLAUDE.md finalized for the HomeProjectAbacus repository
+744 " ✅ CLAUDE.md refined with Medallion layer details and release gate info
+745 9:02p ✅ CLAUDE.md commands section completed with Streamlit run command
+746 9:03p 🔵 Existing CLAUDE.md discovered for healthcare claim denial project
+S139 Code review of src/rag for performance bottlenecks and simplification opportunities — 3 primary findings identified, now researching fix approach (May 7, 9:08 PM)
+S138 Code review of src/xai directory for performance bottlenecks and simplification opportunities (May 7, 9:38 PM)
+747 9:40p 🔵 src/xai directory contains three files implementing SHAP-based claim explanation
+748 9:42p 🔵 test_xai.py provides thorough coverage of SHAP explainer with cache and PHI-invariant tests
+749 9:43p 🔵 test_xai_rag_integration.py validates SHAP-to-RAG pipeline end-to-end
+750 " 🔵 _unwrap_for_shap peels model wrappers iteratively to reach native tree estimator
+751 " 🔵 All 18 XAI tests pass (test_xai.py + test_xai_rag_integration.py)
+752 9:44p 🔵 Code review of src/xai completed: clean architecture, no critical performance issues found
+S141 Code review and fix implementation for 4 findings in src/xai/explainer.py — performance bottlenecks and simplification opportunities in the SHAP explanation layer of a healthcare claims project. (May 7, 9:45 PM)
+S140 Code review of src/rag for performance bottlenecks and simplification opportunities, followed by implementing the identified fixes (May 7, 9:50 PM)
+S142 Code review and implement 4 fixes in src/xai/explainer.py (batch waste, brittle SHAP shape handling, silent feature-name truncation, neutral SHAP mislabeled as decreases_risk) (May 7, 9:52 PM)
+S143 Refactor SHAP explainer for robust single-claim handling with input normalization, SHAP shape extraction, neutral direction, and matching test coverage (May 7, 9:55 PM)
+S144 Debug why match percentages show 0% in Streamlit policy guidance despite proper text matches being shown (May 7, 10:04 PM)
+753 10:04p 🔴 Fixed misleading 0% match badges in Streamlit policy guidance cards
+S145 Review src/common directory for performance bottlenecks and simplification opportunities across healthcare claims ETL project (May 7, 10:05 PM)
+754 10:11p 🔵 Code review initiated on src/common directory
+755 10:12p 🔵 Prior MEMORY.md context loaded for src/common review
+756 10:13p 🔵 Code review requested for src/common directory
+757 10:19p 🔵 Code review of src/common underway on healthcare claims ETL project
+758 " 🔵 src/common module structure and architectural patterns identified
+759 " 🔄 normalize_severity_value confirmed as dead code, removal planned
+S146 Review src/common directory for performance bottlenecks and simplification opportunities — follow-up acting on the normalize_severity_value dead-code finding (May 7, 10:20 PM)
+**Investigated**: Verified normalize_severity_value() has zero callers across src/, ETL/, and tests/ directories. Read the receiving-code-review SKILL.md to follow the correct protocol (verify before implementing, no performative agreement). Ran targeted grep searches confirming the function only appears in its own definition at silver_cleaning.py:41 and its __all__ entry at line 188. Confirmed tests/test_silver_contract.py imports normalize_title_value but not normalize_severity_value.
 
-Access 229k tokens of past work via get_observations([IDs]) or mem-search skill.
+**Learned**: The normalize_severity_value() function is a trivial no-op wrapper over normalize_title_value() with no additional logic, no external callers in the entire repo, and no test coverage. Removing it has zero behavioral impact. The project's receiving-code-review skill enforces a verify-before-implement workflow with technical rigor rather than performative agreement.
+
+**Completed**: Full cross-reference search confirms dead-code finding. Sequential thinking planned the minimal removal scope. Verification complete — candidate for implementation with no expected test impact.
+
+**Next Steps**: Implement the narrow removal: delete normalize_severity_value definition and its __all__ entry from silver_cleaning.py, then run the contract test suite to confirm no regressions.
+
+
+Access 463k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

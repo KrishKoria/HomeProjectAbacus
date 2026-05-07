@@ -13,7 +13,6 @@ sync:
     - "*.dist-info/**"
     - .pytest_cache/**
     - .venv/**
-    - dist/**
     - build/**
     - .databricks/**
 
