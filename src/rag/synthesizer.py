@@ -38,6 +38,8 @@ def synthesize(
             "policy_citations": [],
             "source": "none",
         }
+    if shap_reasons and not policy_chunks:
+        return _synthesize_via_template(shap_reasons, policy_chunks)
 
     try:
         return _synthesize_via_llm(shap_reasons, policy_chunks, model_endpoint, temperature)

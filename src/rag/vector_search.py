@@ -9,6 +9,7 @@ from src.rag.policy_labels import policy_display_name
 logger = logging.getLogger(__name__)
 
 _RESULT_COLUMNS = ["chunk_id", "chunk_text", "document_path", "chunk_index"]
+_QUERY_TEXT_SUPPORT_CACHE: dict[str, bool] = {}
 
 
 def _env(name: str, default: str = "") -> str:
@@ -101,6 +102,33 @@ def _extract_relevance_score(entry: dict[str, Any], fallback: Any = None) -> flo
     return _coerce_optional_float(score_value)
 
 
+def _extract_relevance_score_kind(entry: dict[str, Any], fallback: Any = None) -> str | None:
+    """Track whether a relevance score is raw search ranking or normalized."""
+    raw_kind = entry.get("relevance_score_kind")
+    if raw_kind is not None:
+        kind = str(raw_kind).strip().lower()
+        if kind in {"raw", "normalized"}:
+            return kind
+
+    explicit_relevance = _coerce_optional_float(entry.get("relevance_score"))
+    if explicit_relevance is not None:
+        return "normalized"
+
+    raw_score = _coerce_optional_float(entry.get("score"))
+    if raw_score is not None:
+        return "raw"
+
+    fallback_score = _coerce_optional_float(fallback)
+    if fallback_score is not None:
+        return "raw"
+    return None
+
+
+def _requires_query_vector(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "query vector" in text or "query_vector" in text
+
+
 _EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 _EMBEDDING_DIM = 1024
 
@@ -123,9 +151,43 @@ def _generate_query_embedding(query_text: str) -> list[float]:
         return []
     return embeddings[0]
 
+
+def _query_with_vector_fallback(
+    *,
+    index_name: str,
+    query_text: str,
+    query_text_fn,
+    query_vector_fn,
+) -> Any:
+    """Run query_text/query_vector with per-index capability caching."""
+    supports_query_text = _QUERY_TEXT_SUPPORT_CACHE.get(index_name)
+
+    if supports_query_text is False:
+        query_vector = _generate_query_embedding(query_text)
+        if not query_vector:
+            return None
+        return query_vector_fn(query_vector)
+
+    try:
+        response = query_text_fn(query_text)
+        _QUERY_TEXT_SUPPORT_CACHE[index_name] = True
+        return response
+    except Exception as exc:
+        if not _requires_query_vector(exc):
+            raise
+        _QUERY_TEXT_SUPPORT_CACHE[index_name] = False
+        logger.info(
+            "Index %s has no query-time model endpoint; generating embedding",
+            index_name,
+        )
+        query_vector = _generate_query_embedding(query_text)
+        if not query_vector:
+            return None
+        return query_vector_fn(query_vector)
+
+
 def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list[dict[str, Any]]:
     from databricks.sdk import WorkspaceClient
-    from databricks.sdk.errors.platform import InvalidParameterValue
 
     w = WorkspaceClient()
 
@@ -137,20 +199,14 @@ def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list
             **kwargs,
         )
 
-    try:
-        response = _do_query(query_text=query_text)
-    except InvalidParameterValue as exc:
-        if "query vector" in str(exc).lower():
-            logger.info(
-                "Index %s has no query-time model endpoint; generating embedding",
-                index_name,
-            )
-            query_vector = _generate_query_embedding(query_text)
-            if not query_vector:
-                return []
-            response = _do_query(query_vector=query_vector)
-        else:
-            raise
+    response = _query_with_vector_fallback(
+        index_name=index_name,
+        query_text=query_text,
+        query_text_fn=lambda text: _do_query(query_text=text),
+        query_vector_fn=lambda vector: _do_query(query_vector=vector),
+    )
+    if response is None:
+        return []
 
     payload = _as_dict(response)
     manifest = payload.get("manifest") if payload else _field(response, "manifest", {})
@@ -166,6 +222,7 @@ def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list
         }
         fallback_score: Any = row[-1] if len(row) > len(_RESULT_COLUMNS) else None
         relevance_score = _extract_relevance_score(mapped, fallback=fallback_score)
+        relevance_score_kind = _extract_relevance_score_kind(mapped, fallback=fallback_score)
         document_path = mapped.get("document_path", "")
         chunk_index = mapped.get("chunk_index", 0)
         rows.append(
@@ -175,6 +232,7 @@ def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list
                 "document_path": document_path,
                 "chunk_index": chunk_index,
                 "relevance_score": relevance_score,
+                "relevance_score_kind": relevance_score_kind,
                 "policy_name": policy_display_name(str(document_path) if document_path is not None else None),
             }
         )
@@ -252,38 +310,40 @@ class PolicyRetriever:
 
         # Try query_text first; fall back to query_vector if the index
         # does not have a query-time model endpoint wired.
-        try:
-            raw = endpoint.similarity_search(
-                query_text=query_text,
+        raw = _query_with_vector_fallback(
+            index_name=self.index_name,
+            query_text=query_text,
+            query_text_fn=lambda text: endpoint.similarity_search(
+                query_text=text,
                 columns=_RESULT_COLUMNS,
                 num_results=top_k,
-            )
-        except Exception:
-            logger.info(
-                "similarity_search with query_text failed; retrying with query_vector"
-            )
-            query_vector = _generate_query_embedding(query_text)
-            if not query_vector:
-                return []
-            raw = endpoint.similarity_search(
-                query_vector=query_vector,
+            ),
+            query_vector_fn=lambda vector: endpoint.similarity_search(
+                query_vector=vector,
                 columns=_RESULT_COLUMNS,
                 num_results=top_k,
-            )
+            ),
+        )
+        if raw is None:
+            return []
 
         result = raw.get("result", {})
         data = result.get("data_array", [])
-        return [
-            {
-                "chunk_id": row[0],
-                "chunk_text": row[1],
-                "document_path": row[2],
-                "chunk_index": row[3],
-                "relevance_score": _coerce_optional_float(row[4]) if len(row) > 4 else None,
-                "policy_name": policy_display_name(str(row[2]) if len(row) > 2 else None),
-            }
-            for row in data
-        ]
+        rows: list[dict[str, Any]] = []
+        for row in data:
+            relevance_score = _coerce_optional_float(row[4]) if len(row) > 4 else None
+            rows.append(
+                {
+                    "chunk_id": row[0],
+                    "chunk_text": row[1],
+                    "document_path": row[2],
+                    "chunk_index": row[3],
+                    "relevance_score": relevance_score,
+                    "relevance_score_kind": "raw" if relevance_score is not None else None,
+                    "policy_name": policy_display_name(str(row[2]) if len(row) > 2 else None),
+                }
+            )
+        return rows
 
     @staticmethod
     def _normalize_results(
@@ -292,12 +352,15 @@ class PolicyRetriever:
         """Ensure every result dict has the expected keys."""
         normalized = []
         for item in raw:
+            relevance_score = _extract_relevance_score(item)
+            relevance_score_kind = _extract_relevance_score_kind(item)
             normalized.append(
                 {
                     "chunk_text": str(item.get("chunk_text", "")),
                     "document_path": str(item.get("document_path", "")),
                     "chunk_index": int(item.get("chunk_index", 0)),
-                    "relevance_score": _extract_relevance_score(item),
+                    "relevance_score": relevance_score,
+                    "relevance_score_kind": relevance_score_kind,
                     "policy_name": policy_display_name(item.get("document_path")),
                 }
             )
