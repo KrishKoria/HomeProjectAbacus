@@ -9,12 +9,12 @@ sync:
     - .git/**
     - __pycache__/**
     - "*.pyc"
-    - "*.dist-info"
-    - "*.dist-info/**"
-    - .pytest_cache/**
-    - .venv/**
-    - build/**
-    - .databricks/**
+    # - "*.dist-info"
+    # - "*.dist-info/**"
+    # - .pytest_cache/**
+    # - .venv/**
+    # - build/**
+    # - .databricks/**
 
 include:
   - resources/schemas/schemas.yml
