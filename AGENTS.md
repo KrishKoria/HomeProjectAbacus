@@ -1,76 +1,103 @@
-<claude-mem-context>
-# Memory Context
+This file provides guidance to Claude Code when working with code in this repository.
 
-# [homeprojectabacus] recent context, 2026-05-09 3:28pm GMT+5:30
+## Deferred decisions
 
-Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
-Format: ID TIME TYPE TITLE
-Fetch details: get_observations([IDs]) | Search: mem-search skill
+[`docs/deferred.md`](docs/deferred.md) records all deliberately-not-implemented features (`claim_type`, `ServiceVerifier` Protocol, `ops_service_*` tables, `verify_gold.py`, ETL constant parameterization, `build_analytics` CLI args, DAB `model_version` lookup variable). Read it before proposing any of those; each entry names the trigger that justifies reviving it.
 
-Stats: 50 obs (13,527t read) | 487,074t work | 97% savings
+## Project overview
 
-### May 7, 2026
-712 2:00p 🟣 All 9 entry-point scripts now have sys.path bootstrap applied
-713 2:01p ✅ Task 6 completed — all 9 entry-point scripts bootstrapped for Databricks spark_python_task
-714 " ✅ All 9 bootstrapped scripts pass py_compile syntax check
-715 2:02p ✅ Task 8 started — updating contract tests for all bootstrapped scripts
-716 " 🔵 Existing contract test asserts scripts must NOT use sys.path.insert — conflicts with new bootstrap pattern
-717 " 🔵 load_sample_data.py uses public PROJECT_ROOT (not _PROJECT_ROOT) — naming inconsistency
-718 2:03p 🔄 load_sample_data.py fully migrated to _PROJECT_ROOT private naming convention
-719 2:14p 🔵 Databricks Vector Search index creation fails due to async sync race condition
-720 " 🔵 Serena code intelligence tools initialized in workspace homeprojectabacus
-721 2:15p 🔴 Serena project activation does not persist across subsequent tool calls
-722 " 🔵 Symbols mapped for create_vector_index.py — the Databricks Vector Search bug target
-723 " 🔵 _create_index and _sync_existing_index are the root cause of the async race condition
-724 2:16p 🔵 Full async race condition flow charted in create_vector_index.py
-725 " 🔵 Researching Databricks SDK for index status polling via Context7
-726 " 🔵 Databricks SDK has built-in long-running operation polling — VectorSearchClient is lower-level
-727 " 🔵 Databricks Vector Search index provides built-in wait_until_ready() and status polling via describe()
-728 2:17p ⚖️ Fix plan: add wait_until_ready() before sync in create_vector_index.py
-729 2:21p 🔵 Confirmed: DELTA_SYNC indexes auto-sync — explicit sync() after create is unnecessary
-730 " 🔵 Confirmed: Databricks create_delta_sync_index examples never call sync() after creation
-731 2:24p 🔵 Claude-Mem semantic search failing with ChromaDB connection error
-732 2:27p 🔵 Symbol map of app_streamlit.py retrieved for frontend investigation
-733 2:30p 🔵 pyproject.toml dependency structure confirmed — sklearn isolated to [dependency-groups].ml
-734 2:31p ✅ All ML dependencies moved from [dependency-groups].ml to main dependencies in pyproject.toml
-735 2:39p 🔵 Databricks bundle state reveals Streamlit app created manually outside bundle management
-736 2:43p ✅ 23 files modified in session — sys.path bootstrap applied to 9 spark_python_task scripts
-737 " ✅ Session generated 1901 insertions across 24 files — major changes to scripts, tests, and dependencies
-738 " 🔴 compute_fingerprint wrapped in try/except in retrain_gate.py to prevent crash on failure
-739 2:44p 🔄 Vector search result scoring refactored with NaN-safe relevance extraction
-740 2:45p 🟣 Policy labels module added for human-readable document display names
-741 8:57p 🔵 HomeProjectAbacus: AI-Powered Healthcare Claim Denial Prevention System
-742 9:00p ✅ CLAUDE.md written with comprehensive project documentation
-743 9:01p ✅ CLAUDE.md finalized for the HomeProjectAbacus repository
-744 " ✅ CLAUDE.md refined with Medallion layer details and release gate info
-745 9:02p ✅ CLAUDE.md commands section completed with Streamlit run command
-746 9:03p 🔵 Existing CLAUDE.md discovered for healthcare claim denial project
-S139 Code review of src/rag for performance bottlenecks and simplification opportunities — 3 primary findings identified, now researching fix approach (May 7, 9:08 PM)
-S138 Code review of src/xai directory for performance bottlenecks and simplification opportunities (May 7, 9:38 PM)
-747 9:40p 🔵 src/xai directory contains three files implementing SHAP-based claim explanation
-748 9:42p 🔵 test_xai.py provides thorough coverage of SHAP explainer with cache and PHI-invariant tests
-749 9:43p 🔵 test_xai_rag_integration.py validates SHAP-to-RAG pipeline end-to-end
-750 " 🔵 _unwrap_for_shap peels model wrappers iteratively to reach native tree estimator
-751 " 🔵 All 18 XAI tests pass (test_xai.py + test_xai_rag_integration.py)
-752 9:44p 🔵 Code review of src/xai completed: clean architecture, no critical performance issues found
-S141 Code review and fix implementation for 4 findings in src/xai/explainer.py — performance bottlenecks and simplification opportunities in the SHAP explanation layer of a healthcare claims project. (May 7, 9:45 PM)
-S140 Code review of src/rag for performance bottlenecks and simplification opportunities, followed by implementing the identified fixes (May 7, 9:50 PM)
-S142 Code review and implement 4 fixes in src/xai/explainer.py (batch waste, brittle SHAP shape handling, silent feature-name truncation, neutral SHAP mislabeled as decreases_risk) (May 7, 9:52 PM)
-S143 Refactor SHAP explainer for robust single-claim handling with input normalization, SHAP shape extraction, neutral direction, and matching test coverage (May 7, 9:55 PM)
-S144 Debug why match percentages show 0% in Streamlit policy guidance despite proper text matches being shown (May 7, 10:04 PM)
-753 10:04p 🔴 Fixed misleading 0% match badges in Streamlit policy guidance cards
-S145 Review src/common directory for performance bottlenecks and simplification opportunities across healthcare claims ETL project (May 7, 10:05 PM)
-754 10:11p 🔵 Code review initiated on src/common directory
-755 10:12p 🔵 Prior MEMORY.md context loaded for src/common review
-756 10:13p 🔵 Code review requested for src/common directory
-757 10:19p 🔵 Code review of src/common underway on healthcare claims ETL project
-758 " 🔵 src/common module structure and architectural patterns identified
-S146 Review src/common directory for performance bottlenecks and simplification opportunities — follow-up acting on the normalize_severity_value dead-code finding (May 7, 10:19 PM)
-759 " 🔄 normalize_severity_value confirmed as dead code, removal planned
-S147 Review src/common directory and implement normalization simplification — removed dead normalize_severity_value wrapper (May 7, 10:22 PM)
-### May 9, 2026
-760 3:19p 🟣 Project architecture diagram generation initiated via imagegen skill
-761 3:20p 🔵 Project MEMORY.md contains comprehensive architecture and task history for homeprojectabacus
+AI-Powered Claim Denial Prevention & Remediation System — Databricks + Spark + Delta Lake + MLflow + Streamlit.
 
-Access 487k tokens of past work via get_observations([IDs]) or mem-search skill.
-</claude-mem-context>
+**Medallion:** Bronze (raw ingest) → Silver (trusted) → Gold (`healthcare.gold.claim_features`, 13 features) → ML (`healthcare.ml.claim_denial_model@champion`).
+
+**Release gate:** Recall@HIGH ≥ 0.80, Precision ≥ 0.70, ROC-AUC ≥ 0.85. Gate-failing models are not pickled or registered.
+
+## Commands
+
+```bash
+# Install all deps (core + dev)
+uv sync
+uv sync --group dev
+
+# Run tests
+uv run pytest -q                          # all tests
+uv run pytest -q tests/test_ml_contract.py  # single file
+uv run pytest -q -k "test_name"             # single test
+
+# Databricks bundle
+databricks bundle validate -t dev --profile dev
+databricks bundle deploy -t dev --profile dev
+databricks bundle run -t dev --profile dev <job_key>
+
+# Run Streamlit app locally
+uv run streamlit run src/analytics/app_streamlit.py
+```
+
+## Architecture
+
+### Dual package layout
+
+Two installable packages via hatchling (`pyproject.toml` → `[tool.hatch.build.targets.wheel] packages = ["src", "ETL/common"]`):
+
+| Package       | Purpose                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| `src/`        | All business logic — ML, RAG, XAI, analytics, scripts, common helpers, framework            |
+| `ETL/common/` | One-line proxies that re-export from `src.common.*` for Databricks ETL import compatibility |
+
+Every `ETL/common/<module>.py` is exactly: `from src.common.<module> import *  # noqa: F401,F403`
+
+### Source tree
+
+```
+src/
+  analytics/     — Streamlit app, claims analytics, observability assets
+  common/        — Shared config, constants, PHI registry, log messages, diagnostics
+  framework/     — Service verifier, manifest validation (HealthCheckResult)
+  ml/            — Train, evaluate, predict, features, retrain gate
+  rag/           — Embeddings, retriever, synthesizer, vector search, policy labels
+  scripts/       — Databricks spark_python_task entry points (10 scripts)
+  xai/           — SHAP explainer, feature reasons
+ETL/
+  common/        — Re-export proxies for src.common.*
+  pipelines/     — Bronze/Silver/Gold Delta Lake ETL transforms
+resources/
+  schemas/       — Unity Catalog schema declarations
+  volumes/       — UC volume declarations
+services/        — Databricks bundle job definitions, grouped by domain
+  etl/resources/        — analytics_observability, etl_file_arrival, etl_fast_dev
+  ml/training/resources/  — training.job.yml
+  rag/vector_index/resources/ — vector_index.job.yml
+  infrastructure/setup/resources/ — setup_infrastructure.job.yml
+```
+
+### Databricks bundle
+
+Bundle name: `healthcare-claim-ops`. Engine: `direct`. Targets: `dev` (default), `prod`.
+
+All jobs use `spark_python_task` with `--editable ${workspace.file_path}` dependency. The `src/` package is deployed as workspace files but is NOT importable via editable install in serverless runtime — hence the sys.path bootstrap pattern.
+
+Every `src/scripts/*.py` entry point **must** include this bootstrap before any `from src.*` imports:
+
+```python
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Final
+
+_SCRIPT_PATH: Final[Path] = Path(
+    globals().get("__file__", sys._getframe().f_code.co_filename)
+).resolve()
+_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+```
+
+## Hard rules
+
+- Every module starts with `from __future__ import annotations`.
+- Module constants typed `Final[...]`.
+- `__all__` alphabetically sorted.
+- ETL/common files are one-line proxies only.
+- Logs never interpolate PHI — use `MESSAGE_TEMPLATE_*` + `render_*` helpers; reference identifiers (claim_id, provider_id) only.
+- Bare `except Exception` must call `logger.warning(..., exc_info=True)` — never silent swallow.
