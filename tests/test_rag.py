@@ -10,7 +10,8 @@ from unittest import mock
 
 from src.rag.embeddings import EmbeddingProvider
 from src.rag.policy_labels import policy_display_name, policy_excerpt_label, policy_reference_label
-from src.rag.retriever import _scrub_phi, retrieve_and_explain
+from src.rag.policy_labels import _scrub_phi
+from src.rag.retriever import retrieve_and_explain
 from src.rag.synthesizer import _synthesize_via_template, synthesize
 from src.rag.vector_search import PolicyRetriever
 from src.scripts import create_vector_index
