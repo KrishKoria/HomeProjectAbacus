@@ -119,6 +119,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="champion",
         help="Registry alias to move onto the new version (empty = no alias).",
     )
+    parser.add_argument(
+        "--gold-version",
+        type=int,
+        default=None,
+        help="Pre-computed Gold table version (skips DESCRIBE HISTORY when provided).",
+    )
+    parser.add_argument(
+        "--fingerprint",
+        default=None,
+        help="Pre-computed data fingerprint (skips compute_fingerprint when provided).",
+    )
     return parser.parse_args(argv)
 
 
@@ -169,6 +180,8 @@ def train_pipeline(
     champion_alias: str | None = "champion",
     register_only_on_pass: bool = True,
     gold_table_name: str = "healthcare.gold.claim_features",
+    gold_version: int | None = None,
+    fingerprint: str | None = None,
 ) -> tuple:
     """Run the full LR + XGBoost training + MLflow logging pipeline.
 
@@ -278,11 +291,14 @@ def train_pipeline(
     register_target = registered_model_name if should_register else None
 
     try:
-        from pyspark.sql import SparkSession
+        if gold_version is None or fingerprint is None:
+            from pyspark.sql import SparkSession
 
-        spark = SparkSession.builder.getOrCreate()
-        gold_version = _current_gold_version(spark, gold_table_name)
-        fingerprint = compute_fingerprint(spark, gold_table_name, list(FEATURE_COLUMNS))
+            spark = SparkSession.builder.getOrCreate()
+        if gold_version is None:
+            gold_version = _current_gold_version(spark, gold_table_name)
+        if fingerprint is None:
+            _, fingerprint = compute_fingerprint(spark, gold_table_name, list(FEATURE_COLUMNS))
     except Exception as exc:
         diag_id = get_ml_diagnostic_id("gold_metadata_computation_failed")
         logger.error(
@@ -354,6 +370,8 @@ def main(argv: list[str] | None = None) -> int:
         registered_model_name=args.registered_model_name or None,
         champion_alias=args.champion_alias or None,
         gold_table_name=args.gold_table,
+        gold_version=args.gold_version,
+        fingerprint=args.fingerprint,
     )
 
     print(f"Best model: {name}")
