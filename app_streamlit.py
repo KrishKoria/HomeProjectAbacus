@@ -1325,6 +1325,15 @@ def main() -> None:
     _init_session()
     _inject_theme_css()
 
+    # --- Authentication gate ---
+    from src.analytics.auth import apply_auth_gate
+
+    auth_state = apply_auth_gate()
+    if auth_state != "allowed":
+        # apply_auth_gate renders the appropriate screen and returns
+        # "unavailable", "login", "denied", or "timeout"
+        return
+
     st.title("Claim Denial Risk Analyzer")
     st.caption("SHAP feature attribution with policy retrieval via Llama 3.3 70B on Databricks")
 

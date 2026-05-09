@@ -60,6 +60,8 @@ variables:
     default: healthcare.ml.claim_denial_model
   app_model_alias:
     default: champion
+  app_auth_audit_table:
+    default: healthcare.analytics.app_auth_events
 
 experimental:
   skip_name_prefix_for_schema: true

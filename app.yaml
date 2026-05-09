@@ -1,7 +1,6 @@
 command:
-  - streamlit
-  - run
-  - app_streamlit.py
+  - python
+  - launcher.py
 env:
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
@@ -17,3 +16,15 @@ env:
     value: "champion"
   - name: CLAIMOPS_VECTOR_INDEX_NAME
     value: "healthcare.gold.policy_chunks_index"
+  - name: STREAMLIT_OIDC_ENABLED_PROVIDERS
+    value: "google"
+  - name: STREAMLIT_OIDC_GOOGLE_CLIENT_ID
+    valueFrom: google_client_id
+  - name: STREAMLIT_OIDC_GOOGLE_CLIENT_SECRET
+    valueFrom: google_client_secret
+  - name: STREAMLIT_OIDC_GOOGLE_REDIRECT_URI
+    valueFrom: redirect_uri
+  - name: STREAMLIT_OIDC_COOKIE_SECRET
+    valueFrom: cookie_secret
+  - name: CLAIMOPS_AUTH_MODE
+    value: "auto"
