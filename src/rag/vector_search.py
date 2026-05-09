@@ -158,6 +158,27 @@ def _extract_relevance_score_kind(entry: dict[str, Any], fallback: Any = None) -
     return None
 
 
+def _build_result_row(
+    mapped: dict[str, Any],
+    document_path: Any,
+    chunk_index: Any,
+    fallback_score: Any = None,
+) -> dict[str, Any]:
+    relevance_score = _extract_relevance_score(mapped, fallback=fallback_score)
+    relevance_score_kind = _extract_relevance_score_kind(mapped, fallback=fallback_score)
+    return {
+        "chunk_id": mapped.get("chunk_id"),
+        "chunk_text": mapped.get("chunk_text", ""),
+        "document_path": document_path,
+        "chunk_index": chunk_index,
+        "relevance_score": relevance_score,
+        "relevance_score_kind": relevance_score_kind,
+        "policy_name": policy_display_name(
+            str(document_path) if document_path is not None else None
+        ),
+    }
+
+
 def _requires_query_vector(exc: Exception) -> bool:
     text = str(exc).lower()
     return "query vector" in text or "query_vector" in text
@@ -257,20 +278,15 @@ def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list
             for index in range(min(len(row), len(column_names)))
         }
         fallback_score: Any = row[-1] if len(row) > len(_RESULT_COLUMNS) else None
-        relevance_score = _extract_relevance_score(mapped, fallback=fallback_score)
-        relevance_score_kind = _extract_relevance_score_kind(mapped, fallback=fallback_score)
         document_path = mapped.get("document_path", "")
         chunk_index = mapped.get("chunk_index", 0)
         rows.append(
-            {
-                "chunk_id": mapped.get("chunk_id"),
-                "chunk_text": mapped.get("chunk_text", ""),
-                "document_path": document_path,
-                "chunk_index": chunk_index,
-                "relevance_score": relevance_score,
-                "relevance_score_kind": relevance_score_kind,
-                "policy_name": policy_display_name(str(document_path) if document_path is not None else None),
-            }
+            _build_result_row(
+                mapped=mapped,
+                document_path=document_path,
+                chunk_index=chunk_index,
+                fallback_score=fallback_score,
+            )
         )
     return rows
 
@@ -307,7 +323,7 @@ class PolicyRetriever:
 
         try:
             results = self._query_index(query_text, k)
-            return self._normalize_results(results)
+            return results
         except Exception:
             logger.exception(
                 "Vector Search query failed for index %s; returning empty results",
@@ -369,15 +385,18 @@ class PolicyRetriever:
         for row in data:
             relevance_score = _coerce_optional_float(row[4]) if len(row) > 4 else None
             rows.append(
-                {
-                    "chunk_id": row[0],
-                    "chunk_text": row[1],
-                    "document_path": row[2],
-                    "chunk_index": row[3],
-                    "relevance_score": relevance_score,
-                    "relevance_score_kind": "raw" if relevance_score is not None else None,
-                    "policy_name": policy_display_name(str(row[2]) if len(row) > 2 else None),
-                }
+                _build_result_row(
+                    mapped={
+                        "chunk_id": row[0],
+                        "chunk_text": row[1],
+                        "document_path": row[2],
+                        "chunk_index": row[3],
+                        "relevance_score": relevance_score,
+                    },
+                    document_path=row[2] if len(row) > 2 else None,
+                    chunk_index=row[3] if len(row) > 3 else 0,
+                    fallback_score=None,
+                )
             )
         return rows
 
