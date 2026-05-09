@@ -46,6 +46,8 @@ class PolicyRetrieverTests(unittest.TestCase):
     def setUp(self) -> None:
         from src.rag import vector_search
         vector_search._reset_workspace_client()
+        vector_search._reset_vector_search_client()
+        vector_search._reset_embedding_provider()
 
     def test_empty_query_returns_empty_list(self) -> None:
         retriever = PolicyRetriever()
@@ -471,6 +473,8 @@ class RetrieveAndExplainTests(unittest.TestCase):
     def setUp(self) -> None:
         from src.rag import vector_search
         vector_search._reset_workspace_client()
+        vector_search._reset_vector_search_client()
+        vector_search._reset_embedding_provider()
         self.shap_reasons = [
             {
                 "feature": "high_cost_flag",

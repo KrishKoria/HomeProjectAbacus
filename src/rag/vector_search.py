@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 _RESULT_COLUMNS = ["chunk_id", "chunk_text", "document_path", "chunk_index"]
 _QUERY_TEXT_SUPPORT_CACHE: dict[str, bool] = {}
+_VECTOR_SEARCH_CLIENT: Any = None
 
 _WORKSPACE_CLIENT: Any = None
 
@@ -28,6 +29,16 @@ def _reset_workspace_client() -> None:
     _WORKSPACE_CLIENT = None
 
 
+def _reset_vector_search_client() -> None:
+    global _VECTOR_SEARCH_CLIENT
+    _VECTOR_SEARCH_CLIENT = None
+
+
+def _reset_embedding_provider() -> None:
+    global _EMBEDDING_PROVIDER
+    _EMBEDDING_PROVIDER = None
+
+
 def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
@@ -44,32 +55,39 @@ def _workspace_url() -> str:
 
 
 def _vector_search_client():
+    global _VECTOR_SEARCH_CLIENT
+    if _VECTOR_SEARCH_CLIENT is not None:
+        return _VECTOR_SEARCH_CLIENT
+
     from databricks.vector_search.client import VectorSearchClient
 
     workspace_url = _workspace_url()
     personal_access_token = _env("DATABRICKS_TOKEN")
     if workspace_url and personal_access_token:
-        return VectorSearchClient(
+        _VECTOR_SEARCH_CLIENT = VectorSearchClient(
             workspace_url=workspace_url,
             personal_access_token=personal_access_token,
             disable_notice=True,
         )
+        return _VECTOR_SEARCH_CLIENT
 
     client_id = _env("DATABRICKS_CLIENT_ID")
     client_secret = _env("DATABRICKS_CLIENT_SECRET")
     if workspace_url and client_id and client_secret:
-        return VectorSearchClient(
+        _VECTOR_SEARCH_CLIENT = VectorSearchClient(
             workspace_url=workspace_url,
             service_principal_client_id=client_id,
             service_principal_client_secret=client_secret,
             disable_notice=True,
         )
+        return _VECTOR_SEARCH_CLIENT
 
     logger.warning(
         "VectorSearchClient is unconfigured: set DATABRICKS_HOST "
         "with DATABRICKS_TOKEN or (DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET)"
     )
-    return VectorSearchClient(disable_notice=True)
+    _VECTOR_SEARCH_CLIENT = VectorSearchClient(disable_notice=True)
+    return _VECTOR_SEARCH_CLIENT
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -147,6 +165,7 @@ def _requires_query_vector(exc: Exception) -> bool:
 
 _EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 _EMBEDDING_DIM = 1024
+_EMBEDDING_PROVIDER: Any = None
 
 
 def _generate_query_embedding(query_text: str) -> list[float]:
@@ -158,10 +177,13 @@ def _generate_query_embedding(query_text: str) -> list[float]:
     """
     from src.rag.embeddings import EmbeddingProvider
 
-    provider = EmbeddingProvider(
-        endpoint_name=_EMBEDDING_ENDPOINT, embedding_dim=_EMBEDDING_DIM
-    )
-    embeddings = provider.embed_batch([query_text])
+    global _EMBEDDING_PROVIDER
+    if _EMBEDDING_PROVIDER is None:
+        _EMBEDDING_PROVIDER = EmbeddingProvider(
+            endpoint_name=_EMBEDDING_ENDPOINT, embedding_dim=_EMBEDDING_DIM
+        )
+
+    embeddings = _EMBEDDING_PROVIDER.embed_batch([query_text])
     if not embeddings:
         logger.error("GTE embedding returned empty result for query text")
         return []
