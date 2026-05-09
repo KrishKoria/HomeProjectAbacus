@@ -10,6 +10,7 @@
 .pytest_cache/
 .streamlit/
 .venv/
+.opencode/
 .databricks/
 .code-review-graph/
 *.egg-info/
