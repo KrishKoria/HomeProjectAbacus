@@ -24,6 +24,31 @@ resources:
             securable_full_name: ${var.app_model_registry_name}
             securable_type: FUNCTION
             permission: EXECUTE
+        - name: app-auth-audit-table
+          uc_securable:
+            securable_full_name: ${var.app_auth_audit_table}
+            securable_type: TABLE
+            permission: MODIFY
+        - name: google_client_id
+          secret:
+            key: google-client-id
+            scope: claimops-auth
+            permission: READ
+        - name: google_client_secret
+          secret:
+            key: google-client-secret
+            scope: claimops-auth
+            permission: READ
+        - name: redirect_uri
+          secret:
+            key: redirect-uri
+            scope: claimops-auth
+            permission: READ
+        - name: cookie_secret
+          secret:
+            key: cookie-secret
+            scope: claimops-auth
+            permission: READ
       permissions:
         - level: CAN_USE
           group_name: users
