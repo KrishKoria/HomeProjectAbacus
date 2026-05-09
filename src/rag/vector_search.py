@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from typing import Any
 
@@ -121,7 +122,7 @@ def _coerce_optional_float(value: Any) -> float | None:
         numeric = float(value)
     except (TypeError, ValueError):
         return None
-    if numeric != numeric:
+    if math.isnan(numeric):
         return None
     return numeric
 
