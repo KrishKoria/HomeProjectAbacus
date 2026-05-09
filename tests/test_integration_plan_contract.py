@@ -149,6 +149,9 @@ class RetrainGateTests(unittest.TestCase):
         def collect(self):
             return [RetrainGateTests._FakeRow(row) for row in self.rows]
 
+        def agg(self, *exprs):
+            return self
+
     class _FakeSpark:
         def __init__(self, rows):
             self.rows = rows
@@ -230,7 +233,7 @@ class RetrainGateTests(unittest.TestCase):
             data=SimpleNamespace(params={"training_data_fingerprint": "old", "training_row_count": "1000"})
         )
         with (
-            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="new"),
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "new")),
             mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
         ):
             decision = decide_retrain(
@@ -256,7 +259,7 @@ class RetrainGateTests(unittest.TestCase):
             data=SimpleNamespace(params={"training_data_fingerprint": "same", "training_row_count": "1000"})
         )
         with (
-            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="same"),
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "same")),
             mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a", "b"]),
         ):
             decision = decide_retrain(
@@ -282,7 +285,7 @@ class RetrainGateTests(unittest.TestCase):
             data=SimpleNamespace(params={"training_data_fingerprint": "same", "training_row_count": "1000"})
         )
         with (
-            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="same"),
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "same")),
             mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=[]),
         ):
             decision = decide_retrain(
@@ -308,7 +311,7 @@ class RetrainGateTests(unittest.TestCase):
             data=SimpleNamespace(params={"training_data_fingerprint": "same", "training_row_count": "1000"})
         )
         with (
-            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="same"),
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "same")),
             mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
         ):
             decision = decide_retrain(
@@ -362,8 +365,14 @@ class RetrainGateTests(unittest.TestCase):
             def alias(self, _name: str):
                 return self
 
+            def cast(self, _type):
+                return self
+
         class _SparkFrame:
             def select(self, *_args, **_kwargs):
+                return self
+
+            def agg(self, *_args, **_kwargs):
                 return self
 
             def collect(self):
@@ -384,6 +393,14 @@ class RetrainGateTests(unittest.TestCase):
 
             @staticmethod
             def lit(*_args, **_kwargs):
+                return _Expr()
+
+            @staticmethod
+            def count(*_args, **_kwargs):
+                return _Expr()
+
+            @staticmethod
+            def sum(*_args, **_kwargs):
                 return _Expr()
 
         fake_pyspark = ModuleType("pyspark")
@@ -433,7 +450,7 @@ class RetrainGateTests(unittest.TestCase):
         self.assertIsNone(decision.should_retrain)
         self.assertIsNotNone(decision.error_detail)
 
-    def test_decide_retrain_passes_precomputed_row_count_to_fingerprint(self) -> None:
+    def test_decide_retrain_calls_fingerprint_with_correct_args(self) -> None:
         from src.ml.retrain_gate import decide_retrain
 
         fake_spark = self._FakeSpark([{"a": 1}])
@@ -444,7 +461,7 @@ class RetrainGateTests(unittest.TestCase):
         )
 
         with (
-            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="new") as fingerprint_mock,
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "new")) as fingerprint_mock,
             mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
         ):
             decide_retrain(
@@ -460,7 +477,6 @@ class RetrainGateTests(unittest.TestCase):
             fake_spark,
             "healthcare.gold.claim_features",
             ["a"],
-            row_count=1,
         )
 
     def test_decide_retrain_returns_error_when_fingerprint_computation_fails(self) -> None:
@@ -522,7 +538,7 @@ class RetrainGateTests(unittest.TestCase):
         fake_client = mock.MagicMock()
         fake_client.get_model_version_by_alias.side_effect = RuntimeError("alias down")
 
-        with mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="abc123"):
+        with mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "abc123")):
             with self.assertLogs("src.ml.retrain_gate", level="WARNING") as captured:
                 decision = decide_retrain(
                     fake_spark,
@@ -550,7 +566,7 @@ class RetrainGateTests(unittest.TestCase):
         fake_client.get_run.side_effect = RuntimeError("run down")
 
         with (
-            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="abc123"),
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "abc123")),
             mock.patch("src.ml.retrain_gate._resolve_champion_alias", return_value=SimpleNamespace(run_id="run-1")),
             mock.patch("src.ml.retrain_gate._resolve_champion_run", side_effect=RuntimeError("run down")),
         ):
@@ -581,7 +597,7 @@ class RetrainGateTests(unittest.TestCase):
             data=SimpleNamespace(params={"training_data_fingerprint": "old", "training_row_count": "1000"})
         )
         with (
-            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="new"),
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "new")),
             mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
         ):
             decision = decide_retrain(
@@ -607,7 +623,7 @@ class RetrainGateTests(unittest.TestCase):
             data=SimpleNamespace(params={"training_data_fingerprint": "old", "training_row_count": "1000"})
         )
         with (
-            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="new"),
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "new")),
             mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
         ):
             decision = decide_retrain(
@@ -634,7 +650,7 @@ class RetrainGateTests(unittest.TestCase):
             data=SimpleNamespace(params={"training_data_fingerprint": "old", "training_row_count": "1000"})
         )
         with (
-            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="new"),
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "new")),
             mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["a"]),
         ):
             decision = decide_retrain(
@@ -660,7 +676,7 @@ class RetrainGateTests(unittest.TestCase):
             data=SimpleNamespace(params={"training_data_fingerprint": "same", "training_row_count": "1000"})
         )
         with (
-            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value="same"),
+            mock.patch("src.ml.retrain_gate.compute_fingerprint", return_value=(0, "same")),
             mock.patch("src.ml.retrain_gate._feature_columns_from_run", return_value=["x", "y"]),
         ):
             decision = decide_retrain(
