@@ -6,6 +6,22 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+_WORKSPACE_CLIENT: Any = None
+
+
+def _get_workspace_client() -> Any:
+    global _WORKSPACE_CLIENT
+    if _WORKSPACE_CLIENT is None:
+        from databricks.sdk import WorkspaceClient
+
+        _WORKSPACE_CLIENT = WorkspaceClient()
+    return _WORKSPACE_CLIENT
+
+
+def _reset_workspace_client() -> None:
+    global _WORKSPACE_CLIENT
+    _WORKSPACE_CLIENT = None
+
 
 class EmbeddingProvider:
     """Thin wrapper around the Databricks GTE Foundation Model API.
@@ -93,7 +109,7 @@ class EmbeddingProvider:
                 "databricks-sdk not available; using fallback embeddings"
             )
 
-        w = WorkspaceClient()
+        w = _get_workspace_client()
         response = w.serving_endpoints.query(
             name=self.endpoint_name,
             input=texts,

@@ -43,6 +43,10 @@ class PhiScrubbingTests(unittest.TestCase):
 
 
 class PolicyRetrieverTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from src.rag import vector_search
+        vector_search._reset_workspace_client()
+
     def test_empty_query_returns_empty_list(self) -> None:
         retriever = PolicyRetriever()
         result = retriever.search("")
@@ -287,6 +291,10 @@ class PolicyRetrieverTests(unittest.TestCase):
 
 
 class EmbeddingProviderTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from src.rag import embeddings
+        embeddings._reset_workspace_client()
+
     def test_call_endpoint_sends_batch_and_maps_using_index(self) -> None:
         query_mock = mock.Mock(
             return_value=SimpleNamespace(
@@ -384,6 +392,8 @@ class PolicyLabelTests(unittest.TestCase):
 
 class SynthesizerTests(unittest.TestCase):
     def setUp(self) -> None:
+        from src.rag import synthesizer
+        synthesizer._reset_workspace_client()
         self.shap_reasons = [
             {
                 "feature": "amount_to_benchmark_ratio",
@@ -459,6 +469,8 @@ class SynthesizerTests(unittest.TestCase):
 
 class RetrieveAndExplainTests(unittest.TestCase):
     def setUp(self) -> None:
+        from src.rag import vector_search
+        vector_search._reset_workspace_client()
         self.shap_reasons = [
             {
                 "feature": "high_cost_flag",
