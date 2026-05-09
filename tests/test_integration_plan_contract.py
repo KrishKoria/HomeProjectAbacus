@@ -787,8 +787,8 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn("securable_type: FUNCTION", resource_source)
         self.assertIn("permission: EXECUTE", resource_source)
         self.assertIn("command:", app_yaml)
-        self.assertIn("streamlit", app_yaml)
-        self.assertIn("app_streamlit.py", app_yaml)
+        self.assertIn("python", app_yaml)
+        self.assertIn("launcher.py", app_yaml)
 
     def test_app_yaml_defines_required_runtime_envs(self) -> None:
         source = (PROJECT_ROOT / "app.yaml").read_text(encoding="utf-8")
