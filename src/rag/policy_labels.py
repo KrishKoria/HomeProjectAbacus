@@ -4,6 +4,22 @@ import re
 
 _UNKNOWN_POLICY_LABEL = "Unknown Policy"
 
+_PHI_STRIP_PATTERNS = [
+    r"\b\d{3}-\d{2}-\d{4}\b",
+    r"\b\d{4}-\d{2}-\d{2}\b",
+    r"\b\d{2}/\d{2}/\d{4}\b",
+    r"\$\d[\d,.]*\b",
+    r"\b(?:PAT|PT|MRN)[-_ ]?\d+\b",
+]
+
+
+def _scrub_phi(text: str) -> str:
+    """Remove PHI-like patterns from a string."""
+    cleaned = text
+    for pattern in _PHI_STRIP_PATTERNS:
+        cleaned = re.sub(pattern, "[REDACTED]", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
 
 def policy_display_name(document_path: str | None) -> str:
     """Return a human-readable policy label from a stored document path."""
@@ -43,6 +59,7 @@ def policy_reference_label(document_path: str | None, chunk_index: object) -> st
 
 
 __all__ = [
+    "_scrub_phi",
     "policy_display_name",
     "policy_excerpt_label",
     "policy_reference_label",

@@ -1,75 +1,103 @@
-<claude-mem-context>
-# Memory Context
+This file provides guidance to Claude Code when working with code in this repository.
 
-# [homeprojectabacus] recent context, 2026-05-09 9:19pm GMT+5:30
+## Deferred decisions
 
-Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
-Format: ID TIME TYPE TITLE
-Fetch details: get_observations([IDs]) | Search: mem-search skill
+[`docs/deferred.md`](docs/deferred.md) records all deliberately-not-implemented features (`claim_type`, `ServiceVerifier` Protocol, `ops_service_*` tables, `verify_gold.py`, ETL constant parameterization, `build_analytics` CLI args, DAB `model_version` lookup variable). Read it before proposing any of those; each entry names the trigger that justifies reviving it.
 
-Stats: 50 obs (17,508t read) | 1,072,507t work | 98% savings
+## Project overview
 
-### May 9, 2026
-793 6:18p ✅ Task 6 (auth-unavailable failure screen) completed
-794 6:19p 🔵 Context7 library lookup confirms Streamlit native OIDC API documentation available
-795 " 🔵 Streamlit native OIDC API surface documented via Context7 docs query
-796 6:21p 🟣 src/analytics/auth.py created — core auth module with session, access policy, audit, and lifecycle
-797 6:22p 🔄 auth.py completely rewritten to use Streamlit native OIDC API with apply_auth_gate() entrypoint
-798 " 🟣 src/analytics/audit.py created — standalone append-only auth audit writer for Databricks Delta table
-799 6:23p 🔄 auth_ui.py created — rendering layer separated from auth business logic
-800 6:24p 🟣 Authentication gate wired into app_streamlit.py main() — app now requires login before rendering
-801 " ✅ ETL/common/auth_config.py created as re-export shim for ETL namespace
-802 6:25p ⚖️ Primary session instructed to use /impeccable skill for frontend work
-803 6:40p 🟣 OIDC authentication gate implemented for Streamlit app
-804 " 🟣 Auth audit event system writes to healthcare.analytics.app_auth_events
-805 " ✅ Auth config module centralized with session and audit constants
-806 " ✅ Integration contract tests updated for launcher-based entrypoint
-807 6:41p ✅ CLAUDE.md updated with corrected local run command and auth test instructions
-808 " ✅ CLAUDE.md source tree updated to document auth modules
-809 " 🔵 Audit insert SQL verified with correct parameterized query structure
-810 " ✅ Comprehensive Authentication documentation added to CLAUDE.md
-811 7:13p 🔵 Databricks bundle deploy requires pre-existing UC tables
-812 7:16p 🔵 User reports claimops-auth secret reset after Databricks deploy
-813 7:17p 🟣 Cookie secret added to claimops-auth YAML resource declarations
-814 7:20p 🔄 Audit column names extracted to reusable tuple constant
-815 7:21p 🟣 Cookie secret wired into app.yaml environment for Streamlit OIDC
-816 7:22p 🔵 Cookie secret in launcher.py still reads from Google client_secret, not dedicated env var
-817 " 🔴 Cookie secret now read from dedicated env var before falling back to Google client_secret
-818 7:33p 🔵 OIDC launcher error root cause: provider env var parsing too greedy
-819 7:34p 🔴 Fixed env-var parsing that falsely required COOKIE_CLIENT_ID/COOKIE_CLIENT_SECRET
-820 7:46p 🔴 Streamlit OIDC environment variable mismatch on Databricks Apps
-821 8:01p 🔵 No primary session actions to observe yet
-822 8:02p 🔵 Started debugging STREAMLIT_OIDC env var mismatch in Databricks Apps deployment
-823 " 🔵 Primary session loaded systematic debugging skill for OIDC env var investigation
-824 " 🔵 Comprehensive grep reveals OIDC env var definition and code flow
-825 8:03p 🔵 Git status shows OIDC auth files are untracked and app.yaml/frontend.app.yml modified
-826 " 🔵 app.yaml uses valueFrom for OIDC secrets referencing managed secret names
-827 " 🔵 Full OIDC auth bootstrap pipeline mapped from env vars to secrets.toml to Streamlit
-828 8:04p 🔵 Local development environment lacks Streamlit — cannot test secrets loading
-829 " 🔵 Root cause identified: isinstance(section, dict) rejects Streamlit AttrDict
-830 8:06p 🔴 Fixed AttrDict vs dict type check breaking OIDC auth bootstrap
-831 " 🔴 Tests applied: 25 pass, 1 test needs redesign for Streamlit Secrets immutability
-832 8:07p 🔴 Redesigned test to mock st module instead of immutable Secrets object
-833 " ✅ All 26 auth tests pass after AttrDict fix and launcher metadata backfill
-834 8:08p ✅ Fix complete: 26 tests pass, OIDC AttrDict bug resolved
-835 8:10p 🔵 User confirmation that STREAMLIT_OIDC_ env vars are configured in Databricks Apps
-836 8:30p 🔴 Google OAuth DNS resolution failure in Streamlit app
-837 8:31p 🔵 Google OIDC blocked by Databricks Apps DNS resolution failure
-838 " ⚖️ Architectural decision to migrate from Google OIDC to Databricks-native user authorization
-839 8:33p ⚖️ Reconsidering Google OIDC: exploring network remediation vs hybrid auth approach
-840 " ⚖️ Final auth strategy: hybrid Google OIDC with Databricks-header fallback plus networking fix
-S200 Fix Google OIDC authentication failure in Streamlit app on Databricks Apps - DNS resolution error for accounts.google.com. Implement a hybrid auth system with automatic fallback. (May 9, 8:35 PM)
-841 8:41p 🟣 Hybrid auth resilience: Google OIDC with auto-fallback to Databricks forwarded headers
-S201 Fix Google OIDC authentication failure on Databricks Apps - investigate and document the correct Databricks workspace networking fix for egress blocking (May 9, 8:42 PM)
-S202 Resolve Databricks Apps Google OIDC DNS failure — investigate workspace networking fix viability and implement hybrid auth fallback (May 9, 8:46 PM)
-S203 Fix Google OIDC authentication failure on Databricks Apps by implementing hybrid auth fallback and investigating workspace networking fix viability (May 9, 8:48 PM)
-S204 Fix Google OIDC authentication failure on Databricks Apps — implement hybrid auth fallback, investigate networking fix, explore alternative architectures (May 9, 8:51 PM)
-S205 Fix Google OIDC authentication failure on Databricks Apps — implementation complete, but deployment blocked by build-time egress failure (cannot fetch hatchling from pypi.org) (May 9, 8:54 PM)
-S206 Fix Google OIDC authentication failure on Databricks Apps — hybrid auth fallback implemented but deployment blocked by build-time egress failure (cannot fetch packages from pypi.org) (May 9, 8:58 PM)
-S207 Fix Google OIDC authentication failure on Databricks Apps — implement hybrid auth fallback, investigate blocking workspace egress issues at build time and runtime (May 9, 9:00 PM)
-S208 Fix deployment build failure for Databricks Apps — build fails with "cannot fetch hatchling from pypi.org (network unreachable)" after OIDC auth changes were implemented (May 9, 9:03 PM)
-S209 Fix deployment build failure for Databricks Apps — build fails because the Databricks Apps builder cannot reach pypi.org during build step, blocking the OIDC auth changes from being deployed (May 9, 9:09 PM)
-842 9:16p 🔵 Investigation into Databricks GCP networking alternatives to context-egress
+AI-Powered Claim Denial Prevention & Remediation System — Databricks + Spark + Delta Lake + MLflow + Streamlit.
 
-Access 1073k tokens of past work via get_observations([IDs]) or mem-search skill.
-</claude-mem-context>
+**Medallion:** Bronze (raw ingest) → Silver (trusted) → Gold (`healthcare.gold.claim_features`, 13 features) → ML (`healthcare.ml.claim_denial_model@champion`).
+
+**Release gate:** Recall@HIGH ≥ 0.80, Precision ≥ 0.70, ROC-AUC ≥ 0.85. Gate-failing models are not pickled or registered.
+
+## Commands
+
+```bash
+# Install all deps (core + dev)
+uv sync
+uv sync --group dev
+
+# Run tests
+uv run pytest -q                          # all tests
+uv run pytest -q tests/test_ml_contract.py  # single file
+uv run pytest -q -k "test_name"             # single test
+
+# Databricks bundle
+databricks bundle validate -t dev --profile dev
+databricks bundle deploy -t dev --profile dev
+databricks bundle run -t dev --profile dev <job_key>
+
+# Run Streamlit app locally
+uv run streamlit run src/analytics/app_streamlit.py
+```
+
+## Architecture
+
+### Dual package layout
+
+Two installable packages via hatchling (`pyproject.toml` → `[tool.hatch.build.targets.wheel] packages = ["src", "ETL/common"]`):
+
+| Package       | Purpose                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| `src/`        | All business logic — ML, RAG, XAI, analytics, scripts, common helpers, framework            |
+| `ETL/common/` | One-line proxies that re-export from `src.common.*` for Databricks ETL import compatibility |
+
+Every `ETL/common/<module>.py` is exactly: `from src.common.<module> import *  # noqa: F401,F403`
+
+### Source tree
+
+```
+src/
+  analytics/     — Streamlit app, claims analytics, observability assets
+  common/        — Shared config, constants, PHI registry, log messages, diagnostics
+  framework/     — Service verifier, manifest validation (HealthCheckResult)
+  ml/            — Train, evaluate, predict, features, retrain gate
+  rag/           — Embeddings, retriever, synthesizer, vector search, policy labels
+  scripts/       — Databricks spark_python_task entry points (10 scripts)
+  xai/           — SHAP explainer, feature reasons
+ETL/
+  common/        — Re-export proxies for src.common.*
+  pipelines/     — Bronze/Silver/Gold Delta Lake ETL transforms
+resources/
+  schemas/       — Unity Catalog schema declarations
+  volumes/       — UC volume declarations
+services/        — Databricks bundle job definitions, grouped by domain
+  etl/resources/        — analytics_observability, etl_file_arrival, etl_fast_dev
+  ml/training/resources/  — training.job.yml
+  rag/vector_index/resources/ — vector_index.job.yml
+  infrastructure/setup/resources/ — setup_infrastructure.job.yml
+```
+
+### Databricks bundle
+
+Bundle name: `healthcare-claim-ops`. Engine: `direct`. Targets: `dev` (default), `prod`.
+
+All jobs use `spark_python_task` with `--editable ${workspace.file_path}` dependency. The `src/` package is deployed as workspace files but is NOT importable via editable install in serverless runtime — hence the sys.path bootstrap pattern.
+
+Every `src/scripts/*.py` entry point **must** include this bootstrap before any `from src.*` imports:
+
+```python
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Final
+
+_SCRIPT_PATH: Final[Path] = Path(
+    globals().get("__file__", sys._getframe().f_code.co_filename)
+).resolve()
+_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+```
+
+## Hard rules
+
+- Every module starts with `from __future__ import annotations`.
+- Module constants typed `Final[...]`.
+- `__all__` alphabetically sorted.
+- ETL/common files are one-line proxies only.
+- Logs never interpolate PHI — use `MESSAGE_TEMPLATE_*` + `render_*` helpers; reference identifiers (claim_id, provider_id) only.
+- Bare `except Exception` must call `logger.warning(..., exc_info=True)` — never silent swallow.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from typing import Any
 
@@ -10,6 +11,33 @@ logger = logging.getLogger(__name__)
 
 _RESULT_COLUMNS = ["chunk_id", "chunk_text", "document_path", "chunk_index"]
 _QUERY_TEXT_SUPPORT_CACHE: dict[str, bool] = {}
+_VECTOR_SEARCH_CLIENT: Any = None
+
+_WORKSPACE_CLIENT: Any = None
+
+
+def _get_workspace_client() -> Any:
+    global _WORKSPACE_CLIENT
+    if _WORKSPACE_CLIENT is None:
+        from databricks.sdk import WorkspaceClient
+
+        _WORKSPACE_CLIENT = WorkspaceClient()
+    return _WORKSPACE_CLIENT
+
+
+def _reset_workspace_client() -> None:
+    global _WORKSPACE_CLIENT
+    _WORKSPACE_CLIENT = None
+
+
+def _reset_vector_search_client() -> None:
+    global _VECTOR_SEARCH_CLIENT
+    _VECTOR_SEARCH_CLIENT = None
+
+
+def _reset_embedding_provider() -> None:
+    global _EMBEDDING_PROVIDER
+    _EMBEDDING_PROVIDER = None
 
 
 def _env(name: str, default: str = "") -> str:
@@ -28,32 +56,39 @@ def _workspace_url() -> str:
 
 
 def _vector_search_client():
+    global _VECTOR_SEARCH_CLIENT
+    if _VECTOR_SEARCH_CLIENT is not None:
+        return _VECTOR_SEARCH_CLIENT
+
     from databricks.vector_search.client import VectorSearchClient
 
     workspace_url = _workspace_url()
     personal_access_token = _env("DATABRICKS_TOKEN")
     if workspace_url and personal_access_token:
-        return VectorSearchClient(
+        _VECTOR_SEARCH_CLIENT = VectorSearchClient(
             workspace_url=workspace_url,
             personal_access_token=personal_access_token,
             disable_notice=True,
         )
+        return _VECTOR_SEARCH_CLIENT
 
     client_id = _env("DATABRICKS_CLIENT_ID")
     client_secret = _env("DATABRICKS_CLIENT_SECRET")
     if workspace_url and client_id and client_secret:
-        return VectorSearchClient(
+        _VECTOR_SEARCH_CLIENT = VectorSearchClient(
             workspace_url=workspace_url,
             service_principal_client_id=client_id,
             service_principal_client_secret=client_secret,
             disable_notice=True,
         )
+        return _VECTOR_SEARCH_CLIENT
 
     logger.warning(
         "VectorSearchClient is unconfigured: set DATABRICKS_HOST "
         "with DATABRICKS_TOKEN or (DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET)"
     )
-    return VectorSearchClient(disable_notice=True)
+    _VECTOR_SEARCH_CLIENT = VectorSearchClient(disable_notice=True)
+    return _VECTOR_SEARCH_CLIENT
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -87,7 +122,7 @@ def _coerce_optional_float(value: Any) -> float | None:
         numeric = float(value)
     except (TypeError, ValueError):
         return None
-    if numeric != numeric:
+    if math.isnan(numeric):
         return None
     return numeric
 
@@ -124,6 +159,27 @@ def _extract_relevance_score_kind(entry: dict[str, Any], fallback: Any = None) -
     return None
 
 
+def _build_result_row(
+    mapped: dict[str, Any],
+    document_path: Any,
+    chunk_index: Any,
+    fallback_score: Any = None,
+) -> dict[str, Any]:
+    relevance_score = _extract_relevance_score(mapped, fallback=fallback_score)
+    relevance_score_kind = _extract_relevance_score_kind(mapped, fallback=fallback_score)
+    return {
+        "chunk_id": mapped.get("chunk_id"),
+        "chunk_text": mapped.get("chunk_text", ""),
+        "document_path": document_path,
+        "chunk_index": chunk_index,
+        "relevance_score": relevance_score,
+        "relevance_score_kind": relevance_score_kind,
+        "policy_name": policy_display_name(
+            str(document_path) if document_path is not None else None
+        ),
+    }
+
+
 def _requires_query_vector(exc: Exception) -> bool:
     text = str(exc).lower()
     return "query vector" in text or "query_vector" in text
@@ -131,6 +187,7 @@ def _requires_query_vector(exc: Exception) -> bool:
 
 _EMBEDDING_ENDPOINT = "databricks-gte-large-en"
 _EMBEDDING_DIM = 1024
+_EMBEDDING_PROVIDER: Any = None
 
 
 def _generate_query_embedding(query_text: str) -> list[float]:
@@ -142,10 +199,13 @@ def _generate_query_embedding(query_text: str) -> list[float]:
     """
     from src.rag.embeddings import EmbeddingProvider
 
-    provider = EmbeddingProvider(
-        endpoint_name=_EMBEDDING_ENDPOINT, embedding_dim=_EMBEDDING_DIM
-    )
-    embeddings = provider.embed_batch([query_text])
+    global _EMBEDDING_PROVIDER
+    if _EMBEDDING_PROVIDER is None:
+        _EMBEDDING_PROVIDER = EmbeddingProvider(
+            endpoint_name=_EMBEDDING_ENDPOINT, embedding_dim=_EMBEDDING_DIM
+        )
+
+    embeddings = _EMBEDDING_PROVIDER.embed_batch([query_text])
     if not embeddings:
         logger.error("GTE embedding returned empty result for query text")
         return []
@@ -187,9 +247,7 @@ def _query_with_vector_fallback(
 
 
 def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list[dict[str, Any]]:
-    from databricks.sdk import WorkspaceClient
-
-    w = WorkspaceClient()
+    w = _get_workspace_client()
 
     def _do_query(**kwargs: Any):
         return w.vector_search_indexes.query_index(
@@ -221,20 +279,15 @@ def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list
             for index in range(min(len(row), len(column_names)))
         }
         fallback_score: Any = row[-1] if len(row) > len(_RESULT_COLUMNS) else None
-        relevance_score = _extract_relevance_score(mapped, fallback=fallback_score)
-        relevance_score_kind = _extract_relevance_score_kind(mapped, fallback=fallback_score)
         document_path = mapped.get("document_path", "")
         chunk_index = mapped.get("chunk_index", 0)
         rows.append(
-            {
-                "chunk_id": mapped.get("chunk_id"),
-                "chunk_text": mapped.get("chunk_text", ""),
-                "document_path": document_path,
-                "chunk_index": chunk_index,
-                "relevance_score": relevance_score,
-                "relevance_score_kind": relevance_score_kind,
-                "policy_name": policy_display_name(str(document_path) if document_path is not None else None),
-            }
+            _build_result_row(
+                mapped=mapped,
+                document_path=document_path,
+                chunk_index=chunk_index,
+                fallback_score=fallback_score,
+            )
         )
     return rows
 
@@ -271,7 +324,7 @@ class PolicyRetriever:
 
         try:
             results = self._query_index(query_text, k)
-            return self._normalize_results(results)
+            return results
         except Exception:
             logger.exception(
                 "Vector Search query failed for index %s; returning empty results",
@@ -333,15 +386,18 @@ class PolicyRetriever:
         for row in data:
             relevance_score = _coerce_optional_float(row[4]) if len(row) > 4 else None
             rows.append(
-                {
-                    "chunk_id": row[0],
-                    "chunk_text": row[1],
-                    "document_path": row[2],
-                    "chunk_index": row[3],
-                    "relevance_score": relevance_score,
-                    "relevance_score_kind": "raw" if relevance_score is not None else None,
-                    "policy_name": policy_display_name(str(row[2]) if len(row) > 2 else None),
-                }
+                _build_result_row(
+                    mapped={
+                        "chunk_id": row[0],
+                        "chunk_text": row[1],
+                        "document_path": row[2],
+                        "chunk_index": row[3],
+                        "relevance_score": relevance_score,
+                    },
+                    document_path=row[2] if len(row) > 2 else None,
+                    chunk_index=row[3] if len(row) > 3 else 0,
+                    fallback_score=None,
+                )
             )
         return rows
 

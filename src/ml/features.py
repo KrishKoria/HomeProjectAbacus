@@ -99,7 +99,8 @@ def fill_nulls(df: pd.DataFrame, fill_values: dict[str, float | int] | None = No
     filled = df.copy()
     for col_name in (*BOOLEAN_FEATURES, *NUMERIC_FEATURES):
         if col_name in filled.columns:
-            filled[col_name] = pd.to_numeric(filled[col_name], errors="coerce")
+            if not pd.api.types.is_numeric_dtype(filled[col_name]):
+                filled[col_name] = pd.to_numeric(filled[col_name], errors="coerce")
     for col_name, fill_val in values.items():
         if col_name in filled.columns:
             filled[col_name] = filled[col_name].fillna(fill_val)

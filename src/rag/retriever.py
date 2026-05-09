@@ -4,30 +4,11 @@ import logging
 import time
 from typing import Any
 
+from src.rag.policy_labels import _scrub_phi
 from src.rag.synthesizer import synthesize
 from src.rag.vector_search import PolicyRetriever
 
 logger = logging.getLogger(__name__)
-
-# PHI patterns to strip from synthesized queries — matches SSN fragments,
-# date-like patterns, dollar amounts, and common ID prefixes.
-_PHI_STRIP_PATTERNS = [
-    r"\b\d{3}-\d{2}-\d{4}\b",       # SSN-like
-    r"\b\d{4}-\d{2}-\d{2}\b",       # ISO date
-    r"\b\d{2}/\d{2}/\d{4}\b",       # US date
-    r"\$\d[\d,.]*\b",               # dollar amounts
-    r"\b(?:PAT|PT|MRN)[-_ ]?\d+\b", # ID prefixes
-]
-
-
-def _scrub_phi(text: str) -> str:
-    """Remove PHI-like patterns from a query string."""
-    import re
-
-    cleaned = text
-    for pattern in _PHI_STRIP_PATTERNS:
-        cleaned = re.sub(pattern, "[REDACTED]", cleaned, flags=re.IGNORECASE)
-    return cleaned
 
 
 def retrieve_and_explain(

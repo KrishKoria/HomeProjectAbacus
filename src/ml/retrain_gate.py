@@ -247,30 +247,26 @@ def compute_fingerprint(
     spark,
     gold_table: str,
     feature_columns: list[str],
-    row_count: int | None = None,
-) -> str:
-    # The caller must supply the non-PHI model feature list; this function never
-    # introspects arbitrary table columns on its own.
+) -> tuple[int, str]:
     columns = sorted(feature_columns)
     frame = spark.table(gold_table).select(*columns)
-    resolved_row_count = int(row_count) if row_count is not None else None
     try:
         from pyspark.sql import functions as F
 
         row_digest = F.xxhash64(
             *[F.coalesce(F.col(column).cast("string"), F.lit("<NULL>")) for column in columns]
         )
-        digest_rows = frame.select(row_digest.alias("digest")).collect()
-        row_digests = sorted(int(r["digest"]) for r in digest_rows)
-        if resolved_row_count is None:
-            resolved_row_count = len(row_digests)
-        content_hash = sha256(
-            ",".join(str(d) for d in row_digests).encode("utf-8")
-        ).hexdigest()
+        digest_frame = frame.select(row_digest.alias("digest"))
+        result = digest_frame.agg(
+            F.count(F.lit(1)).alias("row_count"),
+            F.sum(F.col("digest").cast("decimal(38,0)")).alias("hash_sum"),
+        ).collect()[0]
+        resolved_row_count = int(result["row_count"])
+        hash_sum = int(result["hash_sum"])
+        content_hash = sha256(str(hash_sum).encode("utf-8")).hexdigest()
     except ModuleNotFoundError:
         rows = [row.asDict(recursive=True) for row in frame.collect()]
-        if resolved_row_count is None:
-            resolved_row_count = len(rows)
+        resolved_row_count = len(rows)
         sorted_rows = sorted(
             rows,
             key=lambda row: json.dumps(row, sort_keys=True, default=str),
@@ -293,7 +289,8 @@ def compute_fingerprint(
         "row_count": int(resolved_row_count or 0),
         "content_hash": content_hash or "",
     }
-    return sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+    fingerprint = sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+    return (resolved_row_count, fingerprint)
 
 
 def _row_count_threshold_exceeded(current_row_count: int, previous_training_row_count: int) -> bool:
@@ -453,11 +450,10 @@ def decide_retrain(
         )
 
     try:
-        current_fingerprint = compute_fingerprint(
+        _, current_fingerprint = compute_fingerprint(
             spark,
             gold_table,
             feature_columns,
-            row_count=current_row_count,
         )
     except Exception as exc:
         logger.warning(

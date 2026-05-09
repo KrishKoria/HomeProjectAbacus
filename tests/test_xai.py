@@ -16,7 +16,7 @@ from src.xai.feature_reasons import FEATURE_REASONS
 
 class FeatureReasonsTests(unittest.TestCase):
     def test_feature_mapping_has_entry_for_every_feature_column(self) -> None:
-        """All 20 FEATURE_COLUMNS must have a business-language reason."""
+        """All FEATURE_COLUMNS must have a business-language reason."""
         for feature in FEATURE_COLUMNS:
             with self.subTest(feature=feature):
                 self.assertIn(feature, FEATURE_REASONS)

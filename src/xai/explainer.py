@@ -1,24 +1,25 @@
 from __future__ import annotations
 
 import weakref
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 
 from src.ml.evaluate import _unwrap_for_shap
 from src.xai.feature_reasons import FEATURE_REASONS
 
-_EXPLAINER_CACHE: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_EXPLAINER_CACHE: Final[weakref.WeakKeyDictionary] = weakref.WeakKeyDictionary()
 
 
-def _cached_tree_explainer(raw_model: Any):
+def _cached_tree_explainer(model: Any):
     import shap
 
-    explainer = _EXPLAINER_CACHE.get(raw_model)
+    explainer = _EXPLAINER_CACHE.get(model)
     if explainer is not None:
         return explainer
-    explainer = shap.TreeExplainer(raw_model)
-    _EXPLAINER_CACHE[raw_model] = explainer
+    raw: Any = _unwrap_for_shap(model)
+    explainer = shap.TreeExplainer(raw)
+    _EXPLAINER_CACHE[model] = explainer
     return explainer
 
 
@@ -94,8 +95,7 @@ def explain(
     decreases_risk, or neutral.
     """
     X_input = _normalize_single_claim_input(X)
-    raw = _unwrap_for_shap(model)
-    explainer = _cached_tree_explainer(raw)
+    explainer = _cached_tree_explainer(model)
     shap_values = explainer.shap_values(X_input)
     sample_values = _extract_single_sample_shap_values(shap_values)
 
@@ -105,27 +105,24 @@ def explain(
             f"{len(feature_names)} != {sample_values.shape[0]}."
         )
 
-    results: list[dict[str, Any]] = []
-    for feature, value in zip(feature_names, sample_values):
-        if value > 0:
-            direction = "increases_risk"
-        elif value < 0:
-            direction = "decreases_risk"
-        else:
-            direction = "neutral"
-        reason = FEATURE_REASONS.get(
-            feature,
-            f"Analysis of {feature} contributed to the risk assessment.",
-        )
-        results.append(
-            {
-                "feature": feature,
-                "importance": float(abs(value)),
-                "shap_value": float(value),
-                "reason": reason,
-                "direction": direction,
-            }
-        )
-
-    results.sort(key=lambda r: r["importance"], reverse=True)
-    return results[:top_n]
+    top_indices = np.argsort(np.abs(sample_values))[::-1][:top_n]
+    results: list[dict[str, Any]] = [
+        {
+            "feature": feature_names[idx],
+            "importance": float(abs(sample_values[idx])),
+            "shap_value": float(sample_values[idx]),
+            "reason": FEATURE_REASONS.get(
+                feature_names[idx],
+                f"Analysis of {feature_names[idx]} contributed to the risk assessment.",
+            ),
+            "direction": (
+                "increases_risk"
+                if sample_values[idx] > 0
+                else "decreases_risk"
+                if sample_values[idx] < 0
+                else "neutral"
+            ),
+        }
+        for idx in top_indices
+    ]
+    return results

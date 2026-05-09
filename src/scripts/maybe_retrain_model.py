@@ -15,7 +15,6 @@ if str(_PROJECT_ROOT) not in sys.path:
 from src.common.diagnostics import get_ml_diagnostic_id
 from src.ml import FEATURE_COLUMNS
 from src.ml.retrain_gate import decide_retrain
-from src.scripts.train_denial_model import main as train_main
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -43,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     spark = SparkSession.builder.getOrCreate()
 
+    decision = None
     if not args.force:
         decision = decide_retrain(
             spark,
@@ -60,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("FORCE: skipping retrain-gate check, training unconditionally.")
 
+    from src.scripts.train_denial_model import main as train_main
+
     train_args = [
         "--tune",
         "--optuna-trials",
@@ -75,6 +77,13 @@ def main(argv: list[str] | None = None) -> int:
         "--champion-alias",
         args.champion_alias,
     ]
+
+    if decision is not None:
+        if decision.current_fingerprint:
+            train_args.extend(["--fingerprint", decision.current_fingerprint])
+        if decision.current_gold_version >= 0:
+            train_args.extend(["--gold-version", str(decision.current_gold_version)])
+
     return int(train_main(train_args))
 
 

@@ -3,9 +3,26 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from src.rag.policy_labels import policy_reference_label
+from src.rag.policy_labels import _scrub_phi, policy_reference_label
 
 logger = logging.getLogger(__name__)
+
+_WORKSPACE_CLIENT: Any = None
+
+
+def _get_workspace_client() -> Any:
+    global _WORKSPACE_CLIENT
+    if _WORKSPACE_CLIENT is None:
+        from databricks.sdk import WorkspaceClient
+
+        _WORKSPACE_CLIENT = WorkspaceClient()
+    return _WORKSPACE_CLIENT
+
+
+def _reset_workspace_client() -> None:
+    global _WORKSPACE_CLIENT
+    _WORKSPACE_CLIENT = None
+
 
 _SYSTEM_PROMPT = (
     "You are a medical-policy reasoning assistant. "
@@ -77,7 +94,7 @@ def _synthesize_via_llm(
         "Explain why this claim is at risk of denial, citing the specific policy sections above."
     )
 
-    w = WorkspaceClient()
+    w = _get_workspace_client()
     response = w.serving_endpoints.query(
         name=model_endpoint,
         messages=[
@@ -111,21 +128,8 @@ def _synthesize_via_template(
     policy_chunks: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Template-based fallback when LLM is unavailable."""
-    import re
-
-    def _strip_phi(text: str) -> str:
-        for pattern in [
-            r"\b\d{3}-\d{2}-\d{4}\b",
-            r"\b\d{4}-\d{2}-\d{2}\b",
-            r"\b\d{2}/\d{2}/\d{4}\b",
-            r"\$\d[\d,.]*\b",
-            r"\b(?:PAT|PT|MRN)[-_ ]?\d+\b",
-        ]:
-            text = re.sub(pattern, "[REDACTED]", text, flags=re.IGNORECASE)
-        return text
-
     reasons_summary = "; ".join(
-        f"{_strip_phi(r['reason'])} ({r['direction']})"
+        f"{_scrub_phi(r['reason'])} ({r['direction']})"
         for r in shap_reasons[:5]
     )
 
