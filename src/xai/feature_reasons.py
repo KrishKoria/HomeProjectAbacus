@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-FEATURE_REASONS: dict[str, str] = {
+from typing import Final
+
+FEATURE_REASONS: Final[dict[str, str]] = {
     "is_procedure_missing": (
         "The procedure code for this claim was missing in the submitted data. "
         "Claims with unreported procedures are flagged more often during utilization review "
