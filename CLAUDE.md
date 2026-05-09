@@ -29,8 +29,11 @@ databricks bundle validate -t dev --profile dev
 databricks bundle deploy -t dev --profile dev
 databricks bundle run -t dev --profile dev <job_key>
 
-# Run Streamlit app locally
-uv run streamlit run src/analytics/app_streamlit.py
+# Run Streamlit app locally (no auth — OIDC requires Databricks-deployed secrets)
+uv run streamlit run app_streamlit.py
+
+# Run auth tests
+uv run pytest -q tests/test_auth.py
 ```
 
 ## Architecture
@@ -50,8 +53,8 @@ Every `ETL/common/<module>.py` is exactly: `from src.common.<module> import *  #
 
 ```
 src/
-  analytics/     — Streamlit app, claims analytics, observability assets
-  common/        — Shared config, constants, PHI registry, log messages, diagnostics
+  analytics/     — Streamlit app, auth (OIDC gate, session, audit), claims analytics, observability
+  common/        — Shared config, auth OIDC contract, constants, PHI registry, log messages, diagnostics
   framework/     — Service verifier, manifest validation (HealthCheckResult)
   ml/            — Train, evaluate, predict, features, retrain gate
   rag/           — Embeddings, retriever, synthesizer, vector search, policy labels
@@ -69,6 +72,35 @@ services/        — Databricks bundle job definitions, grouped by domain
   rag/vector_index/resources/ — vector_index.job.yml
   infrastructure/setup/resources/ — setup_infrastructure.job.yml
 ```
+
+### Authentication
+
+Streamlit native OIDC via `st.login` / `st.user` / `st.logout`. Provider-config-driven (Google first; Microsoft Entra ID, Okta, Auth0 supported).
+
+**Startup flow:** `launcher.py` (configured as the Databricks Apps entrypoint in `app.yaml`) reads OIDC credentials from environment variables injected by Databricks managed secrets, generates `.streamlit/secrets.toml`, then launches Streamlit.
+
+**Auth gate states (in `src/analytics/auth.py`):**
+- `"unavailable"` — OIDC config missing → fail-closed screen, no backend access.
+- `"login"` — user not authenticated → dynamic per-provider login buttons.
+- `"denied"` — authenticated but access policy rejected → denied screen + audit event.
+- `"allowed"` — authenticated and authorised → proceed to app.
+
+**Inactivity timeout:** sliding 15-minute window. Every authenticated user interaction refreshes the timer. Timeout writes `session_timeout` audit event and forces logout.
+
+**Access policies:** pluggable via `AccessPolicy` protocol. V1 default is `AllowAllPolicy` (any authenticated user). `DomainPolicy` and `EmailAllowlistPolicy` exist for future use, disabled by default.
+
+**Audit events** (append-only to `healthcare.analytics.app_auth_events`):
+- `login_success`, `logout`, `session_timeout`, `access_denied`
+- Written via `src/analytics/audit.py` using Databricks SQL connector with explicit column lists and parameterized execution.
+- Audit write failures log a warning and never block the auth flow.
+
+**OIDC environment variable contract** (defined in `src/common/auth_config.py`):
+- `STREAMLIT_OIDC_ENABLED_PROVIDERS` — comma-separated provider keys (e.g. `"google"`)
+- `STREAMLIT_OIDC_<PROVIDER>_CLIENT_ID`, `_CLIENT_SECRET`, `_REDIRECT_URI` — per-provider OAuth credentials
+- `STREAMLIT_OIDC_REDIRECT_URI` — shared fallback redirect URI
+
+**Frontend app resources** (`services/frontend/resources/frontend.app.yml`):
+- `app-auth-audit-table` — UC securable on `healthcare.analytics.app_auth_events` with `MODIFY` permission for the app principal.
 
 ### Databricks bundle
 
