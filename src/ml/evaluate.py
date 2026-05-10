@@ -5,6 +5,7 @@ from typing import Any, Final, Literal
 
 import numpy as np
 from src.common.diagnostics import get_ml_diagnostic_id
+from src.ml import HIGH_RISK_PROBABILITY_THRESHOLD
 
 from sklearn.metrics import (
     accuracy_score,
@@ -14,12 +15,6 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-
-
-# ARCHITECTURE.md §13 caps the HIGH risk tier at probability >= 0.7. Keeping the
-# constant here (and in src/ml/predict.py) lets the evaluation gate stay aligned
-# with the runtime classification.
-HIGH_RISK_PROBABILITY_THRESHOLD: Final[float] = 0.7
 
 DEFAULT_MIN_RECALL_AT_HIGH: Final[float] = 0.80
 DEFAULT_MIN_PRECISION: Final[float] = 0.70
@@ -140,7 +135,7 @@ def evaluate_model(
     )
 
 
-def _unwrap_for_shap(model: Any) -> Any:
+def unwrap_model_for_shap(model: Any) -> Any:
     """Iteratively unwrap model wrappers until reaching a native tree estimator.
 
     Handles chained wrappers (e.g. VotingClassifier → CalibratedClassifierCV →
@@ -188,7 +183,7 @@ def compute_shap_values(
 
     X_input = X_sample[:max_samples] if len(X_sample) > max_samples else X_sample
 
-    explainer = shap.TreeExplainer(_unwrap_for_shap(model))
+    explainer = shap.TreeExplainer(unwrap_model_for_shap(model))
     shap_values = explainer.shap_values(X_input)
 
     if feature_names is not None:
@@ -245,7 +240,7 @@ def get_top_features(
     LightGBM, CatBoost, and sklearn ensemble feature_importances_.
     Returns list of (feature_name, importance) sorted descending.
     """
-    inner = _unwrap_for_shap(model)
+    inner = unwrap_model_for_shap(model)
     if hasattr(inner, "feature_importances_"):
         importances = inner.feature_importances_
     elif hasattr(inner, "get_score"):
@@ -294,7 +289,6 @@ __all__ = [
     "DEFAULT_MIN_RECALL_AT_HIGH",
     "DEFAULT_MIN_ROC_AUC",
     "EvaluationMetrics",
-    "HIGH_RISK_PROBABILITY_THRESHOLD",
     "compute_confusion_matrix",
     "compute_psi",
     "compute_shap_values",
@@ -303,4 +297,5 @@ __all__ = [
     "generate_evaluation_report",
     "get_top_features",
     "recall_at_high",
+    "unwrap_model_for_shap",
 ]

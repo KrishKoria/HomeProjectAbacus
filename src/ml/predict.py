@@ -11,15 +11,10 @@ from typing import Any, Final
 import pandas as pd
 
 from src.common.diagnostics import get_ml_diagnostic_id
-from src.ml import FEATURE_COLUMNS
+from src.ml import FEATURE_COLUMNS, RISK_THRESHOLD_HIGH, RISK_THRESHOLD_LOW
 from src.ml.features import fill_nulls
 
 logger = logging.getLogger(__name__)
-
-
-# Risk-tier cutoffs used both at inference time and for the §13 Recall@HIGH gate.
-RISK_THRESHOLD_LOW: Final[float] = 0.3
-RISK_THRESHOLD_HIGH: Final[float] = 0.7
 
 # ARCHITECTURE.md §13 budgets single-claim inference at < 150 ms p95.
 LATENCY_BUDGET_MS: Final[float] = 150.0
