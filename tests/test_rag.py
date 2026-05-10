@@ -45,7 +45,8 @@ class PhiScrubbingTests(unittest.TestCase):
 class PolicyRetrieverTests(unittest.TestCase):
     def setUp(self) -> None:
         from src.rag import vector_search
-        vector_search._reset_workspace_client()
+        from src.rag._workspace_client import reset_workspace_client
+        reset_workspace_client()
         vector_search._reset_vector_search_client()
         vector_search._reset_embedding_provider()
 
@@ -294,8 +295,8 @@ class PolicyRetrieverTests(unittest.TestCase):
 
 class EmbeddingProviderTests(unittest.TestCase):
     def setUp(self) -> None:
-        from src.rag import embeddings
-        embeddings._reset_workspace_client()
+        from src.rag._workspace_client import reset_workspace_client
+        reset_workspace_client()
 
     def test_call_endpoint_sends_batch_and_maps_using_index(self) -> None:
         query_mock = mock.Mock(
@@ -394,8 +395,8 @@ class PolicyLabelTests(unittest.TestCase):
 
 class SynthesizerTests(unittest.TestCase):
     def setUp(self) -> None:
-        from src.rag import synthesizer
-        synthesizer._reset_workspace_client()
+        from src.rag._workspace_client import reset_workspace_client
+        reset_workspace_client()
         self.shap_reasons = [
             {
                 "feature": "amount_to_benchmark_ratio",
@@ -471,8 +472,9 @@ class SynthesizerTests(unittest.TestCase):
 
 class RetrieveAndExplainTests(unittest.TestCase):
     def setUp(self) -> None:
+        from src.rag._workspace_client import reset_workspace_client
+        reset_workspace_client()
         from src.rag import vector_search
-        vector_search._reset_workspace_client()
         vector_search._reset_vector_search_client()
         vector_search._reset_embedding_provider()
         self.shap_reasons = [

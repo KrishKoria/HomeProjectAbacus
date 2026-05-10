@@ -80,9 +80,9 @@ class TrainingContractTests(unittest.TestCase):
         fake_mlflow.sklearn.log_model.return_value = SimpleNamespace(registered_model_version="7")
 
         with (
-            mock.patch("src.ml.train.mlflow", fake_mlflow),
-            mock.patch("src.ml.train._configure_registry_for_runtime"),
-            mock.patch("src.ml.train._resolve_experiment_name", return_value="exp"),
+            mock.patch("src.ml._train_registry.mlflow", fake_mlflow),
+            mock.patch("src.ml._train_registry._configure_registry_for_runtime"),
+            mock.patch("src.ml._train_algorithms._resolve_experiment_name", return_value="exp"),
         ):
             run_id = train_with_mlflow(
                 model=object(),
