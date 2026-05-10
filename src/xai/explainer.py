@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import weakref
 from typing import Any, Final
 
@@ -109,8 +110,16 @@ def explain(
     results: list[dict[str, Any]] = [
         {
             "feature": feature_names[idx],
-            "importance": float(abs(sample_values[idx])),
-            "shap_value": float(sample_values[idx]),
+            "importance": (
+                None
+                if math.isnan(float(abs(sample_values[idx])))
+                else float(abs(sample_values[idx]))
+            ),
+            "shap_value": (
+                None
+                if math.isnan(float(sample_values[idx]))
+                else float(sample_values[idx])
+            ),
             "reason": FEATURE_REASONS.get(
                 feature_names[idx],
                 f"Analysis of {feature_names[idx]} contributed to the risk assessment.",
