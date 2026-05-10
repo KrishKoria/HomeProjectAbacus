@@ -84,13 +84,12 @@ Format for new entries:
 - **Trigger to revive:** Databricks GA's a `lookup:` variable form that resolves to a registered-model version by alias (e.g. `lookup: { registered_model_version_by_alias: { name: ..., alias: champion } }`). When that lands, replace the dev default + prod CI step with a single `lookup:` declaration.
 - **Full context:** the `model_version` variable comment block in the databricks.yml example.
 
-## fastapi-react-frontend
+## fastapi-react-frontend (REVIVED 2026-05-10)
 
-- **Status:** deferred 2026-05-05
-- **Source:** Week 5+6 implementation planning (grill-with-docs session).
-- **Why deferred:** Streamlit on Databricks serves the v1 UI need with zero infra overhead (no API gateway, no JWT/OAuth, no CORS, no VPC connector, no Cloud Run). FastAPI + React adds weeks of infra work before any business value. The project has no dedicated frontend team yet; React without a designer produces generic dashboards.
-- **Trigger to revive:** a dedicated frontend team is formed OR the Streamlit app is insufficient for production UX requirements (thousands of concurrent users, complex real-time collaboration, offline mode).
-- **Full context:** [`openspec/changes/add-week5-week6-xai-rag/design.md`](../openspec/changes/add-week5-week6-xai-rag/design.md) — Design §4 (Serving layer). Core logic lives in `src/xai/` and `src/rag/` as pure Python modules; when FastAPI is needed, FastAPI routes call those same modules with zero logic duplication. ARCHITECTURE.md §16-17 contain the aspirational FastAPI + React design.
+- **Status:** revived 2026-05-10
+- **Source:** Openspec `frontend-api-pivot` change.
+- **Why revived:** Databricks-hosted auth was blocked by free-edition tier constraints. A Next.js app on Vercel with Better Auth Google OAuth replaces the deferred Databricks-hosted FastAPI + React approach. All ML/RAG/XAI logic stays in Databricks; the browser never holds Databricks credentials. Streamlit is preserved as fallback.
+- **Full context:** [`docs/architecture/nextjs-better-auth-databricks-api.md`](architecture/nextjs-better-auth-databricks-api.md)
 
 ---
 
