@@ -3,25 +3,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from src.rag._workspace_client import get_workspace_client, reset_workspace_client
 from src.rag.policy_labels import _scrub_phi, policy_reference_label
 
 logger = logging.getLogger(__name__)
-
-_WORKSPACE_CLIENT: Any = None
-
-
-def _get_workspace_client() -> Any:
-    global _WORKSPACE_CLIENT
-    if _WORKSPACE_CLIENT is None:
-        from databricks.sdk import WorkspaceClient
-
-        _WORKSPACE_CLIENT = WorkspaceClient()
-    return _WORKSPACE_CLIENT
-
-
-def _reset_workspace_client() -> None:
-    global _WORKSPACE_CLIENT
-    _WORKSPACE_CLIENT = None
 
 
 _SYSTEM_PROMPT = (
@@ -94,7 +79,7 @@ def _synthesize_via_llm(
         "Explain why this claim is at risk of denial, citing the specific policy sections above."
     )
 
-    w = _get_workspace_client()
+    w = get_workspace_client()
     response = w.serving_endpoints.query(
         name=model_endpoint,
         messages=[
