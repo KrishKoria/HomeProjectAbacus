@@ -1,0 +1,38 @@
+resources:
+  jobs:
+    claim_analysis_register_job:
+      name: "[${bundle.target}] Healthcare Claim Analysis Register"
+
+      tasks:
+        - task_key: register_claim_analysis_model
+          depends_on: []
+          spark_python_task:
+            python_file: ../../../../src/scripts/register_claim_analysis_model.py
+            parameters:
+              - --model-name
+              - ${var.claim_analysis_model_name}
+              - --model-alias
+              - ${var.claim_analysis_model_alias}
+          environment_key: default
+
+        - task_key: verify_claim_analysis_endpoint
+          depends_on:
+            - task_key: register_claim_analysis_model
+          spark_python_task:
+            python_file: ../../../../src/scripts/verify_claim_analysis_endpoint.py
+            parameters:
+              - --endpoint-name
+              - ${var.claim_analysis_endpoint_name}
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+            dependencies:
+              - --editable ${workspace.file_path}
+              - xgboost>=2.0,<3.0
+              - shap>=0.44,<1.0
+              - mlflow>=3.0,<4.0
+              - databricks-sdk>=0.28,<1.0
+              - requests>=2.31,<3.0
