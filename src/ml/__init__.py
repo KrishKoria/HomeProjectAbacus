@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Final
+from typing import Any, Final
 
 FEATURE_COLUMNS: Final[tuple[str, ...]] = (
     # Original 13 features
@@ -33,4 +33,17 @@ FEATURE_COLUMNS: Final[tuple[str, ...]] = (
 
 TARGET_COLUMN: Final[str] = "denial_label"
 
-__all__ = ["FEATURE_COLUMNS", "TARGET_COLUMN"]
+RISK_THRESHOLD_LOW: Final[float] = 0.3
+HIGH_RISK_PROBABILITY_THRESHOLD: Final[float] = 0.7
+RISK_THRESHOLD_HIGH: float = HIGH_RISK_PROBABILITY_THRESHOLD
+
+__all__ = [
+    "FEATURE_COLUMNS",
+    "HIGH_RISK_PROBABILITY_THRESHOLD",
+    "RISK_THRESHOLD_HIGH",
+    "RISK_THRESHOLD_LOW",
+    "TARGET_COLUMN",
+    "unwrap_model_for_shap",
+]
+
+from src.ml.evaluate import unwrap_model_for_shap  # noqa: E402

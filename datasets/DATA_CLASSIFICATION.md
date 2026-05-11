@@ -40,6 +40,7 @@ See 45 CFR § 164.504(e) and § 164.314(a) for BAA requirements.
 | `paid_amount` | **PHI** | Synthetic paid amount | Individually identifiable payment data | AES-256 at rest; column masking |
 | `is_denied` | **PHI** | Synthetic ML label | Claim outcome linked to patient_id | AES-256 at rest; column masking |
 | `follow_up_required` | **PHI** | Synthetic workflow label | Claim action state linked to patient_id | AES-256 at rest; column masking |
+| `member_name` | **PHI** | Member/patient name | § 164.514(b)(2)(i) — names | AES-256 at rest; column masking |
 
 > **Synthetic label note:** `claim_status`, `denial_reason_code`, `allowed_amount`, `paid_amount`,
 > `is_denied`, and `follow_up_required` are generated demo labels. They are suitable for

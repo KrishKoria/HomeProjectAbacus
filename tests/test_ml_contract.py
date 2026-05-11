@@ -234,7 +234,7 @@ class ModelTrainingTests(unittest.TestCase):
         # and unwrap cleanly for SHAP.
         from sklearn.calibration import CalibratedClassifierCV
 
-        from src.ml.evaluate import _unwrap_for_shap
+        from src.ml.evaluate import unwrap_model_for_shap
         from src.ml.train import calibrate_classifier, train_xgboost
 
         raw = train_xgboost(self.X_train, self.y_train)
@@ -247,7 +247,7 @@ class ModelTrainingTests(unittest.TestCase):
         self.assertTrue((probs >= 0).all() and (probs <= 1).all())
         # SHAP unwrap should reach back to the underlying XGBoost.
         from xgboost import XGBClassifier
-        self.assertIsInstance(_unwrap_for_shap(calibrated), XGBClassifier)
+        self.assertIsInstance(unwrap_model_for_shap(calibrated), XGBClassifier)
 
     def test_untuned_xgboost_uses_provided_random_seed(self):
         from src.ml.train import train_xgboost
@@ -268,7 +268,7 @@ class ModelTrainingTests(unittest.TestCase):
         self.assertEqual(model_99.get_params()["random_state"], 99)
 
     def test_optuna_xgboost_uses_provided_random_seed(self):
-        from src.ml.train import _build_xgb_from_trial
+        from src.ml._train_algorithms import _build_xgb_from_trial
         from unittest import mock as umock
 
         fake_trial = umock.MagicMock()

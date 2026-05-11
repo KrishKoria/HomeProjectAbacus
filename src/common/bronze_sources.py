@@ -94,6 +94,7 @@ BRONZE_SOURCES: Final[dict[str, BronzeSource]] = {
                 "paid_amount",
                 "is_denied",
                 "follow_up_required",
+                "member_name",
             }
         ),
     ),

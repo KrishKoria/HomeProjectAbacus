@@ -13,21 +13,7 @@ _RESULT_COLUMNS = ["chunk_id", "chunk_text", "document_path", "chunk_index"]
 _QUERY_TEXT_SUPPORT_CACHE: dict[str, bool] = {}
 _VECTOR_SEARCH_CLIENT: Any = None
 
-_WORKSPACE_CLIENT: Any = None
-
-
-def _get_workspace_client() -> Any:
-    global _WORKSPACE_CLIENT
-    if _WORKSPACE_CLIENT is None:
-        from databricks.sdk import WorkspaceClient
-
-        _WORKSPACE_CLIENT = WorkspaceClient()
-    return _WORKSPACE_CLIENT
-
-
-def _reset_workspace_client() -> None:
-    global _WORKSPACE_CLIENT
-    _WORKSPACE_CLIENT = None
+from src.rag._workspace_client import get_workspace_client, reset_workspace_client
 
 
 def _reset_vector_search_client() -> None:
@@ -247,7 +233,7 @@ def _query_with_vector_fallback(
 
 
 def _workspace_query_index(index_name: str, query_text: str, top_k: int) -> list[dict[str, Any]]:
-    w = _get_workspace_client()
+    w = get_workspace_client()
 
     def _do_query(**kwargs: Any):
         return w.vector_search_indexes.query_index(

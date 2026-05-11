@@ -6,7 +6,7 @@ from typing import Any, Final
 
 import numpy as np
 
-from src.ml.evaluate import _unwrap_for_shap
+from src.ml import unwrap_model_for_shap
 from src.xai.feature_reasons import FEATURE_REASONS
 
 _EXPLAINER_CACHE: Final[weakref.WeakKeyDictionary] = weakref.WeakKeyDictionary()
@@ -18,7 +18,7 @@ def _cached_tree_explainer(model: Any):
     explainer = _EXPLAINER_CACHE.get(model)
     if explainer is not None:
         return explainer
-    raw: Any = _unwrap_for_shap(model)
+    raw: Any = unwrap_model_for_shap(model)
     explainer = shap.TreeExplainer(raw)
     _EXPLAINER_CACHE[model] = explainer
     return explainer
