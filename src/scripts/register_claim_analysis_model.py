@@ -25,7 +25,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.ml import FEATURE_COLUMNS  # noqa: E402
-from src.ml.train import _resolve_experiment_name  # noqa: E402
+from src.ml._train_algorithms import _resolve_experiment_name  # noqa: E402
 from src.serving.claim_analysis import analyze_claim  # noqa: E402
 
 logger = logging.getLogger(__name__)

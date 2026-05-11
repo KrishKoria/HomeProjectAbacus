@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { SidebarProvider } from "@/components/ui/sidebar";
 import { QueryProvider } from "@/lib/query-provider";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -40,9 +38,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col font-sans">
         <QueryProvider>
-          <TooltipProvider>
-            <SidebarProvider>{children}</SidebarProvider>
-          </TooltipProvider>
+          {children}
         </QueryProvider>
         <Toaster />
       </body>

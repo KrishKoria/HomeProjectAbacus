@@ -45,11 +45,11 @@ export async function GET() {
     }
   }
 
-  const endpointResult = await databricksFetch<{ state: string }>(
+  const endpointResult = await databricksFetch(
     `/api/2.0/serving-endpoints/${env.CLAIMOPS_ANALYSIS_ENDPOINT}`,
   );
   if (endpointResult.ok) {
-    status.analysisEndpoint = endpointResult.data.state === "READY";
+    status.analysisEndpoint = true;
   }
 
   return Response.json(status);

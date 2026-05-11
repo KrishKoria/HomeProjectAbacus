@@ -7,7 +7,6 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -16,11 +15,10 @@ import {
 } from "@/components/ui/sidebar";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { SignOut, ChartBar, MagnifyingGlass } from "@phosphor-icons/react";
+import { SignOut, ChartBar } from "@phosphor-icons/react";
 
 const navItems = [
-  { label: "Dashboard", href: "/dashboard", icon: ChartBar },
-  { label: "Search Claims", href: "/dashboard", icon: MagnifyingGlass },
+  { label: "Dashboard", href: "/dashboard", icon: ChartBar, shortcut: "G D" },
 ];
 
 export function AppSidebar() {
@@ -30,13 +28,12 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="px-4 py-3">
-        <Link href="/dashboard" className="text-sm font-medium tracking-tight">
+        <Link href="/dashboard" className="text-sm font-semibold tracking-tight">
           ClaimOps
         </Link>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => {
@@ -48,7 +45,12 @@ export function AppSidebar() {
                       render={<Link href={item.href} />}
                     >
                       <Icon />
-                      <span>{item.label}</span>
+                      <span className="text-sm font-medium">{item.label}</span>
+                      {item.shortcut && (
+                        <span className="ml-auto text-xs text-muted-foreground font-mono">
+                          {item.shortcut}
+                        </span>
+                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -61,14 +63,14 @@ export function AppSidebar() {
         <Button
           variant="outline"
           size="sm"
-          className="w-full"
+          className="w-full justify-start gap-2"
           onClick={() => {
             fetch("/api/auth/sign-out", { method: "POST" }).then(() => {
               router.push("/sign-in");
             });
           }}
         >
-          <SignOut />
+          <SignOut className="size-4" />
           Sign Out
         </Button>
       </SidebarFooter>
