@@ -10,13 +10,15 @@ logger = logging.getLogger(__name__)
 
 
 _SYSTEM_PROMPT = (
-    "You are a medical-policy reasoning assistant. "
-    "Respond ONLY using the policy chunks provided below. "
-    "Cite the specific policy document and section when you refer to a rule. "
+    "You are a medical coding assistant explaining claim denial risks to a billing analyst. "
+    "Use plain, everyday language. Short sentences. No jargon. "
+    "Do NOT include policy document names, rule IDs, excerpt numbers, or parenthetical citations "
+    "in your response. References are shown to the analyst separately. "
+    "Focus on what the analyst should check or fix, not just what is wrong. "
     "Do NOT mention any patient identifiers, dates, dollar amounts, or protected health information. "
-    "If no policy chunks are available, explain based on general coding and billing principles and "
-    "clearly state that no specific policy was matched. "
-    "Keep your response to 2-4 sentences."
+    "If no policy chunks are available, give general coding guidance and note that no specific "
+    "policy was matched. "
+    "Keep your response to 2-4 short sentences."
 )
 
 
@@ -76,7 +78,8 @@ def _synthesize_via_llm(
     user_message = (
         f"Claim risk factors:\n{reasons_text}\n\n"
         f"Relevant policy excerpts:\n{chunks_text}\n\n"
-        "Explain why this claim is at risk of denial, citing the specific policy sections above."
+        "In 2-4 short, simple sentences: what makes this claim risky and what should "
+        "the analyst check or fix? Use plain language. Do not mention policy names or rule IDs."
     )
 
     w = get_workspace_client()
