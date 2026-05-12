@@ -8,7 +8,6 @@
 .superpowers/
 .worktrees/
 .pytest_cache/
-.streamlit/
 .venv/
 .opencode/
 .databricks/

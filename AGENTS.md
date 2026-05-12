@@ -6,7 +6,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project overview
 
-AI-Powered Claim Denial Prevention & Remediation System — Databricks + Spark + Delta Lake + MLflow + Streamlit.
+AI-Powered Claim Denial Prevention & Remediation System — Databricks + Spark + Delta Lake + MLflow + Next.js.
 
 **Medallion:** Bronze (raw ingest) → Silver (trusted) → Gold (`healthcare.gold.claim_features`, 13 features) → ML (`healthcare.ml.claim_denial_model@champion`).
 
@@ -29,8 +29,8 @@ databricks bundle validate -t dev --profile dev
 databricks bundle deploy -t dev --profile dev
 databricks bundle run -t dev --profile dev <job_key>
 
-# Run Streamlit app locally
-uv run streamlit run src/analytics/app_streamlit.py
+# Run Next.js frontend locally
+cd frontend && bun run dev
 ```
 
 ## Architecture
@@ -50,7 +50,7 @@ Every `ETL/common/<module>.py` is exactly: `from src.common.<module> import *  #
 
 ```
 src/
-  analytics/     — Streamlit app, claims analytics, observability assets
+  analytics/     — claims analytics and observability assets
   common/        — Shared config, constants, PHI registry, log messages, diagnostics
   framework/     — Service verifier, manifest validation (HealthCheckResult)
   ml/            — Train, evaluate, predict, features, retrain gate
