@@ -533,9 +533,9 @@ Every technology choice is justified against alternatives.
 
 | Component           | Choice                    | Alternatives Considered                      | Why This Choice                                                                                                                                                                              |
 | ------------------- | ------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dashboard Framework | **Streamlit**             | React + Next.js, Dash                        | Python-native and fast to deliver for an internal analyst console. Strong fit for a training-project scope where the main goal is architecture clarity, not pixel-perfect public product UX. |
-| Auth (Frontend)     | **Streamlit native OIDC** | streamlit-authenticator, custom JWT handling | Keeps frontend authentication provider-agnostic and separates login concerns from application authorization.                                                                                 |
-| Charts              | **Plotly**                | Matplotlib, Altair                           | Interactive charts (hover, zoom, filter). Well-supported in Streamlit.                                                                                                                       |
+| Dashboard Framework | **Next.js + React**       | Dash                                          | Supports production frontend patterns, server-side auth/session controls, and a clear BFF boundary to Databricks APIs.                                                                       |
+| Auth (Frontend)     | **Better Auth (OIDC)**    | custom JWT handling, direct app auth         | Keeps authentication centralized in the frontend runtime while preserving Databricks as the data/model system of record.                                                                    |
+| Charts              | **React charting stack**  | Matplotlib, Altair                           | Interactive web-native charts with reusable UI components in the Next.js frontend.                                                                                                            |
 
 ---
 
@@ -547,27 +547,27 @@ The runtime view below is deliberately simplified into a **single executive spin
 
 ![Corporate runtime architecture](Architecture_latest.png)
 
-> **Critical runtime controls.** The diagram intentionally favors clarity over protocol-level loop detail, but it now preserves the missing governance and compliance elements. Authentication begins in Streamlit and then redirects to the identity provider, the HIPAA-handling tiers are enclosed in the compliance boundary, the Medallion data path is visible from object storage through Bronze / Silver / Gold, and the orchestrator remains the only component that talks to PostgreSQL and Databricks online services. The RAG path remains PHI-safe because retrieval is based on policy evidence rather than raw patient data.
+> **Critical runtime controls.** The diagram intentionally favors clarity over protocol-level loop detail, but it now preserves the missing governance and compliance elements. Authentication begins in the Next.js frontend and then redirects to the identity provider, the HIPAA-handling tiers are enclosed in the compliance boundary, the Medallion data path is visible from object storage through Bronze / Silver / Gold, and the orchestrator remains the only component that talks to PostgreSQL and Databricks online services. The RAG path remains PHI-safe because retrieval is based on policy evidence rather than raw patient data.
 
 ### 11.2 End-to-End Request Flow Summary
 
 | Phase                                | Actor → Target                                             | What Happens                                                                                                                                                                                          | Interface                                       | Key Control                                                |
 | ------------------------------------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------- |
 | 1. User access                       | Browser → Edge                                             | User reaches the public hostname and enters through DNS, WAF, DDoS protection, and the load balancer                                                                                                  | HTTPS / TLS 1.3                                 | TLS, WAF rules, edge health checks                         |
-| 2. Authentication                    | Streamlit → IdP                                            | Streamlit initiates OIDC Authorization Code + PKCE; the user completes login and MFA with the identity provider                                                                                       | OIDC / OAuth 2.0                                | PKCE, MFA, anti-CSRF `state`                               |
-| 3. Session bootstrap                 | IdP → Streamlit                                            | Streamlit exchanges the authorization code for short-lived access tokens and refresh tokens                                                                                                           | OIDC token exchange                             | RS256 signing, expiry, refresh lifecycle                   |
-| 4. Claim submission                  | Browser / Streamlit → FastAPI                              | Analyst submits a single claim or batch file to `/api/v1/claims/validate` or `/api/v1/claims/batch`                                                                                                   | REST / JSON over HTTPS                          | Bearer JWT on every protected API call                     |
+| 2. Authentication                    | Next.js Frontend → IdP                                     | Frontend runtime initiates OIDC Authorization Code + PKCE; the user completes login and MFA with the identity provider                                                                                 | OIDC / OAuth 2.0                                | PKCE, MFA, anti-CSRF `state`                               |
+| 3. Session bootstrap                 | IdP → Next.js Frontend                                     | Frontend exchanges the authorization code for short-lived tokens and session state                                                                                                                     | OIDC token exchange                             | RS256 signing, expiry, refresh lifecycle                   |
+| 4. Claim submission                  | Browser / Next.js BFF → Databricks APIs                    | Analyst submits a claim from the frontend, which calls Databricks SQL/Serving through authenticated backend routes                                                                                     | REST / JSON over HTTPS                          | Bearer JWT on every protected API call                     |
 | 5. API enforcement                   | FastAPI Middleware → Claims Router                         | Trusted host checks, HTTPS redirect, CORS, rate limiting, JWT verification, revocation checks, RBAC, Pydantic validation, audit logging, and security headers are enforced before business logic runs | ASGI middleware + router dispatch               | Defense in depth at the API boundary                       |
 | 6. Decisioning orchestration         | Claims Orchestrator → PostgreSQL / Rules                   | The backend records request start, checks cache or session state, and runs deterministic denial-prevention rules                                                                                      | asyncpg + in-process services                   | Least-privilege DB access, append-only audit pattern       |
 | 7. Databricks feature and model path | Claims Orchestrator → Unity Catalog / Gold / Model Serving | The backend retrieves governed lookup data, constructs the feature context, and calls the XGBoost + SHAP serving endpoint                                                                             | HTTPS + service token over private connectivity | Unity Catalog governance, secrets injection, service auth  |
 | 8. Databricks RAG path               | Claims Orchestrator → Vector Search → FM endpoint          | The backend submits a PHI-safe query, retrieves policy chunks, and generates a grounded explanation and remediation plan                                                                              | HTTPS + managed Databricks endpoints            | PHI firewall, grounded prompts, retrieval-scoped context   |
-| 9. Response and audit closeout       | Claims Orchestrator → PostgreSQL → Streamlit → Browser     | The final validation result is persisted, then returned as JSON and rendered as a scorecard, policy citations, and a remediation checklist                                                            | HTTPS / JSON                                    | Audit completion, RFC 7807 error model, PHI-safe telemetry |
+| 9. Response and audit closeout       | Claims Orchestrator → PostgreSQL → Next.js → Browser       | The final validation result is persisted, then returned as JSON and rendered as a scorecard, policy citations, and a remediation checklist                                                            | HTTPS / JSON                                    | Audit completion, RFC 7807 error model, PHI-safe telemetry |
 
 ### 11.3 Component Responsibilities (detailed)
 
 | Tier            | Component                 | Responsibility                                                                                              |
 | --------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| ① Client        | Browser                   | Runs Streamlit UI; stores no PHI; only holds short-lived tokens in memory                                   |
+| ① Client        | Browser                   | Runs Next.js UI; stores no PHI; only holds short-lived tokens in memory                                     |
 | ② Identity      | OIDC Authorization Server | Authenticates users, issues / refreshes / revokes tokens, exposes JWKS                                      |
 | ② Identity      | MFA Service               | Enforces TOTP or WebAuthn as second factor                                                                  |
 | ② Identity      | User Directory            | Source of truth for identity, role, `org_id`, group membership                                              |
@@ -575,7 +575,7 @@ The runtime view below is deliberately simplified into a **single executive spin
 | ③ Edge          | WAF                       | Blocks OWASP Top-10 patterns, bad bots, known-malicious IPs                                                 |
 | ③ Edge          | DDoS Protection           | Network-layer volumetric + protocol-layer mitigation                                                        |
 | ③ Edge          | Load Balancer             | Health-checked routing, horizontal fan-out, connection draining                                             |
-| ④ App           | Streamlit Frontend        | OIDC client, claim form, batch upload, dashboards, admin pages, 15-min inactivity timeout                   |
+| ④ App           | Next.js Frontend + BFF    | OIDC client, claim form, dashboards, and authenticated route handlers                                        |
 | ④ App           | FastAPI Backend           | Stateless REST API; every request passes through the full middleware pipeline before hitting a router       |
 | ④ App           | Middleware Pipeline       | TrustedHost → HTTPSRedirect → CORS → RateLimit → JWT Auth → RBAC → Pydantic → Audit → Security Headers      |
 | ④ App           | API Routers               | Grouped under `/auth`, `/claims`, `/analytics`, `/admin`; OpenAPI-documented; versioned under `/api/v1`     |
@@ -593,7 +593,7 @@ The runtime view below is deliberately simplified into a **single executive spin
 | ⑥ Cross-cutting | Secrets Manager           | Injects JWT signing keys, DB credentials, Databricks service tokens at runtime; 90-day rotation             |
 | ⑥ Cross-cutting | Observability             | Metrics (p50/p95/p99), structured logs, traces, alerts on auth failures, error rate, latency SLOs           |
 | ⑥ Cross-cutting | Backup & DR               | Delta time-travel + daily PostgreSQL snapshots; RTO < 1 h, RPO < 15 min                                     |
-| ⑥ Cross-cutting | CI/CD                     | Builds, scans, SBOM-signs, and deploys container images for Streamlit / FastAPI                             |
+| ⑥ Cross-cutting | CI/CD                     | Builds, scans, SBOM-signs, and deploys frontend/backend artifacts                                             |
 
 ### 11.4 Trust Boundaries
 
@@ -772,9 +772,9 @@ The RAG system is now **implemented** with three new modules and a Gold embeddin
 | RAG Retrieval | `src/rag/` | `EmbeddingProvider` (Databricks GTE), `PolicyRetriever` (Vector Search), `synthesize()` (Llama 70B with template fallback), `retrieve_and_explain()` orchestrator. |
 | Gold Embeddings | `ETL/pipelines/gold/gold_policy_embeddings.py` | SDP `@dp.materialized_view` pipeline: reads `healthcare.silver.policy_chunks`, calls GTE endpoint per chunk, writes to `healthcare.gold.policy_chunks` with `embedding_vector` (768-dim double array), `embedding_status` (COMPLETED/FAILED), `embedding_model` (`databricks-gte-large-en`), `embedded_at`. The MV does not read its own target; policy content changes are represented by Silver `chunk_id` changes. |
 | Vector Index | `src/scripts/create_vector_index.py` | CLI script to create/update the Databricks Vector Search delta-sync index on `healthcare.gold.policy_chunks_vs`. The script incrementally mirrors from `healthcare.gold.policy_chunks` into the CDF-enabled `_vs` table, then syncs the index. |
-| Streamlit UI | `app_streamlit.py` | Databricks-hosted app: claim input → prediction → SHAP explanations → RAG policy retrieval → natural-language narrative. Session state caches model and retriever across reruns. |
+| Next.js UI + BFF | `frontend/` | Frontend app: claim input → backend route validation → Databricks SQL + serving API calls → SHAP reasons and policy guidance rendering. |
 
-**Data flow:** Silver chunks → Gold embedding pipeline → `healthcare.gold.policy_chunks` (MV) → incremental mirror to `healthcare.gold.policy_chunks_vs` (CDF Delta) → Vector Search delta-sync index → `PolicyRetriever.search()` → Llama 70B synthesis → Streamlit display.
+**Data flow:** Silver chunks → Gold embedding pipeline → `healthcare.gold.policy_chunks` (MV) → incremental mirror to `healthcare.gold.policy_chunks_vs` (CDF Delta) → Vector Search delta-sync index → `PolicyRetriever.search()` → Llama 70B synthesis → Next.js display.
 
 **Silver cleanup:** `embedding_vector` and `embedding_status` placeholder columns removed from `silver_policy_chunks.py`. Embedding ownership now lives exclusively in Gold.
 
@@ -885,9 +885,9 @@ All errors follow RFC 7807 Problem Details format, returning a structured JSON b
 
 ```mermaid
 graph TD
-    LOGIN["Login Page\nOIDC / OAuth 2.0 login + MFA\nStreamlit native auth"]
+    LOGIN["Login Page\nOIDC / OAuth 2.0 login + MFA\nNext.js auth runtime"]
 
-    subgraph NAV["Navigation — Streamlit Sidebar"]
+    subgraph NAV["Navigation — Next.js App Shell"]
         P1["Dashboard\nAnalytics overview"]
         P2["Validate Claim\nSingle + batch upload"]
         P3["Claim History\nFilterable table"]
@@ -913,7 +913,7 @@ graph TD
 
 ### 17.2 Session Management (App-Enforced Auto-Logoff Policy)
 
-Streamlit's identity cookie can outlive an individual browser session, so the application enforces its own inactivity timeout policy for regulated workflows and requires re-authentication for protected pages. The 15-minute timeout is checked on every page interaction — on expiry, the session state is cleared and the user is logged out.
+The frontend session can outlive an individual browser tab, so the application enforces its own inactivity timeout policy for regulated workflows and requires re-authentication for protected pages. The 15-minute timeout is checked on every page interaction — on expiry, the session state is cleared and the user is logged out.
 
 ---
 
@@ -1001,7 +1001,7 @@ The platform uses **OpenID Connect (OIDC)** for user authentication and the **OA
 ```mermaid
 sequenceDiagram
     participant U as User Browser
-    participant S as Streamlit App
+    participant S as Next.js App
     participant A as Identity Provider
     participant F as FastAPI Resource
 
@@ -1033,7 +1033,7 @@ The system is deployed on a **HIPAA-eligible managed cloud architecture**. The s
 
 **What stays the same regardless of cloud:**
 
-- FastAPI, Streamlit, and PostgreSQL are standard Python services — they run anywhere
+- FastAPI-compatible APIs, Next.js frontend services, and PostgreSQL are standard components — they run anywhere
 - Databricks is available natively on all three major clouds; only the underlying storage differs (S3 / GCS / ADLS Gen2)
 - All communication is over HTTPS (TLS 1.3). All credentials are injected at runtime — nothing sensitive is baked into code or config files
 - Managed services are acceptable only when they support required compliance controls, encryption, audit logging, and private connectivity
@@ -1123,7 +1123,7 @@ Long-term retention should be enforced by exporting completed audit partitions t
 | Databricks ML Serving      | Auto-scaling risk scoring endpoint         | **~$200 to $500**           |
 | Databricks Vector Search   | Managed index                              | **~$150 to $400**           |
 | Foundation Model API       | Databricks-hosted FM explanation calls     | **~$50 to $300**            |
-| App hosting                | FastAPI + Streamlit + PostgreSQL           | **~$300 to $700**           |
+| App hosting                | Next.js + Databricks APIs + PostgreSQL     | **~$300 to $700**           |
 | Storage / backup / logging | Delta storage, backups, observability      | **~$100 to $400**           |
 | Compliance / networking    | Private connectivity and security controls | **~$150 to $500**           |
 | **Production Total**       |                                            | **~$1,650 to $4,000/month** |
