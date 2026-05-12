@@ -33,7 +33,6 @@ from common.log_messages import (  # noqa: E402
     render_quarantine_summary,
     render_silver_table_ready,
 )
-from common.policy_chunks import chunk_policy_text, normalize_policy_text  # noqa: E402
 from common.silver_cleaning import (  # noqa: E402
     build_quality_flags,
     normalize_code_value,
@@ -46,8 +45,6 @@ from common.silver_cleaning import (  # noqa: E402
     spark_decimal_or_null,
 )
 from common.silver_pipeline_config import (  # noqa: E402
-    POLICY_CHUNK_OVERLAP_TOKENS,
-    POLICY_CHUNK_SIZE_TOKENS,
     QUARANTINE_AUDIT_COLUMNS,
     SILVER_AUDIT_COLUMNS,
     quarantine_table_name,
@@ -238,23 +235,15 @@ class PolicyChunkingTests(unittest.TestCase):
         source = source_path.read_text(encoding="utf-8")
         self.assertIn('F.array(F.lit("duplicate_policy_path"))', source)
 
-    def test_policy_text_is_normalized_before_chunking(self) -> None:
-        self.assertEqual(
-            normalize_policy_text("Line one\n\nLine two\tLine three"),
-            "Line one Line two Line three",
-        )
+    def test_policy_chunker_normalization_and_overlap_logic_stays_pipeline_local(self) -> None:
+        source_path = PROJECT_ROOT / "ETL" / "pipelines" / "silver" / "silver_policy_chunks.py"
+        source = source_path.read_text(encoding="utf-8")
 
-    def test_policy_chunker_uses_overlap_and_stable_indexes(self) -> None:
-        text = " ".join(f"token{i}" for i in range(700))
-        chunks = chunk_policy_text(text, POLICY_CHUNK_SIZE_TOKENS, POLICY_CHUNK_OVERLAP_TOKENS)
-        self.assertEqual(chunks[0]["chunk_index"], 0)
-        self.assertEqual(chunks[0]["token_count"], POLICY_CHUNK_SIZE_TOKENS)
-        self.assertGreaterEqual(len(chunks), 2)
-        self.assertEqual(chunks[1]["chunk_index"], 1)
-        self.assertEqual(
-            chunks[0]["chunk_text"].split(" ")[-POLICY_CHUNK_OVERLAP_TOKENS:],
-            chunks[1]["chunk_text"].split(" ")[:POLICY_CHUNK_OVERLAP_TOKENS],
-        )
+        self.assertIn('" ".join(policy_text.split())', source)
+        self.assertIn("step = max(1, chunk_size_tokens - overlap_tokens)", source)
+        self.assertIn("token_slice = tokens[start_index:start_index + chunk_size_tokens]", source)
+        self.assertIn('"chunk_index": chunk_index', source)
+        self.assertIn('"token_count": len(token_slice)', source)
 
 
 class SilverContractTests(unittest.TestCase):

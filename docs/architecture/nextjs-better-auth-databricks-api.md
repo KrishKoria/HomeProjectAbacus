@@ -27,10 +27,6 @@ The existing ML pipeline (prediction, SHAP explanations, RAG retrieval, Vector S
 
 Instead, the Python logic is packaged as a Databricks Model Serving endpoint (`src/serving/claim_analysis.py`). The Next.js BFF calls this endpoint via the Databricks Serving API.
 
-## Why Streamlit remains fallback
-
-The existing Streamlit app (`app_streamlit.py`, `src/analytics/`) is preserved until the Next.js app reaches feature parity. This ensures unblocked access to claim analysis during the pivot.
-
 ## Data flow
 
 ```mermaid

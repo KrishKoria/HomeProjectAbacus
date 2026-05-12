@@ -8,7 +8,7 @@ This handbook is the single source of truth for developers working on this proje
 
 - **What:** AI-Powered Claim Denial Prevention & Remediation System
 - **Platform:** Databricks on Google Cloud (GCP)
-- **Stack:** Apache Spark, Delta Lake, MLflow, SDP (Lakeflow Pipelines), Streamlit
+- **Stack:** Apache Spark, Delta Lake, MLflow, SDP (Lakeflow Pipelines), Next.js
 - **Languages:** Python 3.12+, YAML (DAB), SQL (materialized views)
 - **Data architecture:** Medallion — Bronze (raw) → Silver (trusted) → Gold (features) → ML (model)
 - **ML:** 6 model candidates (XGBoost, LightGBM, CatBoost, Voting Ensemble, Stacking Ensemble, Logistic Regression), Optuna tuning, MLflow Model Registry with champion alias
@@ -43,7 +43,7 @@ homeprojectabacus/
 │   ├── common/                 # Shared config constants (Bronze/Silver/Gold/ML)
 │   ├── ml/                     # ML training, evaluation, prediction, retrain gate
 │   ├── scripts/                # CLI entry points (train, retrain, generators)
-│   ├── analytics/              # Streamlit dashboard + asset builder
+│   ├── analytics/              # analytics asset builder
 │   └── framework/              # Service manifest, observability, verifier
 │
 ├── ETL/

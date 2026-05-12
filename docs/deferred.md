@@ -88,18 +88,8 @@ Format for new entries:
 
 - **Status:** revived 2026-05-10
 - **Source:** Openspec `frontend-api-pivot` change.
-- **Why revived:** Databricks-hosted auth was blocked by free-edition tier constraints. A Next.js app on Vercel with Better Auth Google OAuth replaces the deferred Databricks-hosted FastAPI + React approach. All ML/RAG/XAI logic stays in Databricks; the browser never holds Databricks credentials. Streamlit is preserved as fallback.
+- **Why revived:** Databricks-hosted auth was blocked by free-edition tier constraints. A Next.js app on Vercel with Better Auth Google OAuth replaces the deferred Databricks-hosted FastAPI + React approach. All ML/RAG/XAI logic stays in Databricks; the browser never holds Databricks credentials.
 - **Full context:** [`docs/architecture/nextjs-better-auth-databricks-api.md`](architecture/nextjs-better-auth-databricks-api.md)
-
----
-
-## src/common/policy_chunks.py disposition
-
-- **Status:** deferred 2026-05-05
-- **Source:** Week 5+6 implementation planning (grill-with-docs session).
-- **Why deferred:** The module provides programmatic PDF text extraction, normalization, and chunking outside Spark — potentially useful for single-document upload in the Streamlit UI. The Bronze → Silver SDP pipeline (`bronze_policies.py` → `silver_policy_chunks.py`) already handles bulk PDF ingestion with pdfplumber UDFs, so this module is duplicative for batch but may serve the interactive path. Deleting it now risks re-implementing it if the Streamlit ingestion flow needs it.
-- **Trigger to revive (and remove):** the Streamlit UI stabilizes and confirms it does NOT use this module for any ingestion path. At that point, delete `src/common/policy_chunks.py` and remove its tests. If it IS used by Streamlit, keep it and remove this deferral entry.
-- **Full context:** [`openspec/changes/add-week5-week6-xai-rag/design.md`](../openspec/changes/add-week5-week6-xai-rag/design.md) — Design §8.
 
 ---
 

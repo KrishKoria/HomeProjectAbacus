@@ -31,7 +31,6 @@ class FrameworkContractTests(unittest.TestCase):
     def test_service_registry_and_manifests_exist(self) -> None:
         expected_paths = (
             PROJECT_ROOT / "services" / "manifest.yml",
-            PROJECT_ROOT / "app.yaml",
             PROJECT_ROOT / "services" / "etl" / "service.yml",
             PROJECT_ROOT / "services" / "etl" / "file_arrival.service.yml",
             PROJECT_ROOT / "services" / "etl" / "fast_dev.service.yml",
@@ -39,7 +38,6 @@ class FrameworkContractTests(unittest.TestCase):
             PROJECT_ROOT / "services" / "ml" / "training" / "service.yml",
             PROJECT_ROOT / "services" / "rag" / "vector_index" / "service.yml",
             PROJECT_ROOT / "services" / "infrastructure" / "setup" / "service.yml",
-            PROJECT_ROOT / "services" / "frontend" / "service.yml",
         )
         for path in expected_paths:
             with self.subTest(path=path):
@@ -768,70 +766,21 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn("vector_search_endpoint_name", source)
         self.assertIn("vector_search_index_name", source)
         self.assertIn("vector_search_query_model_endpoint_name", source)
-        self.assertIn("app_sql_warehouse_id", source)
-        self.assertIn("app_sql_http_path", source)
-        self.assertIn("app_claim_features_table", source)
-        self.assertIn("app_model_registry_name", source)
-        self.assertIn("app_model_alias", source)
+        self.assertNotIn("app_sql_warehouse_id", source)
+        self.assertNotIn("app_sql_http_path", source)
+        self.assertNotIn("app_claim_features_table", source)
+        self.assertNotIn("app_model_registry_name", source)
+        self.assertNotIn("app_model_alias", source)
+        self.assertNotIn("app_auth_audit_table", source)
 
-    def test_frontend_app_bundle_resource_and_manifest_are_wired(self) -> None:
+    def test_frontend_app_bundle_resource_is_removed(self) -> None:
         manifest_source = (PROJECT_ROOT / "services" / "manifest.yml").read_text(encoding="utf-8")
-        service_source = (
-            PROJECT_ROOT / "services" / "frontend" / "service.yml"
-        ).read_text(encoding="utf-8")
-        resource_source = (
-            PROJECT_ROOT / "services" / "frontend" / "resources" / "frontend.app.yml"
-        ).read_text(encoding="utf-8")
-        app_yaml = (PROJECT_ROOT / "app.yaml").read_text(encoding="utf-8")
-
-        self.assertIn("frontend_app:", manifest_source)
-        self.assertIn("manifest: services/frontend/service.yml", manifest_source)
-        self.assertIn("depends_on:", manifest_source)
-        self.assertIn("resource_key: claim_ops_app", service_source)
-        self.assertIn("resource_type: apps", service_source)
-        self.assertIn("apps:", resource_source)
-        self.assertIn("claim_ops_app:", resource_source)
-        self.assertIn("source_code_path: ../../../", resource_source)
-        self.assertIn("app-sql-warehouse", resource_source)
-        self.assertIn("${var.app_sql_warehouse_id}", resource_source)
-        self.assertIn("app-policy-vector-index", resource_source)
-        self.assertIn("securable_full_name: ${var.vector_search_index_name}", resource_source)
-        self.assertIn("securable_type: TABLE", resource_source)
-        self.assertIn("permission: SELECT", resource_source)
-        self.assertIn("app-claim-denial-model", resource_source)
-        self.assertIn("securable_full_name: ${var.app_model_registry_name}", resource_source)
-        self.assertIn("securable_type: FUNCTION", resource_source)
-        self.assertIn("permission: EXECUTE", resource_source)
-        self.assertIn("command:", app_yaml)
-        self.assertIn("python", app_yaml)
-        self.assertIn("launcher.py", app_yaml)
-
-    def test_app_yaml_defines_required_runtime_envs(self) -> None:
-        source = (PROJECT_ROOT / "app.yaml").read_text(encoding="utf-8")
-
-        self.assertIn("CLAIMOPS_SQL_WAREHOUSE_ID", source)
-        self.assertIn("CLAIMOPS_SQL_HTTP_PATH", source)
-        self.assertIn("CLAIMOPS_GOLD_TABLE", source)
-        self.assertIn("CLAIMOPS_MODEL_NAME", source)
-        self.assertIn("CLAIMOPS_MODEL_ALIAS", source)
-        self.assertIn("CLAIMOPS_VECTOR_INDEX_NAME", source)
-
-    def test_streamlit_frontend_uses_sql_connector_not_spark_session(self) -> None:
-        source = (PROJECT_ROOT / "app_streamlit.py").read_text(encoding="utf-8")
-
-        self.assertIn("from databricks import sql", source)
-        self.assertIn("oauth_service_principal", source)
-        self.assertIn("DATABRICKS_CLIENT_ID", source)
-        self.assertIn("DATABRICKS_CLIENT_SECRET", source)
-        self.assertIn("WHERE claim_id = ?", source)
-        self.assertIn("LIMIT 1", source)
-        self.assertIn("Sample Claims", source)
-        self.assertIn("degraded", source)
-        self.assertIn("WorkspaceClient", source)
-        self.assertIn("vector_search_indexes.get_index", source)
-        self.assertNotIn("SparkSession", source)
-        self.assertIn("_DEFAULT_MODEL_NAME", source)
-        self.assertNotIn('_env("CLAIMOPS_MODEL_NAME", DEFAULT_MODEL_NAME)', source)
+        self.assertNotIn("frontend_app:", manifest_source)
+        self.assertNotIn("services/frontend/service.yml", manifest_source)
+        self.assertFalse((PROJECT_ROOT / "services" / "frontend").exists())
+        self.assertFalse((PROJECT_ROOT / "app.yaml").exists())
+        self.assertFalse((PROJECT_ROOT / "app_streamlit.py").exists())
+        self.assertFalse((PROJECT_ROOT / "launcher.py").exists())
 
     def test_retrain_job_is_decoupled_from_file_arrival_etl(self) -> None:
         source = (

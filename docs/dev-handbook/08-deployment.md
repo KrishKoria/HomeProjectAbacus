@@ -82,7 +82,6 @@ databricks bundle run <job_key> -t dev --profile dev
 | `ml_retrain_job` | Gate-checked model retraining | 5-15 min |
 | `rag_vector_index_job` | Create/sync Vector Search index | 1-3 min |
 | `analytics_observability_job` | Build analytics + quality assets | 2-5 min |
-| `claim_ops_app` | Deploy/start Streamlit Databricks App | < 2 min |
 
 ### Run the Full ETL Pipeline
 
@@ -115,14 +114,14 @@ databricks bundle run rag_vector_index_job -t dev --profile dev
 # 6. Build analytics dashboard assets
 databricks bundle run analytics_observability_job -t dev --profile dev
 
-# 7. Deploy/start the frontend app
-databricks bundle run claim_ops_app -t dev --profile dev
+# 7. Verify backend health from the frontend runtime
+cd frontend && bun run build
 ```
 
 Vector sync uses two Gold-layer tables intentionally: `healthcare.gold.policy_chunks` (Lakeflow materialized view) and `healthcare.gold.policy_chunks_vs` (CDF-enabled Delta table for Delta Sync). The vector job incrementally mirrors MV changes into `_vs` before running index sync.
 
-The frontend app reads Gold data through Databricks SQL (warehouse HTTP path), not SparkSession.
-It reports startup health for Gold connectivity, model load, and Vector Search availability.
+The Next.js frontend reads Gold data through Databricks SQL/Serving APIs using service-principal OAuth.
+Runtime health checks are exposed via `/api/runtime/status`.
 
 ---
 
@@ -177,7 +176,7 @@ Change `-t dev` to `-t prod` (or vice versa). All variables in `databricks.yml` 
 | `model_version` | `"1"` | CI/CD-resolved |
 | `workspace.profile` | `dev` | `prod` |
 | `mode` | `development` | `production` |
-| Databricks App run key | `claim_ops_app` | `claim_ops_app` |
+| Frontend runtime | `frontend/` Next.js app | `frontend/` Next.js app |
 
 The catalog name is `healthcare` in both environments -- data is separated by workspace, not by catalog.
 
@@ -269,10 +268,10 @@ Plus `--editable ${workspace.file_path}` for the project itself.
 | Spark analysis exception | Check cluster logs in the Spark UI from the job run page |
 | Permission denied | Verify service principal has `USE CATALOG`, `USE SCHEMA`, `CREATE TABLE` on the target catalog |
 
-For Databricks Apps frontend runtime, the app service principal needs:
+For the Next.js runtime service principal, grant:
 - SQL warehouse: `CAN_USE`
 - Gold table: `SELECT` plus `USE CATALOG` and `USE SCHEMA`
-- ML model: model read/execute access in Unity Catalog
+- Serving endpoint: `CAN_QUERY`
 - Vector Search index: query access
 
 ### DESCRIBE HISTORY Error on gold_claim_features
@@ -338,7 +337,28 @@ This removes all deployed resources (jobs, pipelines) for the target environment
 
 ---
 
-## 8.9 Quick Reference Cards
+## 8.9 Streamlit Decommission Cleanup
+
+After merging the Streamlit decommission, run one normal deploy so Databricks updates bundle-managed resources:
+
+```bash
+databricks bundle deploy -t dev --profile dev
+```
+
+Expected result: the removed app resource (`claim_ops_app`) should no longer appear in the workspace resources managed by this bundle.
+
+If Streamlit assets were created manually outside the bundle, clean them up after confirming Next.js runtime health:
+
+1. Delete the legacy Databricks App from the workspace UI (if still present).
+2. Remove legacy app secrets/environment entries that are no longer used:
+   - `STREAMLIT_OIDC_*`
+   - `CLAIMOPS_AUTH_*`
+3. Remove any app-only secret scopes that were dedicated to the old Streamlit runtime.
+4. Re-run `databricks bundle validate -t dev --profile dev` to confirm no remaining references.
+
+---
+
+## 8.10 Quick Reference Cards
 
 ### One-Time Setup
 
@@ -362,7 +382,7 @@ databricks bundle deploy -t dev --profile dev && \
 databricks bundle run etl_fast_dev_job -t dev --profile dev && \
 databricks bundle run ml_retrain_job -t dev --profile dev && \
 databricks bundle run rag_vector_index_job -t dev --profile dev && \
-databricks bundle run claim_ops_app -t dev --profile dev
+databricks bundle run analytics_observability_job -t dev --profile dev
 ```
 
 ### Production Release
@@ -374,7 +394,6 @@ databricks bundle deploy -t prod --profile prod
 databricks bundle run etl_fast_dev_job -t prod --profile prod
 databricks bundle run ml_retrain_job -t prod --profile prod
 databricks bundle run rag_vector_index_job -t prod --profile prod
-databricks bundle run claim_ops_app -t prod --profile prod
 databricks bundle run analytics_observability_job -t prod --profile prod
 ```
 
