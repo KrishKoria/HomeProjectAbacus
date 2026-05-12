@@ -1,4 +1,4 @@
-import { requireSession } from "@/lib/auth-session";
+import { requireAuthorizedSession } from "@/lib/auth-session";
 import { analyzeClaim } from "@/lib/databricks/analysis";
 import { fetchFeatureRow } from "@/lib/databricks/sql";
 import { upsertClaimReview } from "@/lib/db/claims";
@@ -13,7 +13,7 @@ const requestSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    await requireSession();
+    await requireAuthorizedSession();
   } catch {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -61,5 +61,9 @@ export async function POST(request: Request) {
     persisted = false;
   }
 
-  return Response.json({ ...analysis.data, persisted });
+  if (!persisted) {
+    return Response.json({ error: "Analysis completed but failed to persist results" }, { status: 500 });
+  }
+
+  return Response.json(analysis.data);
 }

@@ -1,5 +1,5 @@
-import { requireSession } from "@/lib/auth-session";
-import { updateClaimStatus } from "@/lib/db/claims";
+import { requireAuthorizedSession } from "@/lib/auth-session";
+import { getClaimReviewByClaimId, updateClaimStatus } from "@/lib/db/claims";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -9,13 +9,36 @@ const bodySchema = z.object({
   status: z.enum(["new", "reviewed", "actioned"]),
 });
 
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ claimId: string }> },
+) {
+  try {
+    await requireAuthorizedSession();
+  } catch {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { claimId } = await params;
+  const claimReview = await getClaimReviewByClaimId(claimId);
+
+  if (!claimReview) {
+    return Response.json({ error: "Claim not found" }, { status: 404 });
+  }
+
+  return Response.json({
+    claimId: claimReview.claimId,
+    status: claimReview.status,
+  });
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ claimId: string }> },
 ) {
-  let session: Awaited<ReturnType<typeof requireSession>>;
+  let session: Awaited<ReturnType<typeof requireAuthorizedSession>>;
   try {
-    session = await requireSession();
+    session = await requireAuthorizedSession();
   } catch {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }

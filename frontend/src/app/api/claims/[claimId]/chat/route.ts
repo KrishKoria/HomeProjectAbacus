@@ -1,4 +1,4 @@
-import { requireSession } from "@/lib/auth-session";
+import { requireAuthorizedSession } from "@/lib/auth-session";
 import { databricksFetch } from "@/lib/databricks/client";
 import { env } from "@/lib/server/env";
 import { z } from "zod";
@@ -36,7 +36,7 @@ export async function POST(
   { params }: { params: Promise<{ claimId: string }> },
 ) {
   try {
-    await requireSession();
+    await requireAuthorizedSession();
   } catch {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -56,6 +56,10 @@ export async function POST(
   }
 
   const { messages, claimContext } = parsed.data;
+
+  if (claimContext.claimId !== claimId) {
+    return Response.json({ error: "Claim ID mismatch" }, { status: 400 });
+  }
 
   const scorePercent = Math.round(claimContext.riskScore * 100);
   const reasonsSummary = claimContext.topReasons?.length

@@ -21,21 +21,25 @@ export async function GET() {
     modelServing: false,
   };
 
-  const oauthResult = await databricksFetch<{ access_token: string }>("/oidc/v1/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "client_credentials",
-        scope: "all-apis",
-        client_id: env.DATABRICKS_CLIENT_ID,
-        client_secret: env.DATABRICKS_CLIENT_SECRET,
-      }),
-  });
+  const [oauthResult, warehouseResult, endpointResult] = await Promise.all([
+    databricksFetch<{ access_token: string }>("/oidc/v1/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "client_credentials",
+          scope: "all-apis",
+          client_id: env.DATABRICKS_CLIENT_ID,
+          client_secret: env.DATABRICKS_CLIENT_SECRET,
+        }),
+    }),
+    databricksFetch<{ state: string }>(
+      `/api/2.0/sql/warehouses/${env.DATABRICKS_SQL_WAREHOUSE_ID}`,
+    ),
+    databricksFetch(
+      `/api/2.0/serving-endpoints/${env.CLAIMOPS_ANALYSIS_ENDPOINT}`,
+    ),
+  ]);
   if (oauthResult.ok) status.oauth = true;
-
-  const warehouseResult = await databricksFetch<{ state: string }>(
-    `/api/2.0/sql/warehouses/${env.DATABRICKS_SQL_WAREHOUSE_ID}`,
-  );
   if (warehouseResult.ok) {
     status.sqlWarehouse = true;
     if (warehouseResult.data.state === "STOPPED") {
@@ -44,10 +48,6 @@ export async function GET() {
       });
     }
   }
-
-  const endpointResult = await databricksFetch(
-    `/api/2.0/serving-endpoints/${env.CLAIMOPS_ANALYSIS_ENDPOINT}`,
-  );
   if (endpointResult.ok) {
     status.analysisEndpoint = true;
   }

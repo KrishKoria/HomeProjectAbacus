@@ -1,4 +1,4 @@
-import { requireSession } from "@/lib/auth-session";
+import { requireAuthorizedSession } from "@/lib/auth-session";
 import { getClaimStatuses } from "@/lib/db/claims";
 
 export const dynamic = "force-dynamic";
@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    await requireSession();
+    await requireAuthorizedSession();
   } catch {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
