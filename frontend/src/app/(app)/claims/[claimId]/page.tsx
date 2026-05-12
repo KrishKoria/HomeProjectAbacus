@@ -1,8 +1,15 @@
 "use client";
 
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { use, useEffect, useRef, useState } from "react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -23,21 +30,10 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import type { ClaimAnalysisResponse } from "@/lib/databricks/types";
-import { ArrowLeft, Files, Warning, PaperPlaneTilt, Robot } from "@phosphor-icons/react";
+import { ArrowLeft, Files, Warning, PaperPlaneTilt, ChatText } from "@phosphor-icons/react";
+import { RiskBadge, riskProgressColorMap } from "@/components/risk-badge";
 
 // ─── Risk / Direction helpers ───────────────────────────────────────────────
-
-const riskBadgeClass: Record<string, string> = {
-  high: "bg-risk-high-bg text-risk-high",
-  medium: "bg-risk-medium-bg text-risk-medium",
-  low: "bg-risk-low-bg text-risk-low",
-};
-
-const riskProgressColor: Record<string, string> = {
-  high: "var(--risk-high)",
-  medium: "var(--risk-medium)",
-  low: "var(--risk-low)",
-};
 
 function DirectionTag({ direction }: { direction: string }) {
   if (direction === "increases_risk")
@@ -60,32 +56,9 @@ function DirectionTag({ direction }: { direction: string }) {
 }
 
 function formatFeatureValue(value: number | null): string {
-  if (value === null) return "N/A";
+  if (value === null) return "—";
   if (Number.isInteger(value)) return String(value);
   return value.toFixed(2);
-}
-
-// ─── Animated counter ────────────────────────────────────────────────────────
-
-function useCounter(target: number, duration: number) {
-  const [value, setValue] = useState(0);
-  const raf = useRef<number>(0);
-  const animate = useCallback(() => {
-    const start = performance.now();
-    const step = (now: number) => {
-      const elapsed = now - start;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setValue(Math.round(eased * target));
-      if (progress < 1) raf.current = requestAnimationFrame(step);
-    };
-    raf.current = requestAnimationFrame(step);
-  }, [target, duration]);
-  useEffect(() => {
-    animate();
-    return () => cancelAnimationFrame(raf.current);
-  }, [animate]);
-  return value;
 }
 
 // ─── Chat panel ──────────────────────────────────────────────────────────────
@@ -105,27 +78,25 @@ function ChatPanel({
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => []);
   const [isWaiting, setIsWaiting] = useState(false);
-
-  useEffect(() => {
-    if (analysis && messages.length === 0) {
-      const scorePercent = Math.round(analysis.riskScore * 100);
-      const level = analysis.riskLevel.charAt(0).toUpperCase() + analysis.riskLevel.slice(1);
-      setMessages([
-        {
-          role: "assistant",
-          content: `This claim scored ${scorePercent}% — ${level} denial risk. Ask me anything about it.`,
-        },
-      ]);
-    }
-  }, [analysis, messages.length]);
+  const openingMessage =
+    analysis && messages.length === 0
+      ? {
+          role: "assistant" as const,
+          content: `This claim scored ${Math.round(analysis.riskScore * 100)}%: ${
+            analysis.riskLevel.charAt(0).toUpperCase() + analysis.riskLevel.slice(1)
+          } denial risk. Ask me anything about it.`,
+        }
+      : null;
+  const visibleMessages = openingMessage ? [openingMessage, ...messages] : messages;
+  const threadMessageCount = messages.length + (openingMessage ? 1 : 0);
 
   useEffect(() => {
     if (threadRef.current) {
       threadRef.current.scrollTop = threadRef.current.scrollHeight;
     }
-  }, [messages, isWaiting]);
+  }, [threadMessageCount, isWaiting]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -133,6 +104,14 @@ function ChatPanel({
         e.key === "c" &&
         !e.metaKey &&
         !e.ctrlKey &&
+        document.activeElement?.tagName !== "INPUT" &&
+        document.activeElement?.tagName !== "TEXTAREA"
+      ) {
+        e.preventDefault();
+        chatInputRef.current?.focus();
+      }
+      if (
+        e.key === "/" &&
         document.activeElement?.tagName !== "INPUT" &&
         document.activeElement?.tagName !== "TEXTAREA"
       ) {
@@ -149,7 +128,7 @@ function ChatPanel({
     if (!text || isWaiting || !analysis) return;
     setInput("");
     const userMsg: ChatMessage = { role: "user", content: text };
-    const nextMessages = [...messages, userMsg];
+    const nextMessages = [...visibleMessages, userMsg];
     setMessages(nextMessages);
     setIsWaiting(true);
 
@@ -197,21 +176,21 @@ function ChatPanel({
     <div className="flex flex-col h-full">
       <div className="px-5 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
-          <Robot className="size-4 text-muted-foreground" />
-          <span className="text-sm font-semibold">Ask about this claim</span>
+          <ChatText className="size-4 text-muted-foreground" aria-hidden="true" />
+          <span className="type-title">Ask about this claim</span>
         </div>
         <p className="type-caption text-muted-foreground mt-0.5">
           Press <kbd className="font-mono text-[10px] px-1 border border-border">C</kbd> to focus
         </p>
       </div>
 
-      <div ref={threadRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div ref={threadRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4" aria-live="polite" aria-label="Chat messages">
         {!analysis && (
           <p className="type-caption text-muted-foreground text-center mt-8">
             Waiting for analysis…
           </p>
         )}
-        {messages.map((msg, i) => (
+        {visibleMessages.map((msg, i) => (
           <div
             key={i}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
@@ -256,6 +235,7 @@ function ChatPanel({
             placeholder="Ask about this claim…"
             rows={2}
             disabled={!analysis || isWaiting}
+            aria-label="Ask a question about this claim"
             className="flex-1 resize-none bg-transparent border border-border px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 min-h-[2.5rem] max-h-28"
           />
           <Button
@@ -263,8 +243,9 @@ function ChatPanel({
             onClick={sendMessage}
             disabled={!input.trim() || isWaiting || !analysis}
             className="shrink-0"
+            aria-label="Send message"
           >
-            <PaperPlaneTilt />
+            <PaperPlaneTilt aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -283,6 +264,7 @@ function StatusControl({
 }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState(initialStatus);
+  const previousStatusRef = useRef(initialStatus);
 
   const mutation = useMutation({
     mutationFn: async (newStatus: string) => {
@@ -294,11 +276,22 @@ function StatusControl({
       if (!res.ok) throw new Error("Failed to update status");
       return res.json();
     },
+    onMutate: async () => {
+      previousStatusRef.current = status;
+    },
     onSuccess: (_, newStatus) => {
       setStatus(newStatus);
       const label = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
-      toast(`Marked as ${label}`);
+      const undoStatus = previousStatusRef.current;
+      toast(`Marked as ${label}`, {
+        action: {
+          label: "Undo",
+          onClick: () => mutation.mutate(undoStatus),
+        },
+        duration: 5000,
+      });
       queryClient.invalidateQueries({ queryKey: ["claims"] });
+      queryClient.invalidateQueries({ queryKey: ["claim-status", claimId] });
     },
     onError: () => toast.error("Could not update status"),
   });
@@ -316,7 +309,7 @@ function StatusControl({
       onValueChange={(v) => v && mutation.mutate(v)}
       disabled={mutation.isPending}
     >
-      <SelectTrigger className="w-36 h-8 text-xs">
+      <SelectTrigger className="w-36 h-10 text-xs" aria-label="Claim status">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -340,9 +333,9 @@ export default function ClaimDetailPage({
   params: Promise<{ claimId: string }>;
 }) {
   const { claimId } = use(params);
-  const router = useRouter();
   const queryClient = useQueryClient();
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const analysisQuery = useQuery({
     queryKey: ["claim-analysis", claimId],
@@ -361,6 +354,17 @@ export default function ClaimDetailPage({
     retry: false,
   });
 
+  const claimStatusQuery = useQuery({
+    queryKey: ["claim-status", claimId],
+    queryFn: async () => {
+      const res = await fetch(`/api/claims/${encodeURIComponent(claimId)}/status`);
+      if (!res.ok) return "new";
+      const data = (await res.json()) as { status: string };
+      return data.status ?? "new";
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   useEffect(() => {
     if (analysisQuery.data) {
       queryClient.invalidateQueries({ queryKey: ["claims"] });
@@ -370,16 +374,16 @@ export default function ClaimDetailPage({
 
   const analysis = analysisQuery.data;
   const riskLevel = analysis?.riskLevel ?? "low";
-  const displayScore = useCounter(analysis ? Math.round(analysis.riskScore * 100) : 0, 700);
+  const displayScore = analysis ? Math.round(analysis.riskScore * 100) : 0;
 
   const breadcrumb = (
     <>
-      <span
-        className="hover:text-foreground cursor-pointer transition-colors"
-        onClick={() => router.push("/claims")}
+      <Link
+        href="/claims"
+        className="hover:text-foreground transition-colors"
       >
         Claims
-      </span>
+      </Link>
       <span className="mx-1.5 opacity-40">/</span>
       <span className="type-mono">{claimId}</span>
     </>
@@ -387,7 +391,7 @@ export default function ClaimDetailPage({
 
   return (
     <AppShell breadcrumb={breadcrumb}>
-      <div className="flex h-[calc(100vh-3rem)]">
+      <div className="flex min-h-[calc(100dvh-3rem)]">
         {/* LEFT COLUMN — scrollable analysis */}
         <div className="flex-1 overflow-y-auto min-w-0">
           <div className="p-6 space-y-6 max-w-3xl">
@@ -396,11 +400,12 @@ export default function ClaimDetailPage({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => router.push("/claims")}
+                render={<Link href="/claims" />}
+                nativeButton={false}
                 className="shrink-0"
                 aria-label="Back to claims"
               >
-                <ArrowLeft />
+                <ArrowLeft aria-hidden="true" />
               </Button>
               <h1
                 ref={headingRef}
@@ -412,7 +417,7 @@ export default function ClaimDetailPage({
               {analysis && (
                 <StatusControl
                   claimId={claimId}
-                  initialStatus="new"
+                  initialStatus={claimStatusQuery.data ?? "new"}
                 />
               )}
             </div>
@@ -444,10 +449,10 @@ export default function ClaimDetailPage({
             {/* Error */}
             {analysisQuery.isError && (
               <section className="border border-border py-5 px-5">
-                <div className="flex items-center gap-3">
-                  <Warning className="size-4 text-status-err shrink-0" />
-                  <p className="text-sm text-muted-foreground flex-1">
-                    {analysisQuery.error.message}
+            <div className="flex items-center gap-3">
+              <Warning className="size-4 text-status-err shrink-0" aria-hidden="true" />
+                  <p className="type-body text-muted-foreground flex-1">
+                    Could not analyze this claim. Please try again.
                   </p>
                   <Button
                     variant="outline"
@@ -469,18 +474,14 @@ export default function ClaimDetailPage({
                     <div className="space-y-2">
                       <div className="flex items-baseline gap-3">
                         <span className="type-display tabular-nums">{displayScore}%</span>
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 text-xs font-medium uppercase tracking-wider ${riskBadgeClass[riskLevel]}`}
-                        >
-                          {riskLevel} denial risk
-                        </span>
+                        <RiskBadge level={riskLevel} className="uppercase tracking-wider" />
                       </div>
                       <Progress
                         value={displayScore}
                         className="h-1.5 w-48 bg-muted"
                         style={
                           {
-                            "--progress-indicator": riskProgressColor[riskLevel],
+                            "--progress-indicator": riskProgressColorMap[riskLevel],
                           } as React.CSSProperties
                         }
                       />
@@ -534,7 +535,7 @@ export default function ClaimDetailPage({
                     <h2 className="type-title">Supporting Policy</h2>
                   </div>
                   {analysis.policyGuidance.length > 0 ? (
-                    <Accordion multiple>
+                    <Accordion multiple defaultValue={["policy-0"]}>
                       <>{analysis.policyGuidance.map((policy, i) => (
                         <AccordionItem
                           key={i}
@@ -596,7 +597,7 @@ export default function ClaimDetailPage({
                           key={i}
                           className="flex items-center gap-2 text-sm text-muted-foreground"
                         >
-                          <Files className="size-3.5 shrink-0 text-muted-foreground" />
+                          <Files className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                           <span>{citation}</span>
                         </li>
                       ))}
@@ -611,6 +612,29 @@ export default function ClaimDetailPage({
         {/* RIGHT COLUMN — chat panel (hidden below lg breakpoint) */}
         <div className="hidden lg:flex w-[380px] xl:w-[420px] shrink-0 border-l border-border flex-col h-full">
           <ChatPanel claimId={claimId} analysis={analysis} />
+        </div>
+
+        {/* Mobile chat FAB — visible only below lg breakpoint */}
+        <div className="lg:hidden">
+          <button
+            type="button"
+            aria-label="Ask AI about this claim"
+            onClick={() => setChatOpen(true)}
+            className="fixed bottom-6 right-6 z-40 size-12 bg-foreground text-background flex items-center justify-center shadow-lg hover:bg-foreground/90 transition-colors"
+          >
+            <ChatText className="size-5" />
+          </button>
+          <Sheet open={chatOpen} onOpenChange={setChatOpen}>
+            <SheetContent side="right" showCloseButton className="w-full sm:max-w-[400px] p-0 flex flex-col">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Ask about this claim</SheetTitle>
+                <SheetDescription>
+                  Ask follow-up questions about the current claim analysis.
+                </SheetDescription>
+              </SheetHeader>
+              <ChatPanel claimId={claimId} analysis={analysis} />
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
     </AppShell>
