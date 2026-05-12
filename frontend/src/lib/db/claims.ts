@@ -1,14 +1,86 @@
 import { db } from "@/lib/db";
 import { claimReviews } from "@/lib/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, isNotNull, sql, type SQL } from "drizzle-orm";
 
 export type ClaimReview = typeof claimReviews.$inferSelect;
 
-export async function getClaims(): Promise<ClaimReview[]> {
+export interface GetClaimsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  risk?: string;
+  status?: string;
+  sort?: string;
+  order?: string;
+}
+
+export interface PaginatedClaims {
+  claims: ClaimReview[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export async function getClaims(params: GetClaimsParams = {}): Promise<PaginatedClaims> {
+  const page = Math.max(1, params.page ?? 1);
+  const limit = Math.min(100, Math.max(1, params.limit ?? 20));
+  const offset = (page - 1) * limit;
+
+  const filters: SQL[] = [];
+
+  if (params.search?.trim()) {
+    filters.push(ilike(claimReviews.claimId, `%${params.search.trim()}%`));
+  }
+  if (params.risk && params.risk !== "all") {
+    filters.push(eq(claimReviews.riskLevel, params.risk));
+  }
+  if (params.status && params.status !== "all") {
+    filters.push(eq(claimReviews.status, params.status));
+  }
+
+  const whereClause = filters.length > 0 ? and(...filters) : undefined;
+
+  const [claimsResult, countResult] = await Promise.all([
+    db
+      .select()
+      .from(claimReviews)
+      .where(whereClause)
+      .orderBy(
+        desc(isNotNull(claimReviews.riskScore)),
+        getOrderBy(params.sort ?? "riskScore", params.order ?? "desc"),
+      )
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ total: count() })
+      .from(claimReviews)
+      .where(whereClause),
+  ]);
+
+  const total = countResult[0]?.total ?? 0;
+
+  return {
+    claims: claimsResult,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  };
+}
+
+export async function getClaimStatuses(): Promise<
+  { claimId: string; riskLevel: string | null; status: string; analyzedAt: Date | null }[]
+> {
   return db
-    .select()
+    .select({
+      claimId: claimReviews.claimId,
+      riskLevel: claimReviews.riskLevel,
+      status: claimReviews.status,
+      analyzedAt: claimReviews.analyzedAt,
+    })
     .from(claimReviews)
-    .orderBy(desc(claimReviews.riskScore));
+    .orderBy(claimReviews.claimId);
 }
 
 export async function upsertClaimReview(data: {
@@ -56,4 +128,18 @@ export async function updateClaimStatus(
     .returning({ id: claimReviews.id });
 
   return { ok: result.length > 0 };
+}
+
+function getOrderBy(sort: string, order: string) {
+  const dir = order === "asc" ? asc : desc;
+  switch (sort) {
+    case "riskScore":
+      return dir(sql`COALESCE(${claimReviews.riskScore}, -1)`);
+    case "analyzedAt":
+      return dir(sql`COALESCE(${claimReviews.analyzedAt}::text, '')`);
+    case "claimId":
+      return dir(claimReviews.claimId);
+    default:
+      return dir(sql`COALESCE(${claimReviews.riskScore}, -1)`);
+  }
 }
