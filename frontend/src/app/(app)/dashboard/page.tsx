@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DatabricksStatus } from "@/lib/databricks/types";
-import type { ClaimReview } from "@/lib/db/claims";
+import type { PaginatedClaims } from "@/lib/db/claims";
 import { MagnifyingGlass, Circle, ArrowRight } from "@phosphor-icons/react";
 
 export default function DashboardPage() {
@@ -30,7 +30,7 @@ export default function DashboardPage() {
     queryFn: async () => {
       const res = await fetch("/api/claims");
       if (!res.ok) throw new Error("Failed to load claims");
-      return res.json() as Promise<{ claims: ClaimReview[] }>;
+      return res.json() as Promise<PaginatedClaims>;
     },
   });
 
@@ -68,13 +68,13 @@ export default function DashboardPage() {
   }
 
   const stats = useMemo(() => {
-    const claims = claimsQuery.data?.claims ?? [];
+    const claims = (claimsQuery.data?.claims ?? []).filter((c) => c.riskLevel !== null);
     return {
       total: claims.length,
       risk: {
-        high: claims.filter((c) => c.riskLevel.toLowerCase() === "high").length,
-        medium: claims.filter((c) => c.riskLevel.toLowerCase() === "medium").length,
-        low: claims.filter((c) => c.riskLevel.toLowerCase() === "low").length,
+        high: claims.filter((c) => c.riskLevel === "high").length,
+        medium: claims.filter((c) => c.riskLevel === "medium").length,
+        low: claims.filter((c) => c.riskLevel === "low").length,
       },
       status: {
         new: claims.filter((c) => c.status === "new").length,
