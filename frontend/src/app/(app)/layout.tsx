@@ -7,7 +7,7 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <TooltipProvider>
+    <TooltipProvider delay={300}>
       <SidebarProvider>{children}</SidebarProvider>
     </TooltipProvider>
   );

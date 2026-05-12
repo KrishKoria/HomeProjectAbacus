@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DatabricksStatus } from "@/lib/databricks/types";
-import type { PaginatedClaims } from "@/lib/db/claims";
+import type { ClaimStats } from "@/lib/db/claims";
 import { MagnifyingGlass, Circle, ArrowRight } from "@phosphor-icons/react";
 
 export default function DashboardPage() {
@@ -25,12 +25,12 @@ export default function DashboardPage() {
     },
   });
 
-  const claimsQuery = useQuery({
-    queryKey: ["claims"],
+  const statsQuery = useQuery({
+    queryKey: ["claim-stats"],
     queryFn: async () => {
-      const res = await fetch("/api/claims");
-      if (!res.ok) throw new Error("Failed to load claims");
-      return res.json() as Promise<PaginatedClaims>;
+      const res = await fetch("/api/claims/stats");
+      if (!res.ok) throw new Error("Failed to load stats");
+      return res.json() as Promise<ClaimStats>;
     },
   });
 
@@ -61,28 +61,13 @@ export default function DashboardPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  function handleAnalyze() {
+  const handleAnalyze = useCallback(() => {
     if (claimId.trim()) {
       router.push(`/claims/${claimId.trim()}`);
     }
-  }
+  }, [claimId, router]);
 
-  const stats = useMemo(() => {
-    const claims = (claimsQuery.data?.claims ?? []).filter((c) => c.riskLevel !== null);
-    return {
-      total: claims.length,
-      risk: {
-        high: claims.filter((c) => c.riskLevel === "high").length,
-        medium: claims.filter((c) => c.riskLevel === "medium").length,
-        low: claims.filter((c) => c.riskLevel === "low").length,
-      },
-      status: {
-        new: claims.filter((c) => c.status === "new").length,
-        reviewed: claims.filter((c) => c.status === "reviewed").length,
-        actioned: claims.filter((c) => c.status === "actioned").length,
-      },
-    };
-  }, [claimsQuery.data]);
+  const stats = statsQuery.data ?? null;
 
   if (sessionQuery.isLoading) {
     return (
@@ -111,6 +96,59 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {/* Queue overview */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="type-title">Queue Overview</h2>
+            <button
+              onClick={() => router.push("/claims")}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              View all <ArrowRight className="size-3" aria-hidden="true" />
+            </button>
+          </div>
+
+          {(statsQuery.isLoading || statsQuery.isPending) && (
+            <div className="grid grid-cols-3 gap-px border border-border bg-border">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="bg-background px-5 py-4 space-y-1.5">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-6 w-8" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {statsQuery.isError && (
+            <div role="alert" className="border border-border px-5 py-4">
+              <p className="type-body text-muted-foreground">Could not load queue metrics.</p>
+            </div>
+          )}
+
+          {stats && stats.total > 0 && (
+            <div className="space-y-px border border-border">
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
+                <StatCell label="High risk" value={stats.risk.high} total={stats.total} valueClass="text-risk-high" onClick={() => router.push("/claims?risk=high")} />
+                <StatCell label="Medium risk" value={stats.risk.medium} total={stats.total} valueClass="text-risk-medium" onClick={() => router.push("/claims?risk=medium")} />
+                <StatCell label="Low risk" value={stats.risk.low} total={stats.total} valueClass="text-risk-low" onClick={() => router.push("/claims?risk=low")} />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border border-t border-border">
+                <StatCell label="New" value={stats.status.new} total={stats.total} onClick={() => router.push("/claims?status=new")} />
+                <StatCell label="Reviewed" value={stats.status.reviewed} total={stats.total} onClick={() => router.push("/claims?status=reviewed")} />
+                <StatCell label="Actioned" value={stats.status.actioned} total={stats.total} onClick={() => router.push("/claims?status=actioned")} />
+              </div>
+            </div>
+          )}
+
+          {stats && stats.total === 0 && (
+            <div role="status" className="border border-border py-10 text-center">
+              <p className="type-body text-muted-foreground">
+                Queue is empty. Visit Claims to populate it automatically.
+              </p>
+            </div>
+          )}
+        </section>
+
         {/* Quick analyze */}
         <section className="space-y-2">
           <div className="flex items-center gap-2">
@@ -122,13 +160,14 @@ export default function DashboardPage() {
                 onChange={(e) => setClaimId(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
                 className="pr-8"
+                aria-label="Claim ID"
               />
               <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-mono pointer-events-none">
                 /
               </kbd>
             </div>
             <Button onClick={handleAnalyze} disabled={!claimId.trim()}>
-              <MagnifyingGlass data-icon="inline-start" />
+              <MagnifyingGlass data-icon="inline-start" aria-hidden="true" />
               Analyze
             </Button>
           </div>
@@ -137,58 +176,6 @@ export default function DashboardPage() {
           </p>
         </section>
 
-        {/* Queue overview */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="type-title">Queue Overview</h2>
-            <button
-              onClick={() => router.push("/claims")}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              View all <ArrowRight className="size-3" />
-            </button>
-          </div>
-
-          {claimsQuery.isLoading && (
-            <div className="grid grid-cols-3 gap-px border border-border bg-border">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="bg-background px-5 py-4 space-y-1.5">
-                  <Skeleton className="h-3 w-16" />
-                  <Skeleton className="h-6 w-8" />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {claimsQuery.isError && (
-            <div className="border border-border px-5 py-4">
-              <p className="text-sm text-muted-foreground">Could not load queue metrics.</p>
-            </div>
-          )}
-
-          {claimsQuery.data && stats.total > 0 && (
-            <div className="space-y-px border border-border">
-              <div className="grid grid-cols-3 divide-x divide-border">
-                <StatCell label="High risk" value={stats.risk.high} total={stats.total} valueClass="text-risk-high" onClick={() => router.push("/claims?risk=high")} />
-                <StatCell label="Medium risk" value={stats.risk.medium} total={stats.total} valueClass="text-risk-medium" onClick={() => router.push("/claims?risk=medium")} />
-                <StatCell label="Low risk" value={stats.risk.low} total={stats.total} valueClass="text-risk-low" onClick={() => router.push("/claims?risk=low")} />
-              </div>
-              <div className="grid grid-cols-3 divide-x divide-border border-t border-border">
-                <StatCell label="New" value={stats.status.new} total={stats.total} onClick={() => router.push("/claims?status=new")} />
-                <StatCell label="Reviewed" value={stats.status.reviewed} total={stats.total} onClick={() => router.push("/claims?status=reviewed")} />
-                <StatCell label="Actioned" value={stats.status.actioned} total={stats.total} onClick={() => router.push("/claims?status=actioned")} />
-              </div>
-            </div>
-          )}
-
-          {claimsQuery.data && stats.total === 0 && (
-            <div className="border border-border py-10 text-center">
-              <p className="type-body text-muted-foreground">
-                Queue is empty. Visit Claims to populate it automatically.
-              </p>
-            </div>
-          )}
-        </section>
       </div>
     </AppShell>
   );
@@ -214,7 +201,7 @@ function StatCell({
       className="group px-5 py-4 text-left bg-background hover:bg-muted/50 transition-colors"
     >
       <p className="type-caption text-muted-foreground mb-1">{label}</p>
-      <p className={`text-2xl font-semibold tabular-nums tracking-tight ${valueClass ?? "text-foreground"}`}>
+      <p className={`type-headline tabular-nums ${valueClass ?? "text-foreground"}`}>
         {value}
       </p>
       {total > 0 && (
@@ -226,14 +213,15 @@ function StatCell({
 
 function StatusDot({ name, ok }: { name: string; ok: boolean }) {
   return (
-    <span className="flex items-center gap-1.5">
+    <span className="flex items-center gap-1.5" role="img" aria-label={`${name}: ${ok ? "connected" : "disconnected"}`}>
       <Circle
         size={8}
         weight="fill"
         className={ok ? "text-status-ok" : "text-status-err"}
-        aria-label={`${name}: ${ok ? "connected" : "disconnected"}`}
+        aria-hidden="true"
       />
-      {name}
+      <span aria-hidden="true">{name}</span>
+      {!ok && <span className="type-caption text-status-err">(offline)</span>}
     </span>
   );
 }

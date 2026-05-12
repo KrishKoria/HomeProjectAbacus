@@ -69,6 +69,18 @@ export async function getClaims(params: GetClaimsParams = {}): Promise<Paginated
   };
 }
 
+export async function getClaimReviewByClaimId(
+  claimId: string,
+): Promise<ClaimReview | null> {
+  const result = await db
+    .select()
+    .from(claimReviews)
+    .where(eq(claimReviews.claimId, claimId))
+    .limit(1);
+
+  return result[0] ?? null;
+}
+
 export async function getClaimStatuses(): Promise<
   { claimId: string; riskLevel: string | null; status: string; analyzedAt: Date | null }[]
 > {
@@ -110,6 +122,56 @@ export async function upsertClaimReview(data: {
         analyzedAt: new Date(),
       },
     });
+}
+
+export interface ClaimStats {
+  risk: {
+    high: number;
+    medium: number;
+    low: number;
+  };
+  status: {
+    new: number;
+    reviewed: number;
+    actioned: number;
+  };
+  total: number;
+}
+
+export async function getClaimStats(): Promise<ClaimStats> {
+  const [riskStats, statusStats] = await Promise.all([
+    db
+      .select({
+        riskLevel: claimReviews.riskLevel,
+        count: count(),
+      })
+      .from(claimReviews)
+      .where(isNotNull(claimReviews.riskLevel))
+      .groupBy(claimReviews.riskLevel),
+    db
+      .select({
+        status: claimReviews.status,
+        count: count(),
+      })
+      .from(claimReviews)
+      .groupBy(claimReviews.status),
+  ]);
+
+  const total = riskStats.reduce((sum, r) => sum + r.count, 0);
+
+  return {
+    risk: {
+      high: riskStats.find((r) => r.riskLevel === "high")?.count ?? 0,
+      medium: riskStats.find((r) => r.riskLevel === "medium")?.count ?? 0,
+      low: riskStats.find((r) => r.riskLevel === "low")?.count ?? 0,
+    },
+    status: {
+      new: statusStats.find((s) => s.status === "new")?.count ?? 0,
+      reviewed: statusStats.find((s) => s.status === "reviewed")?.count ?? 0,
+      actioned: statusStats.find((s) => s.status === "actioned")?.count ?? 0,
+    },
+    total,
+  };
 }
 
 export async function updateClaimStatus(
