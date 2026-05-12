@@ -25,6 +25,7 @@ const envSchema = z.object({
   CLAIMOPS_ANALYSIS_ENDPOINT: z.string().min(1),
   CLAIMOPS_ALLOWED_EMAIL_DOMAINS: z.string().min(1),
   CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS: z.string().min(1),
+  CLAIMOPS_CHAT_MODEL: z.string().default("databricks-meta-llama-3-3-70b-instruct"),
 });
 
 declare global {
