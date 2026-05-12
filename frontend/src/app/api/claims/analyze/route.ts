@@ -2,7 +2,6 @@ import { requireSession } from "@/lib/auth-session";
 import { analyzeClaim } from "@/lib/databricks/analysis";
 import { fetchFeatureRow } from "@/lib/databricks/sql";
 import { upsertClaimReview } from "@/lib/db/claims";
-import { env } from "@/lib/server/env";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
