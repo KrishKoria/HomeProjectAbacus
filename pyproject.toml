@@ -1,18 +1,14 @@
 [project]
 name = "homeprojectabacus"
 version = "0.1.3"
-description = "Local bronze ingestion and Streamlit dashboard workflow for healthcare claims exploration."
+description = "Databricks claims pipelines, analytics assets, and model serving workflow for healthcare claims exploration."
 requires-python = ">=3.12"
 dependencies = [
-    "altair>=6.0.0,<7.0.0",
     "pandas>=2.2.3,<3.0.0",
     "pdfplumber>=0.11,<1.0",
     "pyyaml>=6.0.2,<7.0.0",
     "pyarrow>=23.0.0,<24.0.0",
-    "authlib>=1.3.2,<2.0.0",
-    "streamlit>=1.50.0,<2.0.0",
     "databricks-sdk>=0.54.0,<1.0.0",
-    "databricks-sql-connector>=4.1.2,<5.0.0",
     "databricks-vectorsearch>=0.67,<1.0",
     "xgboost>=2.0,<3.0",
     "lightgbm>=4.2,<5.0",
