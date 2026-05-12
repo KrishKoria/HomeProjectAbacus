@@ -54,7 +54,7 @@ function AccordionContent({
   return (
     <AccordionPrimitive.Panel
       data-slot="accordion-content"
-      className="overflow-hidden text-xs data-open:animate-accordion-down data-closed:animate-accordion-up"
+      className="overflow-hidden text-xs transition-[height] duration-200 ease-out"
       {...props}
     >
       <div
