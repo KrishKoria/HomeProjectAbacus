@@ -37,11 +37,11 @@ Create these backend/Databricks contracts:
 
 2. Run baseline discovery commands before scaffolding: `git status --short`, `rg --files -g package.json -g next.config.* -g tsconfig.json`, `uv run pytest -q`.
 
-3. Preserve the existing Streamlit app during the pivot; do not delete `app_streamlit.py`, `src/analytics/app_streamlit.py`, or `services/frontend` until the Next.js flow has parity.
+3. Decommission legacy Databricks App frontend resources after Next.js rollout.
 
 4. Update planning/docs first in execution mode: mark `docs/deferred.md` `fastapi-react-frontend` as revived because Databricks-hosted auth is blocked by current tier constraints.
 
-5. Add a new durable architecture note such as `docs/architecture/nextjs-better-auth-databricks-api.md` describing the BFF pattern, why auth moved to Vercel, why Python ML/RAG stays in Databricks, and why the Streamlit app remains fallback.
+5. Keep the durable architecture note `docs/architecture/nextjs-better-auth-databricks-api.md` aligned to the BFF pattern and Next.js-only frontend path.
 
 6. Add frontend dependencies: `better-auth`, `drizzle-orm`, `postgres`, `zod`, `@tanstack/react-query`, and `shadcn`
 
@@ -105,7 +105,7 @@ Create these backend/Databricks contracts:
 
 36. Add a Databricks job/resource under the ML service area to register or verify the claim-analysis endpoint after the existing model and vector-search assets exist.
 
-37. Do not move Streamlit-specific rendering helpers into serving code; extract only business logic needed for prediction/explanation/policy guidance.
+37. Do not move frontend rendering helpers into serving code; extract only business logic needed for prediction/explanation/policy guidance.
 
 38. Build the UI after APIs are typed: create a restrained app shell, sign-in page, dashboard, claim detail page, risk summary card, feature breakdown card, and compact policy evidence cards.
 
@@ -148,9 +148,9 @@ Run these after implementation:
 
 ## Assumptions And Defaults
 
-- Use root-level `frontend/` because no JavaScript app currently exists and it avoids colliding with current Databricks `services/frontend`.
+- Use root-level `frontend/` for the web app and keep Databricks bundle resources focused on pipelines/jobs/model serving.
 - Use Bun for all frontend package management and scripts.
 - Use Postgres + Drizzle for Better Auth persistence; default managed provider is Neon unless the user supplies another Postgres host.
 - Keep Databricks service-principal credentials only in server-side Vercel environment variables.
-- Keep current Streamlit deployment as fallback until Next.js reaches functional parity.
+- Remove legacy frontend deployment artifacts once Next.js parity and verification are complete.
 - Treat this as production-like for synthetic/training data; do not claim real PHI readiness without BAA, networking, audit, retention, and incident-response review.
