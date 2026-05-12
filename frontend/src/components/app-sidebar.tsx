@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import {
   Sidebar,
   SidebarContent,
@@ -14,15 +15,74 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardText, ChartBar, SignOut } from "@phosphor-icons/react";
+import { useTheme } from "next-themes";
+import {
+  ChartBarIcon,
+  SunDimIcon,
+  MoonIcon,
+  ClipboardTextIcon,
+  SignOutIcon,
+} from "@phosphor-icons/react";
 
 const navItems = [
-  { label: "Claims", href: "/claims", icon: ClipboardText, shortcut: "G C" },
-  { label: "Dashboard", href: "/dashboard", icon: ChartBar, shortcut: "G D" },
+  {
+    label: "Claims",
+    href: "/claims",
+    icon: ClipboardTextIcon,
+    shortcut: "G + C",
+  },
+  {
+    label: "Dashboard",
+    href: "/dashboard",
+    icon: ChartBarIcon,
+    shortcut: "G + D",
+  },
 ];
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    let gPressed = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    function onKey(e: KeyboardEvent) {
+      const tag = (document.activeElement as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === "g") {
+        gPressed = true;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          gPressed = false;
+        }, 500);
+        return;
+      }
+
+      if (gPressed) {
+        if (e.key === "c") {
+          e.preventDefault();
+          router.push("/claims");
+        }
+        if (e.key === "d") {
+          e.preventDefault();
+          router.push("/dashboard");
+        }
+        gPressed = false;
+        clearTimeout(timer);
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      clearTimeout(timer);
+    };
+  }, [router]);
+
+  const { theme, setTheme } = useTheme();
 
   const sessionQuery = useQuery({
     queryKey: ["session"],
@@ -81,10 +141,54 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-4 border-t border-sidebar-border space-y-3">
+        <div className="px-1 flex items-center gap-3 flex-wrap">
+          <span className="type-caption text-muted-foreground">
+            <kbd className="font-mono text-[10px] px-1 border border-sidebar-border">
+              /
+            </kbd>{" "}
+            search
+          </span>
+          <span className="type-caption text-muted-foreground">
+            <kbd className="font-mono text-[10px] px-1 border border-sidebar-border">
+              C
+            </kbd>{" "}
+            chat
+          </span>
+          <span className="type-caption text-muted-foreground">
+            <kbd className="font-mono text-[10px] px-1 border border-sidebar-border">
+              G
+            </kbd>{" "}
+            nav
+          </span>
+        </div>
+        <div className="px-1 flex items-center justify-between">
+          <span className="type-caption text-muted-foreground">
+            <kbd className="font-mono text-[10px] px-1 border border-sidebar-border">
+              ⌘ + B
+            </kbd>{" "}
+            sidebar
+          </span>
+          <button
+            type="button"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="flex size-6 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Toggle theme"
+          >
+            {theme === "dark" ? (
+              <SunDimIcon size={14} />
+            ) : (
+              <MoonIcon size={14} />
+            )}
+          </button>
+        </div>
         {user && (
           <div className="px-1 space-y-0.5">
-            <p className="text-xs font-medium text-sidebar-foreground truncate">{user.name}</p>
-            <p className="type-caption text-muted-foreground truncate">{user.email}</p>
+            <p className="text-xs font-medium text-sidebar-foreground truncate">
+              {user.name}
+            </p>
+            <p className="type-caption text-muted-foreground truncate">
+              {user.email}
+            </p>
           </div>
         )}
         <SidebarMenuButton
@@ -96,7 +200,7 @@ export function AppSidebar() {
           }}
           className="w-full text-muted-foreground hover:text-foreground"
         >
-          <SignOut />
+          <SignOutIcon />
           <span className="text-sm">Sign out</span>
         </SidebarMenuButton>
       </SidebarFooter>
