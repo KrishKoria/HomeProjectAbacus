@@ -323,10 +323,9 @@ class PolicyRetriever:
     ) -> list[dict[str, Any]]:
         """Call Databricks Vector Search index endpoint.
 
-        Databricks Apps should use ``WorkspaceClient`` because it picks up
-        the app service principal credentials injected by the runtime.
-        The standalone vector SDK remains as a fallback for older job/notebook
-        contexts.
+        ``WorkspaceClient`` is the default because it uses workspace-native
+        authentication for jobs, notebooks, and service-principal runtimes.
+        The standalone vector SDK remains as a compatibility fallback.
         """
         try:
             return _workspace_query_index(self.index_name, query_text, top_k)
