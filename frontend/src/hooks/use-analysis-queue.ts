@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 export interface AnalysisQueueItem {
@@ -8,116 +8,208 @@ export interface AnalysisQueueItem {
   priority: number;
 }
 
-interface UseAnalysisQueueReturn {
+export interface AnalysisQueueError {
+  claimId: string;
+  message: string;
+}
+
+interface QueueSnapshot {
+  isProcessing: boolean;
+  progress: {
+    completed: number;
+    current: string | null;
+    errors: AnalysisQueueError[];
+    failed: number;
+    total: number;
+  };
+}
+
+interface UseAnalysisQueueReturn extends QueueSnapshot {
   enqueue: (claimId: string, priority: number) => void;
   enqueueBatch: (claimIds: string[], priority: number) => void;
-  progress: { total: number; completed: number; current: string | null };
-  isProcessing: boolean;
+  reset: () => void;
 }
 
-const gQueue: AnalysisQueueItem[] = [];
-let gProcessing = false;
-let gPaused = false;
-let gCurrent: string | null = null;
-let gTotal = 0;
-let gCompleted = 0;
-const gListeners = new Set<() => void>();
+const listeners = new Set<() => void>();
+const processedClaimIds = new Set<string>();
+const queuedClaimIds = new Set<string>();
+const queue: AnalysisQueueItem[] = [];
 
-async function analyzeClaim(claimId: string, queryClient: ReturnType<typeof useQueryClient>) {
+let currentClaimId: string | null = null;
+let completedCount = 0;
+let failedCount = 0;
+let totalCount = 0;
+let queueErrors: AnalysisQueueError[] = [];
+let isProcessingQueue = false;
+let snapshot: QueueSnapshot = {
+  isProcessing: false,
+  progress: {
+    completed: 0,
+    current: null,
+    errors: [],
+    failed: 0,
+    total: 0,
+  },
+};
+
+function refreshSnapshot() {
+  snapshot = {
+    isProcessing: isProcessingQueue,
+    progress: {
+      completed: completedCount,
+      current: currentClaimId,
+      errors: queueErrors,
+      failed: failedCount,
+      total: totalCount,
+    },
+  };
+}
+
+function notify() {
+  refreshSnapshot();
+  listeners.forEach((listener) => listener());
+}
+
+function getSnapshot(): QueueSnapshot {
+  return snapshot;
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function resetQueueState() {
+  queue.length = 0;
+  queuedClaimIds.clear();
+  processedClaimIds.clear();
+  currentClaimId = null;
+  completedCount = 0;
+  failedCount = 0;
+  totalCount = 0;
+  queueErrors = [];
+  isProcessingQueue = false;
+  notify();
+}
+
+async function analyzeClaim(
+  claimId: string,
+  invalidate: (claimId: string) => Promise<void>,
+): Promise<{ ok: true } | { message: string; ok: false }> {
   try {
-    await fetch("/api/claims/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const response = await fetch("/api/claims/analyze", {
       body: JSON.stringify({ claimId }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
     });
-  } catch {
-    /* individual claim failures are non-fatal */
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      return {
+        message: payload?.error ?? `Analysis failed with status ${response.status}`,
+        ok: false,
+      };
+    }
+
+    await invalidate(claimId);
+    return { ok: true };
+  } catch (error) {
+    return {
+      message: error instanceof Error ? error.message : "Analysis request failed",
+      ok: false,
+    };
   }
-  gCompleted++;
-  gCurrent = null;
-  queryClient.invalidateQueries({ queryKey: ["claims"] });
 }
 
-async function processQueue(queryClient: ReturnType<typeof useQueryClient>) {
-  if (gProcessing) return;
-  gProcessing = true;
+async function processQueue(invalidate: (claimId: string) => Promise<void>) {
+  if (isProcessingQueue) return;
 
-  while (gQueue.length > 0) {
-    if (gPaused) {
-      await new Promise((r) => setTimeout(r, 200));
+  isProcessingQueue = true;
+  notify();
+
+  while (queue.length > 0) {
+    queue.sort((left, right) => right.priority - left.priority);
+    const nextItem = queue.shift();
+
+    if (!nextItem) {
       continue;
     }
 
-    gQueue.sort((a, b) => b.priority - a.priority);
-    const item = gQueue.shift()!;
-    gCurrent = item.claimId;
-    gListeners.forEach((fn) => fn());
+    queuedClaimIds.delete(nextItem.claimId);
+    currentClaimId = nextItem.claimId;
+    notify();
 
-    await analyzeClaim(item.claimId, queryClient);
-    gListeners.forEach((fn) => fn());
+    const result = await analyzeClaim(nextItem.claimId, invalidate);
+    processedClaimIds.add(nextItem.claimId);
+
+    if (result.ok) {
+      completedCount += 1;
+    } else {
+      failedCount += 1;
+      queueErrors = [...queueErrors, { claimId: nextItem.claimId, message: result.message }];
+    }
+
+    currentClaimId = null;
+    notify();
   }
 
-  gProcessing = false;
-  gListeners.forEach((fn) => fn());
+  isProcessingQueue = false;
+  notify();
+}
+
+function enqueueClaimIds(
+  claimIds: string[],
+  priority: number,
+  invalidate: (claimId: string) => Promise<void>,
+) {
+  let added = false;
+
+  for (const claimId of claimIds) {
+    if (
+      !claimId ||
+      claimId === currentClaimId ||
+      queuedClaimIds.has(claimId) ||
+      processedClaimIds.has(claimId)
+    ) {
+      continue;
+    }
+
+    queue.push({ claimId, priority });
+    queuedClaimIds.add(claimId);
+    totalCount += 1;
+    added = true;
+  }
+
+  if (!added) return;
+
+  notify();
+  void processQueue(invalidate);
 }
 
 export function useAnalysisQueue(): UseAnalysisQueueReturn {
   const queryClient = useQueryClient();
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  const [progress, setProgress] = useState({
-    total: gTotal,
-    completed: gCompleted,
-    current: gCurrent,
-  });
+  const invalidate = async (claimId: string) => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["claims"] }),
+      queryClient.invalidateQueries({ queryKey: ["claim-statuses"] }),
+      queryClient.invalidateQueries({ queryKey: ["claim-status", claimId] }),
+    ]);
+  };
 
-  const [isProcessing, setIsProcessing] = useState(gProcessing);
-
-  useEffect(() => {
-    const listener = () => {
-      setProgress({ total: gTotal, completed: gCompleted, current: gCurrent });
-      setIsProcessing(gProcessing);
-    };
-    gListeners.add(listener);
-    return () => {
-      gListeners.delete(listener);
-    };
-  }, []);
-
-  const enqueue = useCallback(
-    (claimId: string, priority: number) => {
-      const exists = gQueue.some((item) => item.claimId === claimId) || gCurrent === claimId;
-      if (exists) return;
-      gQueue.push({ claimId, priority });
-      gTotal++;
-      gListeners.forEach((fn) => fn());
-      processQueue(queryClient);
+  return {
+    ...snapshot,
+    enqueue: (claimId, priority) => {
+      enqueueClaimIds([claimId], priority, invalidate);
     },
-    [queryClient],
-  );
-
-  const enqueueBatch = useCallback(
-    (claimIds: string[], priority: number) => {
-      for (const claimId of claimIds) {
-        const exists = gQueue.some((item) => item.claimId === claimId) || gCurrent === claimId;
-        if (exists) continue;
-        gQueue.push({ claimId, priority });
-        gTotal++;
-      }
-      gListeners.forEach((fn) => fn());
-      processQueue(queryClient);
+    enqueueBatch: (claimIds, priority) => {
+      enqueueClaimIds(claimIds, priority, invalidate);
     },
-    [queryClient],
-  );
-
-  return { enqueue, enqueueBatch, progress, isProcessing };
-}
-
-export function pauseAnalysisQueue() {
-  gPaused = true;
-  gListeners.forEach((fn) => fn());
-}
-
-export function resumeAnalysisQueue() {
-  gPaused = false;
-  gListeners.forEach((fn) => fn());
+    reset: () => {
+      resetQueueState();
+    },
+  };
 }

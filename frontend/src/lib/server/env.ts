@@ -28,12 +28,6 @@ const envSchema = z.object({
   CLAIMOPS_CHAT_MODEL: z.string().default("databricks-meta-llama-3-3-70b-instruct"),
 });
 
-declare global {
-  namespace NodeJS {
-    interface ProcessEnv extends z.input<typeof envSchema> {}
-  }
-}
-
 function createEnv() {
   const result = envSchema.safeParse(process.env);
   if (!result.success) {

@@ -25,7 +25,7 @@ async function ensureWarehouseRunning(): Promise<void> {
     `/api/2.0/sql/warehouses/${env.DATABRICKS_SQL_WAREHOUSE_ID}`,
   );
   if (whResult.ok && whResult.data.state === "STOPPED") {
-    console.log(
+    console.info(
       `[sql] Warehouse ${env.DATABRICKS_SQL_WAREHOUSE_ID} is STOPPED, starting...`,
     );
     await databricksFetch(
@@ -38,7 +38,7 @@ async function ensureWarehouseRunning(): Promise<void> {
         `/api/2.0/sql/warehouses/${env.DATABRICKS_SQL_WAREHOUSE_ID}`,
       );
       if (statusResult.ok && statusResult.data.state === "RUNNING") {
-        console.log("[sql] Warehouse is now RUNNING");
+        console.info("[sql] Warehouse is now RUNNING");
         return;
       }
     }
