@@ -381,7 +381,7 @@ Reads the pipeline event log (`${var.catalog}.${var.analytics_schema}.etl_pipeli
 
 ### Task 2: `build_analytics` (`src/scripts/build_analytics.py`)
 
-Calls `build_and_persist_claims_assets()` from `src/analytics/claims_analytics.py` to produce Streamlit dashboard assets from Silver and Bronze tables. Receives `--upstream-status` to skip processing if the upstream ETL pipeline failed:
+Calls `build_and_persist_claims_assets()` from `src/analytics/claims_analytics.py` to produce analytics assets from Silver and Bronze tables. Receives `--upstream-status` to skip processing if the upstream ETL pipeline failed:
 
 ```python
 # build_analytics.py:29-32

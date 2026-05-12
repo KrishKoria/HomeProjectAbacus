@@ -164,7 +164,7 @@ flowchart LR
 | Model Libraries | XGBoost 2+, LightGBM 4.2+, CatBoost 1.2+, scikit-learn 1.5+ |
 | Model Interpretation | SHAP 0.44+ |
 | Class Imbalance | imbalanced-learn 0.12+ |
-| Dashboard | Streamlit 1.50+ (for analytics and observability) |
+| Frontend | Next.js + Better Auth (for analyst workflows and runtime APIs) |
 | Language | Python 3.12+ |
 | Package Manager | `uv` with PEP 621 `pyproject.toml` |
 | Deployment | Databricks Asset Bundles (DAB) |

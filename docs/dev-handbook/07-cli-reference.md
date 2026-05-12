@@ -172,7 +172,7 @@ python src/scripts/setup_retrain_decisions.py
 
 ## 7.4 `src/scripts/build_analytics.py`
 
-**Purpose:** Build and persist analytics assets from Silver/Gold tables for the Streamlit dashboard. Skips if `--upstream-status` is not `"success"`.
+**Purpose:** Build and persist analytics assets from Silver/Gold tables. Skips if `--upstream-status` is not `"success"`.
 
 **Entry point:** `main()` function (line 25)
 
