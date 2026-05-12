@@ -4,9 +4,20 @@ function riskLevel(score: number): "low" | "medium" | "high" {
   return "low";
 }
 
-export function RiskScoreCell({ score }: { score: number }) {
+export function RiskScoreCell({ score }: { score: number | null }) {
+  if (score === null) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="type-mono tabular-nums w-8 text-right text-muted-foreground opacity-50">
+          —
+        </span>
+        <div className="w-16 h-1.5 bg-muted overflow-hidden opacity-30" />
+      </div>
+    );
+  }
+
   const level = riskLevel(score);
-  const pct = (score * 100).toFixed(0);
+  const pct = Math.round(score * 100);
 
   return (
     <div className="flex items-center gap-2">

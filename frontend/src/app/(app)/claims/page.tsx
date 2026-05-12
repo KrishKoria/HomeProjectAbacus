@@ -1,10 +1,25 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { MagnifyingGlass, ArrowDown, ArrowUp } from "@phosphor-icons/react";
 import { AppShell } from "@/components/app-shell";
+import { RiskBadge } from "@/components/risk-badge";
+import { RiskScoreCell } from "@/components/risk-score-cell";
+import { useAnalysisQueue } from "@/hooks/use-analysis-queue";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -14,16 +29,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
-import { MagnifyingGlass, ArrowUp, ArrowDown } from "@phosphor-icons/react";
-import { useAnalysisQueue } from "@/hooks/use-analysis-queue";
 import type { PaginatedClaims } from "@/lib/db/claims";
 
 type RiskLevel = "high" | "medium" | "low";
@@ -33,95 +38,39 @@ type SortDir = "asc" | "desc";
 
 const VALID_RISK = ["high", "medium", "low"] as const;
 const VALID_STATUS = ["new", "reviewed", "actioned"] as const;
-
-let autoFillStarted = false;
-
-const riskColors: Record<RiskLevel, string> = {
-  high: "bg-risk-high-bg text-risk-high",
-  medium: "bg-risk-medium-bg text-risk-medium",
-  low: "bg-risk-low-bg text-risk-low",
-};
+const VALID_SORT = ["riskScore", "analyzedAt", "claimId"] as const;
+const VALID_ORDER = ["asc", "desc"] as const;
+const AUTO_ANALYZE_LIMIT = 20;
 
 const statusColors: Record<string, string> = {
+  actioned: "bg-accent text-accent-foreground",
   new: "bg-muted text-muted-foreground",
   reviewed: "bg-primary/10 text-primary",
-  actioned: "bg-risk-low-bg text-risk-low",
 };
 
-function RiskBadge({ level }: { level: string | null }) {
-  if (!level) {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground opacity-50">
-        —
-      </span>
-    );
-  }
-  const normalized = level.toLowerCase() as RiskLevel;
-  const cls = riskColors[normalized] ?? "bg-muted text-muted-foreground";
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {normalized.charAt(0).toUpperCase() + normalized.slice(1)}
-    </span>
-  );
-}
-
 function StatusBadge({ status }: { status: string }) {
-  if (status === "new") {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground opacity-50">
-        Pending
-      </span>
-    );
-  }
   const cls = statusColors[status] ?? "bg-muted text-muted-foreground";
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+
   return (
     <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {label}
     </span>
-  );
-}
-
-function ScoreBar({ score }: { score: number | null }) {
-  if (score === null) {
-    return (
-      <div className="flex items-center gap-2.5">
-        <span className="type-mono tabular-nums w-8 text-right text-muted-foreground opacity-50">
-          —
-        </span>
-        <div className="w-16 h-1 bg-muted overflow-hidden opacity-30" />
-      </div>
-    );
-  }
-  const pct = Math.round(score * 100);
-  const level: RiskLevel = pct >= 70 ? "high" : pct >= 40 ? "medium" : "low";
-  const barColor =
-    level === "high"
-      ? "bg-risk-high"
-      : level === "medium"
-        ? "bg-risk-medium"
-        : "bg-risk-low";
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="type-mono tabular-nums w-8 text-right">{pct}%</span>
-      <div className="w-16 h-1 bg-muted overflow-hidden">
-        <div className={`h-full ${barColor} transition-all duration-300`} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
   );
 }
 
 function SkeletonTable() {
   return (
-    <div className="border border-border">
-      <div className="px-4 py-3 border-b border-border grid grid-cols-[120px_1fr_120px_100px_100px] gap-4">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-3 w-full" />
+    <div className="border border-border overflow-x-auto">
+      <div className="grid min-w-[540px] grid-cols-[minmax(120px,1fr)_minmax(120px,2fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-4 border-b border-border px-4 py-3">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <Skeleton key={index} className="h-3 w-full" />
         ))}
       </div>
-      {Array.from({ length: 8 }).map((_, i) => (
+      {Array.from({ length: 8 }).map((_, index) => (
         <div
-          key={i}
-          className="px-4 py-3 border-b border-border last:border-b-0 grid grid-cols-[120px_1fr_120px_100px_100px] gap-4"
+          key={index}
+          className="grid min-w-[540px] grid-cols-[minmax(120px,1fr)_minmax(120px,2fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-4 border-b border-border px-4 py-3 last:border-b-0"
         >
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-2/3" />
@@ -134,241 +83,365 @@ function SkeletonTable() {
   );
 }
 
-function ClaimsContent() {
-  const router = useRouter();
-  const searchRef = useRef<HTMLInputElement>(null);
-  const searchParams = useSearchParams();
-
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-
-  const [riskFilter, setRiskFilter] = useState<RiskLevel | "all">(() => {
-    const r = searchParams.get("risk");
-    return (VALID_RISK as readonly string[]).includes(r ?? "")
-      ? (r as RiskLevel)
-      : "all";
-  });
-
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
-    const s = searchParams.get("status");
-    return (VALID_STATUS as readonly string[]).includes(s ?? "")
-      ? (s as StatusFilter)
-      : "all";
-  });
-
-  const [sortField, setSortField] = useState<SortField>("riskScore");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [page, setPage] = useState(1);
+function SearchField({
+  currentSearch,
+  inputRef,
+  onCommit,
+}: {
+  currentSearch: string;
+  inputRef: { current: HTMLInputElement | null };
+  onCommit: (value: string) => void;
+}) {
+  const [search, setSearch] = useState(currentSearch);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search]);
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div className="relative">
+      <MagnifyingGlass
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+      />
+      <Input
+        ref={inputRef}
+        aria-label="Search by claim ID"
+        className="w-full pl-8 pr-7 sm:w-56"
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          setSearch(nextValue);
+
+          if (timerRef.current) {
+            clearTimeout(timerRef.current);
+          }
+
+          timerRef.current = setTimeout(() => {
+            onCommit(nextValue);
+          }, 300);
+        }}
+        placeholder="Search claim ID…"
+        value={search}
+      />
+      <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 font-mono text-[10px] text-muted-foreground">
+        /
+      </kbd>
+    </div>
+  );
+}
+
+function ClaimsContent() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const autoEnqueuedClaimIdsRef = useRef(new Set<string>());
+
+  const currentSearch = searchParams.get("search") ?? "";
+  const riskFilter = VALID_RISK.includes((searchParams.get("risk") ?? "") as RiskLevel)
+    ? ((searchParams.get("risk") ?? "all") as RiskLevel)
+    : "all";
+  const statusFilter = (VALID_STATUS as readonly string[]).includes(searchParams.get("status") ?? "")
+    ? ((searchParams.get("status") ?? "all") as StatusFilter)
+    : "all";
+  const sortField = VALID_SORT.includes((searchParams.get("sort") ?? "") as SortField)
+    ? ((searchParams.get("sort") ?? "riskScore") as SortField)
+    : "riskScore";
+  const sortDir = VALID_ORDER.includes((searchParams.get("order") ?? "") as SortDir)
+    ? ((searchParams.get("order") ?? "desc") as SortDir)
+    : "desc";
+  const page = Math.max(1, Number.parseInt(searchParams.get("page") ?? "1", 10) || 1);
+
+  const buildHref = (updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    }
+
+    if (params.get("page") === "1") params.delete("page");
+    if (params.get("risk") === "all") params.delete("risk");
+    if (params.get("status") === "all") params.delete("status");
+    if (params.get("sort") === "riskScore") params.delete("sort");
+    if (params.get("order") === "desc") params.delete("order");
+    if (!params.get("search")) params.delete("search");
+
+    const query = params.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  };
+
+  const updateRoute = (updates: Record<string, string | null>) => {
+    router.replace(buildHref(updates));
+  };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        event.key === "/" &&
+        document.activeElement !== searchRef.current &&
+        document.activeElement?.tagName !== "INPUT"
+      ) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const claimsQuery = useQuery({
-    queryKey: ["claims", { page, search: debouncedSearch, risk: riskFilter, status: statusFilter, sort: sortField, order: sortDir }],
+    queryKey: ["claims", { order: sortDir, page, risk: riskFilter, search: currentSearch, sort: sortField, status: statusFilter }],
     queryFn: async () => {
       const params = new URLSearchParams({
-        page: String(page),
         limit: "20",
-        search: debouncedSearch,
-        risk: riskFilter,
-        status: statusFilter,
-        sort: sortField,
         order: sortDir,
+        page: String(page),
+        risk: riskFilter,
+        search: currentSearch,
+        sort: sortField,
+        status: statusFilter,
       });
-      const res = await fetch(`/api/claims?${params}`);
-      if (!res.ok) throw new Error("Failed to load claims");
-      return res.json() as Promise<PaginatedClaims>;
+      const response = await fetch(`/api/claims?${params.toString()}`);
+      if (!response.ok) throw new Error("Failed to load claims");
+      return response.json() as Promise<PaginatedClaims>;
     },
   });
 
   const statusesQuery = useQuery({
     queryKey: ["claim-statuses"],
     queryFn: async () => {
-      const res = await fetch("/api/claims/statuses");
-      if (!res.ok) throw new Error("Failed to fetch statuses");
-      return res.json() as Promise<{
-        statuses: { claimId: string; riskLevel: string | null; status: string; analyzedAt: string | null }[];
+      const response = await fetch("/api/claims/statuses");
+      if (!response.ok) throw new Error("Failed to fetch statuses");
+      return response.json() as Promise<{
+        statuses: { analyzedAt: string | null; claimId: string; riskLevel: string | null; status: string }[];
       }>;
     },
     staleTime: 5 * 60 * 1000,
   });
 
-  const { enqueueBatch, progress } = useAnalysisQueue();
-
-  useEffect(() => {
-    if (autoFillStarted) return;
-    if (!statusesQuery.data) return;
-
-    const unanalyzed = statusesQuery.data.statuses
-      .filter((s) => s.riskLevel === null)
-      .map((s) => s.claimId);
-
-    if (unanalyzed.length === 0) return;
-
-    autoFillStarted = true;
-
-    const foregroundCount = 20;
-    const foreground = unanalyzed.slice(0, foregroundCount);
-    const background = unanalyzed.slice(foregroundCount);
-
-    if (foreground.length > 0) {
-      enqueueBatch(foreground, 1);
-    }
-    if (background.length > 0) {
-      setTimeout(() => {
-        enqueueBatch(background, 0);
-      }, 100);
-    }
-  }, [statusesQuery.data, enqueueBatch]);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "/" && document.activeElement !== searchRef.current && document.activeElement?.tagName !== "INPUT") {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const toggleSort = useCallback(
-    (field: SortField) => {
-      if (sortField === field) {
-        setSortDir((d) => (d === "desc" ? "asc" : "desc"));
-      } else {
-        setSortField(field);
-        setSortDir("desc");
-      }
-    },
-    [sortField],
+  const { enqueueBatch, isProcessing, progress } = useAnalysisQueue();
+  const claims = claimsQuery.data?.claims ?? [];
+  const total = claimsQuery.data?.total ?? 0;
+  const totalPages = claimsQuery.data?.totalPages ?? 1;
+  const statuses = statusesQuery.data?.statuses ?? [];
+  const statusesByClaimId = new Map(statuses.map((status) => [status.claimId, status]));
+  const analyzedCount = statuses.filter((status) => status.riskLevel !== null).length;
+  const totalInDb = statuses.length;
+  const allUnanalyzedClaimIds = statuses
+    .filter((status) => status.riskLevel === null)
+    .map((status) => status.claimId);
+  const visibleUnanalyzedClaimIds = claims
+    .map((claim) => claim.claimId)
+    .filter((claimId) => statusesByClaimId.get(claimId)?.riskLevel === null);
+  const autoAnalyzeSeedClaimIds =
+    visibleUnanalyzedClaimIds.length > 0
+      ? visibleUnanalyzedClaimIds
+      : allUnanalyzedClaimIds.slice(0, AUTO_ANALYZE_LIMIT);
+  const remainingUnanalyzedClaimIds = allUnanalyzedClaimIds.filter(
+    (claimId) => !autoAnalyzeSeedClaimIds.includes(claimId),
   );
-
-  const getSortIcon = useCallback(
-    (field: SortField) => {
-      if (sortField !== field) return null;
-      return sortDir === "desc" ? (
-        <ArrowDown className="inline size-3 ml-1" />
-      ) : (
-        <ArrowUp className="inline size-3 ml-1" />
-      );
-    },
-    [sortField, sortDir],
-  );
-
-  const data = claimsQuery.data;
-  const claims = data?.claims ?? [];
-  const total = data?.total ?? 0;
-  const totalPages = data?.totalPages ?? 1;
-  const analyzedCount = statusesQuery.data
-    ? statusesQuery.data.statuses.filter((s) => s.riskLevel !== null).length
-    : 0;
-  const totalInDb = statusesQuery.data?.statuses.length ?? 0;
   const showingStart = claims.length > 0 ? (page - 1) * 20 + 1 : 0;
   const showingEnd = Math.min(page * 20, total);
+  const hasQueueActivity = progress.total > 0;
 
-  const isAnalyzing = progress.total > 0 && progress.completed < progress.total;
+  useEffect(() => {
+    const autoAnalyzeClaimIds = autoAnalyzeSeedClaimIds.filter(
+      (claimId) => !autoEnqueuedClaimIdsRef.current.has(claimId),
+    );
+
+    if (autoAnalyzeClaimIds.length === 0) return;
+
+    for (const claimId of autoAnalyzeClaimIds) {
+      autoEnqueuedClaimIdsRef.current.add(claimId);
+    }
+
+    enqueueBatch(autoAnalyzeClaimIds, 1);
+  }, [autoAnalyzeSeedClaimIds, enqueueBatch]);
+
+  const enqueueRemainingClaims = () => {
+    if (remainingUnanalyzedClaimIds.length === 0) return;
+
+    for (const claimId of remainingUnanalyzedClaimIds) {
+      autoEnqueuedClaimIdsRef.current.add(claimId);
+    }
+
+    enqueueBatch(remainingUnanalyzedClaimIds, 0);
+  };
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      updateRoute({ order: sortDir === "desc" ? "asc" : "desc" });
+      return;
+    }
+
+    updateRoute({
+      order: "desc",
+      sort: field,
+    });
+  };
+
+  const getSortIcon = (field: SortField) => {
+    if (sortField !== field) return null;
+    return sortDir === "desc" ? (
+      <ArrowDown className="ml-1 inline size-3" />
+    ) : (
+      <ArrowUp className="ml-1 inline size-3" />
+    );
+  };
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="space-y-5 p-6">
       <div className="flex items-baseline justify-between">
         <h1 className="type-headline">Claims</h1>
         <span className="type-caption text-muted-foreground">
-          {totalInDb > 0
-            ? `${analyzedCount} analyzed, ${totalInDb - analyzedCount} pending`
-            : ""}
+          {totalInDb > 0 ? `${analyzedCount} analyzed, ${totalInDb - analyzedCount} pending` : ""}
         </span>
       </div>
 
-      {isAnalyzing && (
-        <div className="flex items-center gap-3 border border-border px-4 py-2">
-          <div className="flex-1 h-0.5 bg-muted overflow-hidden">
+      {hasQueueActivity && (
+        <div className="space-y-2 border border-border px-4 py-3">
+          <div className="flex items-center gap-3">
             <div
-              className="h-full bg-primary transition-all duration-500"
-              style={{
-                width: `${Math.round((progress.completed / progress.total) * 100)}%`,
-              }}
-            />
+              aria-label="Analysis progress"
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={progress.total === 0 ? 0 : Math.round(((progress.completed + progress.failed) / progress.total) * 100)}
+              className="h-0.5 flex-1 overflow-hidden bg-muted"
+              role="progressbar"
+            >
+              <div
+                className="h-full bg-primary transition-all duration-500"
+                style={{
+                  width: `${progress.total === 0 ? 0 : Math.round(((progress.completed + progress.failed) / progress.total) * 100)}%`,
+                }}
+              />
+            </div>
+            <span className="type-caption shrink-0 tabular-nums text-muted-foreground">
+              {isProcessing ? "Analyzing" : "Queued"} {progress.completed + progress.failed} / {progress.total}
+            </span>
           </div>
-          <span className="type-caption text-muted-foreground tabular-nums shrink-0">
-            Analyzing {progress.completed} / {progress.total}
-          </span>
+          {(progress.failed > 0 || progress.current) && (
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              {progress.current && <span>Current: {progress.current}</span>}
+              {progress.failed > 0 && <span>{progress.failed} failed</span>}
+            </div>
+          )}
         </div>
       )}
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative">
-          <MagnifyingGlass className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
-          <Input
-            ref={searchRef}
-            placeholder="Search claim ID…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 pr-7 w-56"
-          />
-          <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-mono pointer-events-none">
-            /
-          </kbd>
+      <div className="flex flex-wrap items-center gap-4">
+        <SearchField
+          key={currentSearch}
+          currentSearch={currentSearch}
+          inputRef={searchRef}
+          onCommit={(value) =>
+            updateRoute({
+              page: null,
+              search: value.trim() ? value.trim() : null,
+            })
+          }
+        />
+
+        <div aria-hidden className="h-5 w-px shrink-0 bg-border" />
+
+        <div className="flex items-center gap-2">
+          <span className="type-label shrink-0 text-muted-foreground">Risk</span>
+          <div aria-label="Filter by risk level" className="flex items-center gap-1" role="group">
+            {(["all", "high", "medium", "low"] as const).map((level) => (
+              <button
+                key={level}
+                aria-pressed={riskFilter === level}
+                className={`min-h-10 border px-2.5 py-2 text-xs font-medium transition-colors ${
+                  riskFilter === level
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+                }`}
+                onClick={() =>
+                  updateRoute({
+                    page: null,
+                    risk: level === "all" ? null : level,
+                  })
+                }
+                type="button"
+              >
+                {level === "all" ? "All" : level.charAt(0).toUpperCase() + level.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1" role="group" aria-label="Risk filter">
-          {(["all", "high", "medium", "low"] as const).map((level) => (
-            <button
-              key={level}
-              onClick={() => { setRiskFilter(level); setPage(1); }}
-              className={`px-3 py-1.5 text-xs font-medium border transition-colors ${
-                riskFilter === level
-                  ? "bg-foreground text-background border-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
-              }`}
-            >
-              {level === "all" ? "All risk" : level.charAt(0).toUpperCase() + level.slice(1)}
-            </button>
-          ))}
+        <div aria-hidden className="h-5 w-px shrink-0 bg-border" />
+
+        <div className="flex items-center gap-2">
+          <span className="type-label shrink-0 text-muted-foreground">Status</span>
+          <div aria-label="Filter by status" className="flex items-center gap-1" role="group">
+            {(["all", "new", "reviewed", "actioned"] as const).map((status) => (
+              <button
+                key={status}
+                aria-pressed={statusFilter === status}
+                className={`min-h-10 border px-2.5 py-2 text-xs font-medium transition-colors ${
+                  statusFilter === status
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+                }`}
+                onClick={() =>
+                  updateRoute({
+                    page: null,
+                    status: status === "all" ? null : status,
+                  })
+                }
+                type="button"
+              >
+                {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1" role="group" aria-label="Status filter">
-          {(["all", "new", "reviewed", "actioned"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => { setStatusFilter(s); setPage(1); }}
-              className={`px-3 py-1.5 text-xs font-medium border transition-colors ${
-                statusFilter === s
-                  ? "bg-foreground text-background border-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
-              }`}
-            >
-              {s === "all" ? "All status" : s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            disabled={remainingUnanalyzedClaimIds.length === 0}
+            onClick={enqueueRemainingClaims}
+            size="sm"
+            variant="outline"
+          >
+            Analyze remaining
+          </Button>
+          {remainingUnanalyzedClaimIds.length > 0 && (
+            <span className="type-caption text-muted-foreground">
+              {remainingUnanalyzedClaimIds.length} waiting
+            </span>
+          )}
         </div>
       </div>
 
       {claimsQuery.isLoading && <SkeletonTable />}
 
       {claimsQuery.isError && (
-        <div className="border border-border px-5 py-4 flex items-center gap-4">
-          <p className="text-sm text-muted-foreground flex-1">
+        <div className="flex items-center gap-4 border border-border px-5 py-4" role="alert">
+          <p className="type-body flex-1 text-muted-foreground">
             Claims could not be loaded. Check your connection and try again.
           </p>
-          <button
-            onClick={() => claimsQuery.refetch()}
-            className="text-xs font-medium border border-border px-3 py-1.5 hover:bg-muted transition-colors"
-          >
+          <Button onClick={() => claimsQuery.refetch()} size="sm" variant="outline">
             Retry
-          </button>
+          </Button>
         </div>
       )}
 
       {!claimsQuery.isLoading && !claimsQuery.isError && claims.length === 0 && (
-        <div className="border border-border py-16 text-center">
-          <p className="type-body text-muted-foreground mx-auto">
-            {total === 0 && statusesQuery.data && statusesQuery.data.statuses.length > 0
+        <div className="border border-border py-16 text-center" role="status">
+          <p className="type-body mx-auto text-muted-foreground">
+            {total === 0 && statuses.length > 0
               ? "Analyzing claims from feature table…"
               : total === 0
                 ? "No claims found."
@@ -379,57 +452,69 @@ function ClaimsContent() {
 
       {!claimsQuery.isLoading && !claimsQuery.isError && claims.length > 0 && (
         <>
-          <div className="border border-border">
+          <div className="overflow-x-auto border border-border">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="type-label w-24">Risk</TableHead>
-                  <TableHead className="type-label">
+                  <TableHead
+                    aria-sort={sortField === "claimId" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                    className="type-label"
+                  >
                     <button
+                      className="flex items-center gap-1 transition-colors hover:text-foreground"
                       onClick={() => toggleSort("claimId")}
-                      className="flex items-center gap-1 hover:text-foreground transition-colors"
+                      type="button"
                     >
                       Claim ID {getSortIcon("claimId")}
                     </button>
                   </TableHead>
-                  <TableHead className="type-label w-36">
+                  <TableHead
+                    aria-sort={sortField === "riskScore" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                    className="type-label w-36"
+                  >
                     <button
+                      className="flex items-center gap-1 transition-colors hover:text-foreground"
                       onClick={() => toggleSort("riskScore")}
-                      className="flex items-center gap-1 hover:text-foreground transition-colors"
+                      type="button"
                     >
                       Score {getSortIcon("riskScore")}
                     </button>
                   </TableHead>
                   <TableHead className="type-label w-28">Status</TableHead>
-                  <TableHead className="type-label w-36">
+                  <TableHead
+                    aria-sort={sortField === "analyzedAt" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                    className="type-label w-36"
+                  >
                     <button
+                      className="flex items-center gap-1 transition-colors hover:text-foreground"
                       onClick={() => toggleSort("analyzedAt")}
-                      className="flex items-center gap-1 hover:text-foreground transition-colors"
+                      type="button"
                     >
-                      Analyzed {getSortIcon("analyzedAt")}
+                      Analysis Date {getSortIcon("analyzedAt")}
                     </button>
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {claims.map((claim, i) => (
+                {claims.map((claim) => (
                   <TableRow
                     key={claim.claimId}
-                    className={`cursor-pointer hover:bg-muted/60 animate-in fade-in slide-in-from-bottom-1 ${claim.riskLevel === null ? "opacity-50" : ""}`}
-                    style={{
-                      animationDelay: `${Math.min(i * 20, 200)}ms`,
-                      animationFillMode: "backwards",
-                    }}
-                    onClick={() => router.push(`/claims/${claim.claimId}`)}
+                    className={claim.riskLevel === null ? "opacity-50" : undefined}
                   >
                     <TableCell>
                       <RiskBadge level={claim.riskLevel} />
                     </TableCell>
                     <TableCell className="type-mono font-medium">
-                      {claim.claimId}
+                      <Link
+                        className="underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        href={`/claims/${claim.claimId}`}
+                      >
+                        {claim.claimId}
+                      </Link>
                     </TableCell>
                     <TableCell>
-                      <ScoreBar score={claim.riskScore} />
+                      <RiskScoreCell score={claim.riskScore} />
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={claim.status} />
@@ -437,10 +522,10 @@ function ClaimsContent() {
                     <TableCell className="type-caption text-muted-foreground">
                       {claim.analyzedAt
                         ? new Date(claim.analyzedAt).toLocaleDateString(undefined, {
-                            month: "short",
                             day: "numeric",
                             hour: "2-digit",
                             minute: "2-digit",
+                            month: "short",
                           })
                         : "—"}
                     </TableCell>
@@ -459,48 +544,47 @@ function ClaimsContent() {
               <PaginationContent className="flex-nowrap">
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => page > 1 && setPage((p) => p - 1)}
-                    className={page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    className={page <= 1 ? "pointer-events-none opacity-50" : undefined}
+                    href={buildHref({ page: page > 1 ? String(page - 1) : null })}
                   />
                 </PaginationItem>
 
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter((p) => {
+                {Array.from({ length: totalPages }, (_, index) => index + 1)
+                  .filter((candidatePage) => {
                     if (totalPages <= 7) return true;
-                    if (p === 1 || p === totalPages) return true;
-                    if (Math.abs(p - page) <= 1) return true;
-                    return false;
+                    if (candidatePage === 1 || candidatePage === totalPages) return true;
+                    return Math.abs(candidatePage - page) <= 1;
                   })
-                  .flatMap((p, idx, arr) => {
-                    const showEllipsis = idx > 0 && p - arr[idx - 1] > 1;
-                    const items = [];
-                    if (showEllipsis) {
+                  .flatMap((candidatePage, index, pages) => {
+                    const items: ReactNode[] = [];
+                    const shouldShowEllipsis = index > 0 && candidatePage - pages[index - 1] > 1;
+
+                    if (shouldShowEllipsis) {
                       items.push(
-                        <PaginationItem key={`ellipsis-${p}`}>
-                          <span className="flex size-8 items-center justify-center text-muted-foreground">
-                            …
-                          </span>
-                        </PaginationItem>
+                        <PaginationItem key={`ellipsis-${candidatePage}`}>
+                          <PaginationEllipsis className="text-muted-foreground" />
+                        </PaginationItem>,
                       );
                     }
+
                     items.push(
-                      <PaginationItem key={p}>
+                      <PaginationItem key={candidatePage}>
                         <PaginationLink
-                          isActive={p === page}
-                          onClick={() => setPage(p)}
-                          className="cursor-pointer"
+                          href={buildHref({ page: String(candidatePage) })}
+                          isActive={candidatePage === page}
                         >
-                          {p}
+                          {candidatePage}
                         </PaginationLink>
-                      </PaginationItem>
+                      </PaginationItem>,
                     );
+
                     return items;
                   })}
 
                 <PaginationItem>
                   <PaginationNext
-                    onClick={() => page < totalPages && setPage((p) => p + 1)}
-                    className={page >= totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    className={page >= totalPages ? "pointer-events-none opacity-50" : undefined}
+                    href={buildHref({ page: page < totalPages ? String(page + 1) : String(totalPages) })}
                   />
                 </PaginationItem>
               </PaginationContent>
