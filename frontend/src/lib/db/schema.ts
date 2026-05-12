@@ -55,11 +55,11 @@ export const verification = pgTable("verification", {
 export const claimReviews = pgTable("claim_reviews", {
   id: text("id").primaryKey(),
   claimId: text("claim_id").notNull().unique(),
-  riskScore: real("risk_score").notNull(),
-  riskLevel: text("risk_level").notNull(),
-  narrative: text("narrative").notNull().default(""),
+  riskScore: real("risk_score"),
+  riskLevel: text("risk_level"),
+  narrative: text("narrative").default(""),
   status: text("status").notNull().default("new"),
-  analyzedAt: timestamp("analyzed_at").notNull(),
+  analyzedAt: timestamp("analyzed_at"),
   reviewedAt: timestamp("reviewed_at"),
   reviewedById: text("reviewed_by_id").references(() => user.id),
 });

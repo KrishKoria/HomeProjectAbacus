@@ -8,6 +8,13 @@
       "when": 1778403872845,
       "tag": "0000_chief_carnage",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778578676804,
+      "tag": "0001_redundant_frank_castle",
+      "breakpoints": true
     }
   ]
 }
