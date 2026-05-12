@@ -48,20 +48,6 @@ variables:
     default: healthcare.gold.policy_chunks_index
   vector_search_query_model_endpoint_name:
     default: databricks-gte-large-en
-  app_sql_warehouse_id:
-    description: SQL warehouse ID used by the Databricks frontend app.
-    default: "26e842cddb906c23"
-  app_sql_http_path:
-    description: SQL warehouse HTTP path used by the Databricks frontend app.
-    default: /sql/1.0/warehouses/26e842cddb906c23
-  app_claim_features_table:
-    default: healthcare.gold.claim_features
-  app_model_registry_name:
-    default: healthcare.ml.claim_denial_model
-  app_model_alias:
-    default: champion
-  app_auth_audit_table:
-    default: healthcare.analytics.app_auth_events
   claim_analysis_model_name:
     description: Registered model name for claim-analysis serving endpoint.
     default: healthcare.ml.claim_denial_analysis
@@ -88,9 +74,6 @@ targets:
       vector_search_endpoint_name: healthcare_policy_vector_endpoint
       vector_search_index_name: healthcare.gold.policy_chunks_index
       vector_search_query_model_endpoint_name: databricks-gte-large-en
-      app_claim_features_table: healthcare.gold.claim_features
-      app_model_registry_name: healthcare.ml.claim_denial_model
-      app_model_alias: champion
       claim_analysis_model_name: healthcare.ml.claim_denial_analysis
       claim_analysis_model_alias: champion
       claim_analysis_endpoint_name: claim-denial-analysis
@@ -104,6 +87,3 @@ targets:
       vector_search_endpoint_name: healthcare_policy_vector_endpoint
       vector_search_index_name: healthcare.gold.policy_chunks_index
       vector_search_query_model_endpoint_name: databricks-gte-large-en
-      app_claim_features_table: healthcare.gold.claim_features
-      app_model_registry_name: healthcare.ml.claim_denial_model
-      app_model_alias: champion
