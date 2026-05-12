@@ -471,15 +471,20 @@ function ClaimsContent() {
                     if (Math.abs(p - page) <= 1) return true;
                     return false;
                   })
-                  .map((p, idx, arr) => {
+                  .flatMap((p, idx, arr) => {
                     const showEllipsis = idx > 0 && p - arr[idx - 1] > 1;
-                    return (
-                      <PaginationItem key={p}>
-                        {showEllipsis && (
+                    const items = [];
+                    if (showEllipsis) {
+                      items.push(
+                        <PaginationItem key={`ellipsis-${p}`}>
                           <span className="flex size-8 items-center justify-center text-muted-foreground">
                             …
                           </span>
-                        )}
+                        </PaginationItem>
+                      );
+                    }
+                    items.push(
+                      <PaginationItem key={p}>
                         <PaginationLink
                           isActive={p === page}
                           onClick={() => setPage(p)}
@@ -489,6 +494,7 @@ function ClaimsContent() {
                         </PaginationLink>
                       </PaginationItem>
                     );
+                    return items;
                   })}
 
                 <PaginationItem>
