@@ -30,10 +30,3 @@ services:
   setup_infrastructure:
     type: job
     manifest: services/infrastructure/setup/service.yml
-  frontend_app:
-    type: app
-    manifest: services/frontend/service.yml
-    depends_on:
-      - etl_pipeline
-      - ml_training
-      - rag_vector_index
