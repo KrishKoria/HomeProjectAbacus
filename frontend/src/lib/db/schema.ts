@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, real } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -50,4 +50,16 @@ export const verification = pgTable("verification", {
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
+});
+
+export const claimReviews = pgTable("claim_reviews", {
+  id: text("id").primaryKey(),
+  claimId: text("claim_id").notNull().unique(),
+  riskScore: real("risk_score").notNull(),
+  riskLevel: text("risk_level").notNull(),
+  narrative: text("narrative").notNull().default(""),
+  status: text("status").notNull().default("new"),
+  analyzedAt: timestamp("analyzed_at").notNull(),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedById: text("reviewed_by_id").references(() => user.id),
 });
