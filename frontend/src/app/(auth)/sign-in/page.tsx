@@ -6,15 +6,15 @@ import { GoogleLogo } from "@phosphor-icons/react";
 
 export default function SignInPage() {
   return (
-    <div className="flex min-h-screen">
-      <div className="hidden md:flex w-[40%] bg-[oklch(0.15_0.02_260)] text-[oklch(0.94_0.01_260)] flex-col justify-between p-12">
+    <main className="flex min-h-screen">
+      <div className="hidden md:flex w-[40%] bg-auth-bg text-auth-text flex-col justify-between p-12">
         <div className="space-y-6">
           <h1 className="type-display text-balance">ClaimOps</h1>
-          <p className="type-headline max-w-sm text-white/70">
+          <p className="type-headline max-w-sm text-auth-text/70">
             Claim Denial Risk Assessment Console
           </p>
         </div>
-        <blockquote className="type-body text-white/50 max-w-sm">
+        <blockquote className="type-body text-auth-text/50 max-w-sm">
           AI-powered claim denial risk scoring and remediation. A pre-submission
           quality gate that intercepts every claim before it reaches the insurer.
         </blockquote>
@@ -33,11 +33,11 @@ export default function SignInPage() {
             className="w-full gap-3"
             onClick={() => authClient.signIn.social({ provider: "google" })}
           >
-            <GoogleLogo className="size-4" />
+            <GoogleLogo className="size-4" aria-hidden="true" />
             Sign in with Google
           </Button>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
