@@ -4,6 +4,8 @@ function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="skeleton"
+      role="status"
+      aria-label="Loading"
       className={cn("animate-pulse rounded-none bg-muted", className)}
       {...props}
     />

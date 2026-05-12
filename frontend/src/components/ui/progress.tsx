@@ -45,7 +45,8 @@ function ProgressIndicator({
   return (
     <ProgressPrimitive.Indicator
       data-slot="progress-indicator"
-      className={cn("h-full bg-primary transition-all", className)}
+      className={cn("h-full transition-[width]", className)}
+      style={{ backgroundColor: "var(--progress-indicator, var(--primary))" } as React.CSSProperties}
       {...props}
     />
   )
