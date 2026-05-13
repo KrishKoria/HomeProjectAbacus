@@ -1,0 +1,41 @@
+# Inherit all gitignore rules
+#!include:.gitignore
+
+# Python / Databricks — not needed for Docker build (/ prefix = root-level only)
+/src/
+/ETL/
+/tests/
+/services/
+/resources/
+/docs/
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.databricks/
+uv.lock
+pyproject.toml
+*.ipynb
+
+# Tooling dirs
+.agents/
+.claude/
+.codex/
+.serena/
+.opencode/
+.chunkhound*
+.worktrees/
+.scratch/
+claude_design_files/
+opencode/
+
+# Git / IDE
+.git/
+.github/
+.vscode/
+.idea/
+
+# Frontend build artifacts (rebuilt inside Docker)
+frontend/node_modules/
+frontend/.next/
+frontend/coverage/
