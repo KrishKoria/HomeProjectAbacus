@@ -49,10 +49,9 @@ from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import (
     COMMON_DELTA_TABLE_PROPERTIES,
-    stable_pipeline_run_id,
+    bronze_csv_stream,
     bronze_table_name,
     bronze_volume_path,
-    csv_autoloader_options,
 )
 from common.observability import MESSAGE_BRONZE_APPEND_ONLY
 
@@ -130,16 +129,4 @@ def bronze_cost():
             _pipeline_run_id str        Pipeline execution timestamp for audit correlation.
             _rescued_data    str?       Raw unparseable content. NULL on clean rows.
     """
-    return (
-        spark.readStream
-        .format("cloudFiles")
-        .options(**csv_autoloader_options())
-        .load(VOLUME_PATH)
-        .withColumn("_ingested_at", F.current_timestamp())
-        .withColumn("_source_file", F.col("_metadata.file_path"))
-        .withColumn(
-            "_pipeline_run_id",
-            stable_pipeline_run_id(),
-        )
-        .drop("_metadata")
-    )
+    return bronze_csv_stream(spark, VOLUME_PATH)

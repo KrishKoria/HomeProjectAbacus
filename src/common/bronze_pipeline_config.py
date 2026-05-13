@@ -166,7 +166,26 @@ def escape_backtick_identifier(name: str) -> str:
     return f"`{name.replace('`', '``')}`"
 
 
+def add_common_databricks_args(parser):
+    parser.add_argument("--catalog", default=CATALOG_DEFAULT)
+
+
+def bronze_csv_stream(spark, volume_path):
+    from pyspark.sql import functions as F
+
+    return (
+        spark.readStream.format("cloudFiles")
+        .options(**csv_autoloader_options())
+        .load(volume_path)
+        .withColumn("_ingested_at", F.current_timestamp())
+        .withColumn("_source_file", F.col("_metadata.file_path"))
+        .withColumn("_pipeline_run_id", stable_pipeline_run_id())
+        .drop("_metadata")
+    )
+
+
 __all__ = [
+    "add_common_databricks_args",
     "AUDIT_COLUMNS",
     "BRONZE_SCHEMA_DEFAULT",
     "BRONZE_VOLUME_DEFAULT",
@@ -178,6 +197,7 @@ __all__ = [
     "PIPELINE_RUN_ID_FORMAT",
     "RESCUED_DATA_COLUMN",
     "binary_file_autoloader_options",
+    "bronze_csv_stream",
     "bronze_table_name",
     "bronze_volume_path",
     "bronze_volume_root",
