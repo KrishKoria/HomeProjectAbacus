@@ -266,6 +266,11 @@ function StatusControl({
   const [status, setStatus] = useState(initialStatus);
   const previousStatusRef = useRef(initialStatus);
 
+  useEffect(() => {
+    setStatus(initialStatus);
+    previousStatusRef.current = initialStatus;
+  }, [initialStatus]);
+
   const mutation = useMutation({
     mutationFn: async (newStatus: string) => {
       const res = await fetch(`/api/claims/${claimId}/status`, {
@@ -306,7 +311,9 @@ function StatusControl({
     <Select
       items={items}
       value={status}
-      onValueChange={(v) => v && mutation.mutate(v)}
+      onValueChange={(v) => {
+        if (v && v !== status) mutation.mutate(v);
+      }}
       disabled={mutation.isPending}
     >
       <SelectTrigger className="w-36 h-10 text-xs" aria-label="Claim status">

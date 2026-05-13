@@ -157,7 +157,7 @@ export async function getClaimStats(): Promise<ClaimStats> {
       .groupBy(claimReviews.status),
   ]);
 
-  const total = riskStats.reduce((sum, r) => sum + r.count, 0);
+  const total = statusStats.reduce((sum, s) => sum + s.count, 0);
 
   return {
     risk: {
