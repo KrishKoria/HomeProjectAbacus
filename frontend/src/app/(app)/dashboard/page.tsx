@@ -41,7 +41,9 @@ export default function DashboardPage() {
     queryFn: async () => {
       const res = await fetch("/api/claims/top");
       if (!res.ok) throw new Error("Failed to load top claims");
-      return (res.json() as Promise<{ claims: ClaimReview[] }>).then((d) => d.claims);
+      return (res.json() as Promise<{ claims: ClaimReview[] }>).then(
+        (d) => d.claims,
+      );
     },
   });
 
@@ -135,12 +137,17 @@ export default function DashboardPage() {
 
           {statsQuery.isError && (
             <div role="alert" className="border border-border px-5 py-4">
-              <p className="type-body text-muted-foreground">Could not load queue metrics.</p>
+              <p className="type-body text-muted-foreground">
+                Could not load queue metrics.
+              </p>
             </div>
           )}
 
           {stats && stats.total === 0 && (
-            <div role="status" className="border border-border py-10 text-center">
+            <div
+              role="status"
+              className="border border-border py-10 text-center"
+            >
               <p className="type-body text-muted-foreground">
                 Queue is empty. Visit Claims to populate it automatically.
               </p>
@@ -151,19 +158,24 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 border-t border-border pt-6">
               {/* Column 1 — Risk distribution */}
               <div className="space-y-3">
-                <p className="type-label text-muted-foreground">Risk distribution</p>
+                <p className="type-label text-muted-foreground">
+                  Risk distribution
+                </p>
                 <div className="space-y-2.5">
                   {(["high", "medium", "low"] as const).map((level) => {
                     const count = stats.risk[level];
-                    const pct = stats.total > 0 ? (count / stats.total) * 100 : 0;
+                    const pct =
+                      stats.total > 0 ? (count / stats.total) * 100 : 0;
                     return (
                       <button
                         key={level}
                         onClick={() => router.push(`/claims?risk=${level}`)}
-                        className="w-full grid grid-cols-[56px_1fr_28px] items-center gap-3 text-[12px] group"
+                        className="w-full grid grid-cols-[56px_1fr_28px] items-center gap-3 text-label group"
                         type="button"
                       >
-                        <span className={`text-right type-mono text-risk-${level} capitalize group-hover:opacity-80 transition-opacity`}>
+                        <span
+                          className={`text-right type-mono text-risk-${level} capitalize group-hover:opacity-80 transition-opacity`}
+                        >
                           {level}
                         </span>
                         <div className="relative h-2 bg-muted overflow-hidden">
@@ -192,7 +204,7 @@ export default function DashboardPage() {
                       type="button"
                       className="w-full flex items-center justify-between border border-border px-3 py-2.5 hover:bg-muted/50 transition-colors group"
                     >
-                      <span className="text-[11px] text-muted-foreground capitalize group-hover:text-foreground transition-colors">
+                      <span className="text-caption text-muted-foreground capitalize group-hover:text-foreground transition-colors">
                         {s}
                       </span>
                       <span className="type-mono tabular-nums text-foreground font-medium">
@@ -206,10 +218,12 @@ export default function DashboardPage() {
               {/* Column 3 — Top 5 high-risk */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="type-label text-muted-foreground">Highest-risk claims</p>
+                  <p className="type-label text-muted-foreground">
+                    Highest-risk claims
+                  </p>
                   <Link
                     href="/claims?sort=riskScore&order=desc"
-                    className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-caption text-muted-foreground hover:text-foreground transition-colors"
                   >
                     View all →
                   </Link>
@@ -229,16 +243,22 @@ export default function DashboardPage() {
                         href={`/claims/${claim.claimId}`}
                         className="flex items-center gap-3 py-2 hover:bg-muted/30 -mx-2 px-2 transition-colors"
                       >
-                        <RiskBar score={claim.riskScore} level={claim.riskLevel} />
+                        <RiskBar
+                          score={claim.riskScore}
+                          level={claim.riskLevel}
+                        />
                         <span className="type-mono text-[11.5px] text-foreground truncate flex-1 min-w-0">
                           {claim.claimId}
                         </span>
                         {claim.analyzedAt && (
                           <span className="type-caption text-muted-foreground text-[10px] shrink-0">
-                            {new Date(claim.analyzedAt).toLocaleDateString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                            })}
+                            {new Date(claim.analyzedAt).toLocaleDateString(
+                              undefined,
+                              {
+                                month: "short",
+                                day: "numeric",
+                              },
+                            )}
                           </span>
                         )}
                       </Link>
@@ -246,7 +266,9 @@ export default function DashboardPage() {
                   </div>
                 )}
                 {!topClaimsQuery.isLoading && topClaims.length === 0 && (
-                  <p className="type-caption text-muted-foreground">No analyzed claims yet.</p>
+                  <p className="type-caption text-muted-foreground">
+                    No analyzed claims yet.
+                  </p>
                 )}
               </div>
             </div>
@@ -276,10 +298,10 @@ export default function DashboardPage() {
             </Button>
           </div>
           <p className="type-caption text-muted-foreground">
-            Press <kbd className="font-mono">/</kbd> to focus. Analyzes claim and opens detail view.
+            Press <kbd className="font-mono">/</kbd> to focus. Analyzes claim
+            and opens detail view.
           </p>
         </section>
-
       </div>
     </AppShell>
   );
@@ -287,7 +309,11 @@ export default function DashboardPage() {
 
 function StatusDot({ name, ok }: { name: string; ok: boolean }) {
   return (
-    <span className="flex items-center gap-1.5" role="img" aria-label={`${name}: ${ok ? "connected" : "disconnected"}`}>
+    <span
+      className="flex items-center gap-1.5"
+      role="img"
+      aria-label={`${name}: ${ok ? "connected" : "disconnected"}`}
+    >
       <Circle
         size={8}
         weight="fill"
