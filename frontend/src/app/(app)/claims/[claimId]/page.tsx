@@ -12,8 +12,8 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RiskScoreBlock } from "@/components/risk-score-block";
 import {
   Accordion,
   AccordionContent,
@@ -31,7 +31,7 @@ import {
 import { toast } from "sonner";
 import type { ClaimAnalysisResponse } from "@/lib/databricks/types";
 import { ArrowLeft, Files, Warning, PaperPlaneTilt, ChatText } from "@phosphor-icons/react";
-import { RiskBadge, riskProgressColorMap } from "@/components/risk-badge";
+import { RiskBadge } from "@/components/risk-badge";
 
 // ─── Risk / Direction helpers ───────────────────────────────────────────────
 
@@ -123,10 +123,10 @@ function ChatPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  async function sendMessage() {
-    const text = input.trim();
+  async function sendMessage(overrideText?: string) {
+    const text = (overrideText ?? input).trim();
     if (!text || isWaiting || !analysis) return;
-    setInput("");
+    if (!overrideText) setInput("");
     const userMsg: ChatMessage = { role: "user", content: text };
     const nextMessages = [...visibleMessages, userMsg];
     setMessages(nextMessages);
@@ -206,6 +206,33 @@ function ChatPanel({
             </div>
           </div>
         ))}
+        {messages.length === 0 && analysis && (() => {
+          const suggestionMap: Record<string, string[]> = {
+            high: ["What's the single fastest fix?", "Show me the policy rule that's failing", "Draft the remediation note"],
+            medium: ["What changes if I tighten the diagnosis code?", "Is the documentation enough as-is?", "Should I escalate for medical review?"],
+            low: ["Anything I should still check?", "Why is this still in the queue?", "Confidence level on the score?"],
+          };
+          const items = suggestionMap[analysis.riskLevel.toLowerCase()] ?? [];
+          if (!items.length) return null;
+          return (
+            <div className="mt-2">
+              <p className="type-label text-[10px] text-muted-foreground mb-2">Suggested</p>
+              <div className="space-y-1.5">
+                {items.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => sendMessage(s)}
+                    className="block w-full text-left text-label text-foreground/80 hover:text-foreground border border-border hover:border-foreground/30 px-2.5 py-1.5 transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {isWaiting && (
           <div className="flex justify-start">
             <div className="bg-muted border border-border px-3 py-2">
@@ -240,7 +267,7 @@ function ChatPanel({
           />
           <Button
             size="icon"
-            onClick={sendMessage}
+            onClick={() => sendMessage()}
             disabled={!input.trim() || isWaiting || !analysis}
             className="shrink-0"
             aria-label="Send message"
@@ -381,7 +408,6 @@ export default function ClaimDetailPage({
 
   const analysis = analysisQuery.data;
   const riskLevel = analysis?.riskLevel ?? "low";
-  const displayScore = analysis ? Math.round(analysis.riskScore * 100) : 0;
 
   const breadcrumb = (
     <>
@@ -476,38 +502,11 @@ export default function ClaimDetailPage({
             {analysis && (
               <>
                 {/* Risk score */}
-                <section className="border border-border p-5 space-y-3">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-2">
-                      <div className="flex items-baseline gap-3">
-                        <span className="type-display tabular-nums">{displayScore}%</span>
-                        <RiskBadge level={riskLevel} className="uppercase tracking-wider" />
-                      </div>
-                      <Progress
-                        value={displayScore}
-                        className="h-1.5 w-48 bg-muted"
-                        style={
-                          {
-                            "--progress-indicator": riskProgressColorMap[riskLevel],
-                          } as React.CSSProperties
-                        }
-                      />
-                    </div>
-                    <div className="text-xs text-muted-foreground space-y-1 text-right shrink-0">
-                      {analysis.generatedAt && (
-                        <p>
-                          {new Date(analysis.generatedAt).toLocaleTimeString(undefined, {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      )}
-                      {analysis.model && (
-                        <p className="type-mono opacity-60">{analysis.model}</p>
-                      )}
-                    </div>
-                  </div>
-                </section>
+                <RiskScoreBlock
+                  score={analysis.riskScore}
+                  level={riskLevel}
+                  analyzedAt={analysis.generatedAt}
+                />
 
                 {/* Key Findings */}
                 {analysis.topReasons.length > 0 && (
