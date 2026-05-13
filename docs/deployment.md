@@ -41,10 +41,10 @@ Runtime supports two DB modes:
 
 ## 3) Build and Deploy
 
-Use [cloudbuild.yaml](/C:/Users/Krish/Desktop/projects/homeprojectabacus/cloudbuild.yaml).
+Use [cloudbuild.yaml](/C:/Users/Krish/Desktop/projects/homeprojectabacus/cloudbuild.yaml) for normal frontend deploys.
 
 ```bash
-gcloud builds submit --config cloudbuild.yaml --region us-central1
+gcloud builds submit --config cloudbuild.yaml --region asia-south1 --project monthhome
 ```
 
 The pipeline will:
@@ -54,6 +54,14 @@ The pipeline will:
    - Cloud SQL instance attachment
    - `--set-env-vars` for non-sensitive config
    - `--set-secrets` for sensitive config
+
+Database migrations are intentionally not part of the normal deploy. Run them only when committed files under `frontend/drizzle/` change:
+
+```bash
+gcloud builds submit --config cloudbuild.migrations.yaml --region asia-south1 --project monthhome
+```
+
+The migration pipeline connects to Cloud SQL through the Cloud SQL Auth Proxy and applies the committed Drizzle migrations with `bunx drizzle-kit migrate`.
 
 ## 4) OAuth Callback Configuration
 
@@ -81,7 +89,7 @@ Use OAuth M2M credentials for:
 # Frontend runtime checks
 cd frontend
 bun run typecheck
-bun test
+bun run test
 bun run build
 
 # Python/serving checks

@@ -106,96 +106,83 @@ if str(_PROJECT_ROOT) not in sys.path:
 <claude-mem-context>
 # Memory Context
 
-# [homeprojectabacus] recent context, 2026-05-12 10:16pm GMT+5:30
+# [homeprojectabacus] recent context, 2026-05-13 7:27pm GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (17,677t read) | 669,621t work | 97% savings
+Stats: 50 obs (18,192t read) | 307,992t work | 94% savings
 
-### May 12, 2026
-978 12:48p 🟣 PATCH /api/claims/[claimId]/status endpoint for workflow transitions
-980 12:49p 🔄 AppShell component refactored with breadcrumb support and header polish
-981 " 🔄 AppSidebar redesigned with Claims nav, session display, and Phosphor icons
-982 " 🟣 Claims list page built with filtering, sorting, and all state coverage
-983 12:50p 🔄 Claim detail page redesigned with two-column layout and AI chat panel
-984 12:54p 🔄 Dashboard page redesigned with queue overview stats grid
-985 12:55p ✅ Root redirect changed from /dashboard to /claims
-986 1:00p 🔵 Frontend build infrastructure uses Bun runtime
-987 " 🔴 TypeScript build error in claims page mutation handler
-988 " 🔴 Fixed TypeScript type error in Select onValueChange handler
-989 1:02p ✅ Added explicit defaultValue to Supporting Policy accordion
-990 1:03p ✅ Migrated Accordion props to base-ui API from Radix API
-991 1:05p ✅ Supporting Policy accordion switched to single-open mode
-992 1:06p ✅ Next.js production build now passes successfully
-993 1:08p 🔵 Project's accordion uses non-standard base-ui backend instead of Radix
-994 1:12p 🔵 Shadcn skill docs document base-ui vs Radix API differences
-995 1:13p 🔵 Select component also uses @base-ui/react not Radix UI
-996 " ✅ Refactored Select to use base-ui `items` prop and SelectGroup
-997 1:14p ✅ Accordion re-enabled multi-open mode with base-ui `multiple` prop
-998 " 🔄 Closed React Fragment wrapper for Accordion children
-999 1:15p 🔴 Added missing SelectGroup import for base-ui Select refactoring
-1000 1:16p ✅ Production build passing with all UI refactoring changes
-1001 " 🔵 CSS files not found via glob from frontend directory
-1002 " 🔵 Accordion animation classes not found in project CSS files
-1003 1:17p 🔵 Accordion animations provided by tw-animate-css and shadcn packages
-1004 " 🔵 Accordion keyframe animations sourced from shadcn npm package
-1005 " 🔄 Replaced accordion keyframe animations with CSS transition
-1006 1:18p ✅ Production build passing with all UI refactoring complete
-1007 1:21p 🔵 User confirms three UX bugs in claims system
-S253 Fix riskLevel case-sensitivity mismatch (Databricks returns uppercase like "HIGH" but DB/comparison logic uses lowercase "high") and verify auto-populate claims queue feature end-to-end. (May 12, 1:54 PM)
-S254 Verify the auto-populate feature works by truncating the database and testing end-to-end (May 12, 2:05 PM)
-1008 2:10p 🟣 Auto-populate verification requested via database truncation
-S255 Implement pagination, instant claim ID search, and priority-based analysis for the claims table with ~1000 Databricks records (May 12, 2:15 PM)
-1009 2:22p 🔵 PowerShell commands incompatible with bash shell environment
-1010 " 🔵 Claims API route structure discovered
-1011 " 🔵 Claims page fetches all records with no pagination
-1012 2:23p 🔵 Full claims data flow mapped for pagination refactor
-1013 " 🔵 Explore agents confirm complete absence of pagination
-S256 Implement pagination, instant claim ID search, and priority-based analysis for claims table with ~1000 records (May 12, 2:24 PM)
-S257 Implement pagination, instant claim ID search, and priority-based analysis for claims table with ~1000 records (May 12, 2:24 PM)
-S258 Automate Google OAuth sign-in for a local dev server at localhost:3000 to bypass auth wall, with a side task of fixing pagination layout in a claims table UI. (May 12, 2:27 PM)
-1014 2:30p ⚖️ Search behavior design finalized as Option C (inline banner + auto-jump)
-1015 3:44p 🔄 Project formatting improvements initiated
-1016 3:50p 🔴 Fixed pagination layout wrapping in claims table
-1017 " 🔄 Refactored claims page from client-side to server-side pagination
-1018 " 🔄 Replaced inline auto-fill analysis logic with useAnalysisQueue hook
-1019 " 🔄 Added null-state handling for unanalyzed claims in table display
-1020 " 🔄 Replaced claim samples API with claim-statuses API for pre-analysis scan
-1021 3:51p ✅ Created project overview memory for homeprojectabacus
-1022 3:52p 🔵 Browser automation skill loaded for potential UI verification
-1023 " 🔵 Claims pagination fix could not be visually verified due to auth gate
-1024 3:53p 🔵 No authenticated browser tab available for UI verification
-1025 " 🔵 Google OAuth sign-in flow confirmed in claims app
-S259 Fix frontend pagination bug — ellipsis rendering issue in claims page (May 12, 3:53 PM)
-1026 7:28p 🔵 PaginationEllipsis component not utilized in claims pagination
-S260 Impeccable Design Critique of ClaimOps Frontend Application — Comprehensive UX/Design System Analysis with Prioritized Remediation Roadmap (May 12, 7:29 PM)
-1027 7:34p ✅ Design system fully implemented in ClaimOps frontend with OKLCH color tokens and semantic architecture
-1028 7:36p 🔵 LLM design review identified 8 concrete UX issues in ClaimOps interface: hierarchy, semantics, and mobile gaps
-S261 Verify and implement UI/UX improvements for Next.js claims management dashboard—status badge styling, filter reorganization, accessibility enhancements, mobile responsiveness, and keyboard shortcuts—and confirm production build passes without errors (May 12, 7:40 PM)
-S262 Run comprehensive technical audit across Claims Management dashboard—evaluate accessibility, performance, theming, responsive design, and anti-patterns using automated and manual review; document all findings by severity with actionable recommendations (May 12, 7:52 PM)
-**Investigated**: Scanned entire application codebase (5 dimensions): dashboard/claims/detail pages, app-shell, component library (dialog, sheet, accordion), globals.css design tokens. Ran impeccable anti-pattern detector across src/app and src/components. Manually reviewed keyboard navigation, ARIA attributes, touch target sizes, viewport height handling, animation performance, theming consistency, and data flow accuracy. Analyzed StatusControl initialization, filter button states, table interaction patterns, dashboard stats computation source.
+### May 13, 2026
+1069 11:30a 🔵 Production codebase fully mapped — data layer, API routes, and components inventoried
+1105 5:47p 🔵 Build failure: bun runtime missing from Cloud Build container
+1106 " 🔴 Add unzip dependency to Cloud Build migration step
+1107 6:05p 🔵 Better Auth state validation failures blocking OAuth callback
+1108 " 🔵 Cloud SQL proxy attached but service references multiple instances
+1109 6:06p 🔵 No recent build history found or migration logs unavailable
+1110 " 🔵 Database schema includes Better Auth tables but deployment migration status unknown
+1111 6:07p 🔵 Better Auth route handler uses default Next.js integration without database initialization
+1112 6:08p 🔵 OAuth callback state validation failure traced in HTTP request logs
+1113 6:11p 🔵 Better Auth OAuth State Validation Issues in Cloud Run Production
+1114 6:12p 🔵 Better Auth Issue #7023 State Mismatch Fix for Next.js v1.4.4+
+1115 " 🔵 Better Auth Configuration Missing Production Deployment Settings
+1116 6:13p 🔵 Better Auth Production Cookie and OAuth State Configuration Requirements
+1117 6:16p ✅ Better Auth Configuration Updated for Production OAuth State Validation
+1118 6:51p 🔵 Current Cloud Build pipeline issues and GCP infrastructure state analyzed
+1070 9:43p ⚖️ Deployment Architecture Migrated from Vercel to GCP Cloud Run
+1071 " 🟣 GCP Cloud Run Deployment Guide Documented
+1072 " ✅ Environment and Database Configuration Updated for GCP Cloud Run
+1073 " ✅ Next.js Configuration Updated for Container Deployment
+1074 " ✅ Project Documentation Aligned to GCP/ClaimOps Identity
+1075 " ✅ Architecture Documentation Migrated from Vercel to GCP Cloud Run Model
+1076 " ✅ Deployment Handbook Extended with GCP Cloud Run and Phase-2 Hardening Sections
+1077 9:45p 🟣 Cloud Build Pipeline Configured for GCP Cloud Run Deployment
+1078 " 🟣 Multi-Stage Dockerfile for Next.js Standalone Container
+1079 " 🟣 Database Connection Layer Refactored for Dual-Mode Operation
+1080 " ✅ Environment Schema Refactored to Support Cloud SQL Configuration
+1081 " 🟣 Better Auth Configuration Extended with Trusted Origins
+1082 " ⚖️ ADR 0003 Accepted: Cloud Run + Cloud SQL Runtime Architecture
+1083 " 🔐 Secret Values Replaced with Secret Manager Reference Names in cloudbuild.yaml
+1084 9:55p 🔵 IAM Policy Constraints Require Conditions for New Bindings
+1085 9:58p 🔵 homeprojectabacus Missing .gcloudignore Configuration
+1086 " 🔵 homeprojectabacus .gitignore Excludes Claude Code and Development Tools
+1087 " ✅ .gcloudignore Configuration Created for Cloud Build
+S269 Resolve Cloud Build COMMIT_SHA variable substitution for manual gcloud builds submit (May 13, 9:59 PM)
+S270 Fix Docker build failure for Next.js application and submit build to Google Cloud Build (May 13, 9:59 PM)
+1088 10:03p 🔵 Next.js Docker build fails due to missing app/pages directory
+1089 " ✅ Added root-level path prefixes to gcloudignore exclusions
+S271 Resolve Docker build deployment: fix Next.js structure and resolve region mismatch between Artifact Registry and Cloud Build configuration (May 13, 10:03 PM)
+1090 10:07p 🔵 Artifact Registry repository located in asia-south1
+S272 Verify and troubleshoot Better Auth OAuth configuration for homeprojectabacus frontend deployment on Cloud Run (May 13, 10:08 PM)
+1091 10:15p ✅ homeprojectabacus frontend deployed to GCP artifact registry
+S273 Review git changes and create step-by-step GCP deployment guide for completed project using Cloud Build and Cloud Run (May 13, 10:15 PM)
+1092 10:21p 🔵 Project Stack Assessment for GCP Deployment
+1093 " 🔵 GCP Cloud Build Deployment Pipeline Configuration
+1094 10:23p ✅ Added Database Migration Step to Cloud Build Pipeline
+S274 Fix Cloud Build deployment failure due to IAM permission denied on Secret Manager access for database password secret (May 13, 10:23 PM)
+1095 10:41p 🔵 Cloud Build Migration Step Fails Due to Secret Manager IAM Permission Denial
+S275 Verify IAM permissions were granted and resubmit Cloud Build deployment pipeline (May 13, 10:41 PM)
+S276 Fix Cloud Build secret access failure by identifying and removing unsupported substitution variable in availableSecrets (May 13, 10:44 PM)
+1096 10:48p 🔵 Root Cause Analysis: db-password Secret Likely Missing from Google Secret Manager
+1097 10:49p 🔵 Cloud Build Secret Resolution: Substitutions Supported in availableSecrets with dynamic_substitutions
+1098 " 🔵 db-password Secret Exists in Secret Manager; Root Cause is Secret-Level Permissions
+1099 10:50p ✅ Hardcode Secret Name in cloudbuild.yaml to Eliminate Substitution Variable
+S277 GCP deployment guidance for a completed project; debugged and fixed Cloud Build secret injection failures (May 13, 10:50 PM)
+1100 10:54p 🔵 IAM Permission Denied for Secret Manager Access in Cloud Build
+1101 11:00p 🔵 Cloud Build Secret Injection Root Cause: Service Agent Permission Gap
+1102 " ⚖️ Cloud Build Secret Handling: Two-Step Approach with Direct gcloud Retrieval
+1103 11:01p ✅ Cloud Build Pipeline Refactored for Direct Secret Retrieval
+1104 11:08p ✅ Consolidated GCP Cloud Build migrations step and optimized secret handling
+S278 Deploy GCP project after git changes - research and provide step-by-step deployment guide for Cloud Build pipeline (May 13, 11:08 PM)
+**Investigated**: Git changes to cloudbuild.yaml showing consolidated migration step, secrets handling refactored from file-based to inline gcloud access, base image changed from bun-specific to cloud-sdk with manual bun installation; Cloud Build service account configuration and IAM permissions for secret access; GCP's service account behavior in Cloud Build for post-Jan 2024 projects
 
-**Learned**: • **Critical Bug (P0)**: StatusControl hardcoded to "New" on every page load—masks actual DB status; any claim marked "Reviewed" or "Actioned" reverts to "New" visually on reload despite DB update succeeding
-  • **Systematic A11y Gap**: Table rows, filter buttons, search inputs lack keyboard navigation and ARIA states (aria-pressed, aria-label, tabIndex)—power users and screen reader users blocked from primary workflow
-  • **Data Accuracy**: Dashboard stats computed from page-1 paginated response, not full dataset—shows "High risk: 3" when real count is 200
-  • **Responsive Failures**: Table has no horizontal scroll; touch targets 16-24px (need 44px minimum); `100vh` breaks on mobile Safari (need `100dvh`)
-  • **Performance**: Accordion animates CSS `height` property, forcing layout recalculation 60×/sec while expanding
-  • **Design System Health**: OKLCH theming complete and correct; dark mode full coverage; React Query patterns exemplary; no hard-coded colors in app code
-  • **Anti-Pattern Scan**: Zero AI slop detected (false positives on `bg-black/10` overlays are intentional); no gradient text, glassmorphism, or healthcare cliché
+**Learned**: GCP Cloud Build executes build steps using Compute Engine default service account (not the Cloud Build SA) in projects created or migrated after January 2024; this is only detectable via gcloud auth output in errors; database password connection strings cannot contain URL-special characters (@, /, ?, #, %, +) or they will break the PostgreSQL connection string formatting
 
-**Completed**: ✓ Full 5-dimensional technical audit completed
-  ✓ 15 issues identified and documented: 1 P0 (blocking), 5 P1 (major), 4 P2 (minor), 5 P3 (polish)
-  ✓ Audit Health Score: 14/20 (Good rating—address Accessibility and Responsive first)
-  ✓ WCAG violations mapped: SC 2.1.1 (keyboard), 1.3.1 (form labels), 4.1.2 (state/role/value), 2.5.5 (touch targets), 2.4.1 (bypass blocks)
-  ✓ Each finding documented with: location (file:line), impact, standard reference, specific recommendation, suggested tool
-  ✓ Systemic patterns identified: accessibility retrofitting needed across interactive elements; touch targets undersized globally on filter controls
-  ✓ Positive findings noted: OKLCH system complete, React Query patterns exemplary, progressive disclosure well-implemented, reduced-motion handled globally
-  ✓ Prioritized action list created: 9 recommended commands in priority order (P0→P1→P2→P3)
+**Completed**: Reviewed and consolidated cloudbuild.yaml migrations step - removed separate secret-retrieval step and merged into run-migrations with inline gcloud secrets access; changed base image from oven/bun:1.3.12 to cloud-sdk and added manual bun installation via curl; identified the correct service account (Compute Engine default) that requires IAM secretmanager.secretAccessor role
 
-**Next Steps**: User can now execute recommended fixes in priority order or all at once. Primary trajectory: fix P0 status bug → address P1 accessibility/data issues → responsive layout fixes → P2/P3 polish. Plan to re-run `$impeccable audit` after each batch of fixes to measure score improvement and confirm issues resolved. Dashboard stats endpoint may require backend changes.
+**Next Steps**: Execute gcloud IAM grant command to add secretmanager.secretAccessor permission to Compute Engine default SA; submit build to Cloud Build using gcloud builds submit with proper substitutions; monitor build logs for successful secret retrieval, Cloud SQL proxy connection, and database migrations; validate Cloud Run deployment completes with correct environment variables and secrets
 
 
-Access 670k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 308k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
