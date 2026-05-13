@@ -1,7 +1,7 @@
-import { requireSession } from "@/lib/auth-session";
+import { requireAuthorizedSession } from "@/lib/auth-session";
 import { analyzeClaim } from "@/lib/databricks/analysis";
 import { fetchFeatureRow } from "@/lib/databricks/sql";
-import { env } from "@/lib/server/env";
+import { upsertClaimReview } from "@/lib/db/claims";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ const requestSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    await requireSession();
+    await requireAuthorizedSession();
   } catch {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -46,6 +46,23 @@ export async function POST(request: Request) {
   const analysis = await analyzeClaim(claimId, featureRow.row);
   if (!analysis.ok) {
     return Response.json({ error: "Analysis failed" }, { status: 502 });
+  }
+
+  let persisted = true;
+  try {
+    await upsertClaimReview({
+      claimId,
+      riskScore: analysis.data.riskScore,
+      riskLevel: analysis.data.riskLevel.toLowerCase(),
+      narrative: analysis.data.narrative ?? "",
+    });
+  } catch (err) {
+    console.error("[analyze] failed to upsert claim review", err);
+    persisted = false;
+  }
+
+  if (!persisted) {
+    return Response.json({ error: "Analysis completed but failed to persist results" }, { status: 500 });
   }
 
   return Response.json(analysis.data);

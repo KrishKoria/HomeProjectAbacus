@@ -14,14 +14,6 @@ export async function analyzeClaim(
   | { ok: true; data: ClaimAnalysisResponse }
   | { ok: false; status: number; message: string }
 > {
-  console.log("[analysis] claimId=%s features sample", claimId, {
-    is_procedure_missing: features.is_procedure_missing,
-    diagnosis_count: features.diagnosis_count,
-    billed_vs_avg_cost: features.billed_vs_avg_cost,
-    missing_fields_count: features.missing_fields_count,
-    provider_claim_count_30d: features.provider_claim_count_30d,
-  });
-
   const payload = {
     dataframe_split: {
       columns: [...FEATURE_COLUMNS, "claim_id"],

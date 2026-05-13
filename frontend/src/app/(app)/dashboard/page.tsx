@@ -1,24 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import type { DatabricksStatus } from "@/lib/databricks/types";
-import { MagnifyingGlass, Circle, CaretDown } from "@phosphor-icons/react";
+import type { ClaimStats } from "@/lib/db/claims";
+import { MagnifyingGlass, Circle, ArrowRight } from "@phosphor-icons/react";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -34,12 +25,12 @@ export default function DashboardPage() {
     },
   });
 
-  const samplesQuery = useQuery({
-    queryKey: ["claim-samples"],
+  const statsQuery = useQuery({
+    queryKey: ["claim-stats"],
     queryFn: async () => {
-      const res = await fetch("/api/claims/samples");
-      if (!res.ok) throw new Error("Failed to fetch samples");
-      return res.json() as Promise<{ claimIds: string[] }>;
+      const res = await fetch("/api/claims/stats");
+      if (!res.ok) throw new Error("Failed to load stats");
+      return res.json() as Promise<ClaimStats>;
     },
   });
 
@@ -70,31 +61,31 @@ export default function DashboardPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  function handleAnalyze() {
+  const handleAnalyze = useCallback(() => {
     if (claimId.trim()) {
       router.push(`/claims/${claimId.trim()}`);
     }
-  }
+  }, [claimId, router]);
+
+  const stats = statsQuery.data ?? null;
 
   if (sessionQuery.isLoading) {
     return (
       <AppShell>
-        <div className="space-y-4">
-          <Skeleton className="h-8 w-48" />
+        <div className="p-6 space-y-4">
+          <Skeleton className="h-7 w-32" />
           <Skeleton className="h-10 w-full max-w-md" />
         </div>
       </AppShell>
     );
   }
 
-  if (!sessionQuery.data) {
-    return null;
-  }
+  if (!sessionQuery.data) return null;
 
   return (
     <AppShell>
-      <div className="space-y-8">
-        <div className="flex items-center justify-between">
+      <div className="p-6 space-y-8 max-w-3xl">
+        <div className="flex items-baseline justify-between">
           <h1 className="type-headline">Dashboard</h1>
           {statusQuery.data && (
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -105,141 +96,132 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <section>
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-md">
+        {/* Queue overview */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="type-title">Queue Overview</h2>
+            <button
+              onClick={() => router.push("/claims")}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              View all <ArrowRight className="size-3" aria-hidden="true" />
+            </button>
+          </div>
+
+          {(statsQuery.isLoading || statsQuery.isPending) && (
+            <div className="grid grid-cols-3 gap-px border border-border bg-border">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="bg-background px-5 py-4 space-y-1.5">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-6 w-8" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {statsQuery.isError && (
+            <div role="alert" className="border border-border px-5 py-4">
+              <p className="type-body text-muted-foreground">Could not load queue metrics.</p>
+            </div>
+          )}
+
+          {stats && stats.total > 0 && (
+            <div className="space-y-px border border-border">
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
+                <StatCell label="High risk" value={stats.risk.high} total={stats.total} valueClass="text-risk-high" onClick={() => router.push("/claims?risk=high")} />
+                <StatCell label="Medium risk" value={stats.risk.medium} total={stats.total} valueClass="text-risk-medium" onClick={() => router.push("/claims?risk=medium")} />
+                <StatCell label="Low risk" value={stats.risk.low} total={stats.total} valueClass="text-risk-low" onClick={() => router.push("/claims?risk=low")} />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border border-t border-border">
+                <StatCell label="New" value={stats.status.new} total={stats.total} onClick={() => router.push("/claims?status=new")} />
+                <StatCell label="Reviewed" value={stats.status.reviewed} total={stats.total} onClick={() => router.push("/claims?status=reviewed")} />
+                <StatCell label="Actioned" value={stats.status.actioned} total={stats.total} onClick={() => router.push("/claims?status=actioned")} />
+              </div>
+            </div>
+          )}
+
+          {stats && stats.total === 0 && (
+            <div role="status" className="border border-border py-10 text-center">
+              <p className="type-body text-muted-foreground">
+                Queue is empty. Visit Claims to populate it automatically.
+              </p>
+            </div>
+          )}
+        </section>
+
+        {/* Quick analyze */}
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 max-w-sm">
               <Input
                 ref={searchRef}
-                placeholder="Enter claim ID..."
+                placeholder="Enter claim ID…"
                 value={claimId}
                 onChange={(e) => setClaimId(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
-                className="pr-24"
+                className="pr-8"
+                aria-label="Claim ID"
               />
               <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-mono pointer-events-none">
                 /
               </kbd>
             </div>
             <Button onClick={handleAnalyze} disabled={!claimId.trim()}>
-              <MagnifyingGlass />
+              <MagnifyingGlass data-icon="inline-start" aria-hidden="true" />
               Analyze
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            Press / to focus search
+          <p className="type-caption text-muted-foreground">
+            Press <kbd className="font-mono">/</kbd> to focus. Analyzes claim and opens detail view.
           </p>
         </section>
 
-        <section className="space-y-3">
-          <h2 className="type-title">Claims Queue</h2>
-
-          {samplesQuery.isLoading && (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          )}
-
-          {samplesQuery.isError && (
-            <div className="flex items-center gap-4 py-4 px-4 border border-border">
-              <p className="text-sm text-muted-foreground flex-1">
-                Unable to load sample claims.
-              </p>
-              <Button variant="outline" size="sm" onClick={() => samplesQuery.refetch()}>
-                Retry
-              </Button>
-            </div>
-          )}
-
-          {samplesQuery.data && samplesQuery.data.claimIds.length === 0 && (
-            <div className="py-12 text-center border border-border">
-              <p className="type-body text-muted-foreground mx-auto">
-                No claims analyzed yet. Enter a claim ID above to begin.
-              </p>
-            </div>
-          )}
-
-          {samplesQuery.data && samplesQuery.data.claimIds.length > 0 && (
-            <div className="border border-border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="type-label">Claim ID</TableHead>
-                    <TableHead className="type-label">Source</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {samplesQuery.data.claimIds.map((id, i) => (
-                    <TableRow
-                      key={id}
-                      className="cursor-pointer hover:bg-muted/50 animate-in fade-in slide-in-from-bottom-1"
-                      style={{ animationDelay: `${i * 30}ms`, animationFillMode: "backwards" }}
-                      onClick={() => router.push(`/claims/${id}`)}
-                    >
-                      <TableCell className="type-mono font-medium">{id}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          sample
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </section>
-
-        <Collapsible className="space-y-2">
-          <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-            <CaretDown className="size-3 transition-transform duration-200 group-data-[state=open]:rotate-180" />
-            Runtime Status
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground pt-2">
-              {statusQuery.data ? (
-                <>
-                  <StatusBadge name="OAuth" ok={statusQuery.data.oauth} />
-                  <StatusBadge name="SQL" ok={statusQuery.data.sqlWarehouse} />
-                  <StatusBadge name="Model" ok={statusQuery.data.analysisEndpoint} />
-                </>
-              ) : (
-                <Skeleton className="h-6 w-48" />
-              )}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
       </div>
     </AppShell>
   );
 }
 
-function StatusDot({ name, ok }: { name: string; ok: boolean }) {
+function StatCell({
+  label,
+  value,
+  total,
+  valueClass,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  valueClass?: string;
+  onClick?: () => void;
+}) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
-    <span className="flex items-center gap-1.5">
-      <Circle
-        size={8}
-        weight="fill"
-        className={ok ? "text-status-ok" : "text-status-err"}
-        aria-label={`${name}: ${ok ? "connected" : "disconnected"}`}
-      />
-      {name}
-    </span>
+    <button
+      onClick={onClick}
+      className="group px-5 py-4 text-left bg-background hover:bg-muted/50 transition-colors"
+    >
+      <p className="type-caption text-muted-foreground mb-1">{label}</p>
+      <p className={`type-headline tabular-nums ${valueClass ?? "text-foreground"}`}>
+        {value}
+      </p>
+      {total > 0 && (
+        <p className="type-caption text-muted-foreground mt-0.5">{pct}%</p>
+      )}
+    </button>
   );
 }
 
-function StatusBadge({ name, ok }: { name: string; ok: boolean }) {
+function StatusDot({ name, ok }: { name: string; ok: boolean }) {
   return (
-    <span className="flex items-center gap-1.5">
+    <span className="flex items-center gap-1.5" role="img" aria-label={`${name}: ${ok ? "connected" : "disconnected"}`}>
       <Circle
         size={8}
         weight="fill"
         className={ok ? "text-status-ok" : "text-status-err"}
-        aria-label={`${name}: ${ok ? "connected" : "disconnected"}`}
+        aria-hidden="true"
       />
-      <span>{name}</span>
-      {ok ? null : <span className="text-status-err">offline</span>}
+      <span aria-hidden="true">{name}</span>
+      {!ok && <span className="type-caption text-status-err">(offline)</span>}
     </span>
   );
 }

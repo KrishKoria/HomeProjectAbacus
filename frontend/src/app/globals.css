@@ -36,6 +36,9 @@
   --color-direction-up-bg: var(--direction-up-bg);
   --color-direction-down: var(--direction-down);
   --color-direction-down-bg: var(--direction-down-bg);
+  --color-auth-bg: var(--auth-bg);
+  --color-auth-text: var(--auth-text);
+  --color-dialog-overlay: var(--dialog-overlay);
   --color-status-ok: var(--status-ok);
   --color-status-err: var(--status-err);
   --color-status-warn: var(--status-warn);
@@ -83,7 +86,7 @@
   --popover: oklch(0.985 0.006 260);
   --popover-foreground: oklch(0.15 0.02 260);
   --muted: oklch(0.95 0.01 260);
-  --muted-foreground: oklch(0.55 0.03 260);
+  --muted-foreground: oklch(0.45 0.03 260);
   --accent: oklch(0.93 0.015 260);
   --accent-foreground: oklch(0.25 0.03 260);
   --border: oklch(0.88 0.015 260);
@@ -98,7 +101,7 @@
   /* Semantic risk colors */
   --risk-low: oklch(0.55 0.14 160);
   --risk-low-bg: oklch(0.92 0.04 160);
-  --risk-medium: oklch(0.6 0.18 85);
+  --risk-medium: oklch(0.48 0.18 85);
   --risk-medium-bg: oklch(0.93 0.06 85);
   --risk-high: oklch(0.5 0.2 22);
   --risk-high-bg: oklch(0.92 0.05 22);
@@ -107,6 +110,11 @@
   --direction-up-bg: oklch(0.92 0.04 22);
   --direction-down: oklch(0.5 0.1 160);
   --direction-down-bg: oklch(0.92 0.03 160);
+  /* Auth surfaces */
+  --auth-bg: oklch(0.15 0.02 260);
+  --auth-text: oklch(0.94 0.01 260);
+  /* Overlay backdrop */
+  --dialog-overlay: oklch(0.12 0.01 260);
   /* Status indicators */
   --status-ok: oklch(0.55 0.14 160);
   --status-err: oklch(0.5 0.2 22);
@@ -149,7 +157,7 @@
   --destructive: oklch(0.65 0.22 22);
   --risk-low: oklch(0.65 0.16 160);
   --risk-low-bg: oklch(0.2 0.04 160);
-  --risk-medium: oklch(0.7 0.2 85);
+  --risk-medium: oklch(0.58 0.2 85);
   --risk-medium-bg: oklch(0.25 0.06 85);
   --risk-high: oklch(0.6 0.22 22);
   --risk-high-bg: oklch(0.22 0.05 22);
@@ -165,6 +173,9 @@
   --chart-3: oklch(0.7 0.2 85);
   --chart-4: oklch(0.6 0.22 22);
   --chart-5: oklch(0.55 0.12 300);
+  --auth-bg: oklch(0.12 0.015 260);
+  --auth-text: oklch(0.94 0.01 260);
+  --dialog-overlay: oklch(0.08 0.01 260);
   --sidebar: oklch(0.17 0.012 260);
   --sidebar-foreground: oklch(0.94 0.01 260);
   --sidebar-primary: oklch(0.6 0.14 260);

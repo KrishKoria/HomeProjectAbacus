@@ -1,4 +1,4 @@
-import { requireSession } from "@/lib/auth-session";
+import { requireAuthorizedSession } from "@/lib/auth-session";
 import { databricksFetch } from "@/lib/databricks/client";
 import { env } from "@/lib/server/env";
 
@@ -13,7 +13,7 @@ interface SqlStatementResponse {
 
 export async function GET() {
   try {
-    await requireSession();
+    await requireAuthorizedSession();
   } catch {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }

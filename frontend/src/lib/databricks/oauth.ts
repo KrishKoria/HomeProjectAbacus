@@ -43,10 +43,12 @@ async function requestToken(): Promise<TokenCache> {
 function scheduleRefresh(cacheEntry: TokenCache): void {
   if (refreshTimer) clearTimeout(refreshTimer);
   const ttl = cacheEntry.expiresAt - Date.now();
+  if (ttl <= 0) return;
   const refreshAt = Math.max(0, ttl * 0.5);
   refreshTimer = setTimeout(async () => {
     try {
       cache = await requestToken();
+      if (cache) scheduleRefresh(cache);
     } catch {
       cache = null;
     }

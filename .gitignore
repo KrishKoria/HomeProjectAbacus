@@ -12,11 +12,13 @@
 .opencode/
 .databricks/
 .code-review-graph/
+.chunkhound*
 *.egg-info/
 *.pyc
 
 data/
 graphify-out/
+claude_design_files/
 openspec/
 build/
 __pycache__/

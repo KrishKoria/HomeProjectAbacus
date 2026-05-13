@@ -25,7 +25,7 @@ async function ensureWarehouseRunning(): Promise<void> {
     `/api/2.0/sql/warehouses/${env.DATABRICKS_SQL_WAREHOUSE_ID}`,
   );
   if (whResult.ok && whResult.data.state === "STOPPED") {
-    console.log(
+    console.info(
       `[sql] Warehouse ${env.DATABRICKS_SQL_WAREHOUSE_ID} is STOPPED, starting...`,
     );
     await databricksFetch(
@@ -38,7 +38,7 @@ async function ensureWarehouseRunning(): Promise<void> {
         `/api/2.0/sql/warehouses/${env.DATABRICKS_SQL_WAREHOUSE_ID}`,
       );
       if (statusResult.ok && statusResult.data.state === "RUNNING") {
-        console.log("[sql] Warehouse is now RUNNING");
+        console.info("[sql] Warehouse is now RUNNING");
         return;
       }
     }
@@ -48,7 +48,10 @@ async function ensureWarehouseRunning(): Promise<void> {
 
 export async function fetchFeatureRow(
   claimId: string,
-): Promise<{ ok: true; row: ClaimFeatureRow } | { ok: false; status: number; message: string }> {
+): Promise<
+  | { ok: true; row: ClaimFeatureRow }
+  | { ok: false; status: number; message: string }
+> {
   const columns = FEATURE_COLUMNS.join(", ");
   const query = `SELECT ${columns} FROM ${env.CLAIMOPS_FEATURE_TABLE} WHERE claim_id = :claimId`;
 
@@ -63,9 +66,7 @@ export async function fetchFeatureRow(
         warehouse_id: env.DATABRICKS_SQL_WAREHOUSE_ID,
         disposition: "INLINE",
         wait_timeout: "30s",
-        parameters: [
-          { name: "claimId", value: claimId },
-        ],
+        parameters: [{ name: "claimId", value: claimId }],
       }),
     },
   );
@@ -90,7 +91,8 @@ async function pollStatement(
   maxRetries = 10,
   delayMs = 1000,
 ): Promise<
-  { ok: true; data: SqlStatementResponse } | { ok: false; status: number; message: string }
+  | { ok: true; data: SqlStatementResponse }
+  | { ok: false; status: number; message: string }
 > {
   for (let i = 0; i < maxRetries; i++) {
     await new Promise((r) => setTimeout(r, delayMs));
@@ -110,7 +112,9 @@ async function pollStatement(
 
 function extractRow(
   stmt: SqlStatementResponse,
-): { ok: true; row: ClaimFeatureRow } | { ok: false; status: number; message: string } {
+):
+  | { ok: true; row: ClaimFeatureRow }
+  | { ok: false; status: number; message: string } {
   if (stmt.status.state === "FAILED") {
     return { ok: false, status: 500, message: "SQL statement failed" };
   }
@@ -119,21 +123,17 @@ function extractRow(
   const rows = stmt.result?.data_array ?? [];
 
   if (rows.length === 0) {
-    return { ok: false, status: 404, message: "Claim ID not found in feature table" };
+    return {
+      ok: false,
+      status: 404,
+      message: "Claim ID not found in feature table",
+    };
   }
 
   const row: Record<string, unknown> = {};
   for (let i = 0; i < columns.length; i++) {
     row[columns[i]] = coerceSqlValue(rows[0][i]);
   }
-
-  console.log("[sql] claimId query result", {
-    columnCount: columns.length,
-    rowCount: rows.length,
-    columns: columns.slice(0, 5),
-    rawValues: rows[0]?.slice(0, 5),
-    coercedValues: columns.slice(0, 5).map((col) => row[col]),
-  });
 
   return { ok: true, row: row as unknown as ClaimFeatureRow };
 }
