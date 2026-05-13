@@ -3,19 +3,15 @@ import { z } from "zod";
 const envSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.string().url(),
+  BETTER_AUTH_TRUSTED_ORIGINS: z.string().optional(),
   GOOGLE_CLIENT_ID: z.string().min(1),
   GOOGLE_CLIENT_SECRET: z.string().min(1),
-  DATABASE_URL: z.string().url().refine(
-    (url) => {
-      try {
-        const u = new URL(url);
-        return u.port === "5433" || u.hostname.includes("pooler");
-      } catch {
-        return true;
-      }
-    },
-    { message: "DATABASE_URL should use Neon pooled connection (port 5433 or -pooler hostname), not direct port 5432" }
-  ),
+  DATABASE_URL: z.string().url().optional(),
+  CLOUD_SQL_CONNECTION_NAME: z.string().min(1).optional(),
+  DB_USER: z.string().min(1).optional(),
+  DB_PASSWORD: z.string().min(1).optional(),
+  DB_NAME: z.string().min(1).optional(),
+  DB_PORT: z.coerce.number().int().positive().default(5432),
   DATABRICKS_HOST: z.string().url(),
   DATABRICKS_CLIENT_ID: z.string().min(1),
   DATABRICKS_CLIENT_SECRET: z.string().min(1),
@@ -26,6 +22,27 @@ const envSchema = z.object({
   CLAIMOPS_ALLOWED_EMAIL_DOMAINS: z.string().min(1),
   CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS: z.string().min(1),
   CLAIMOPS_CHAT_MODEL: z.string().default("databricks-meta-llama-3-3-70b-instruct"),
+}).superRefine((values, ctx) => {
+  if (values.DATABASE_URL) {
+    return;
+  }
+
+  const requiredCloudSqlKeys: Array<keyof typeof values> = [
+    "CLOUD_SQL_CONNECTION_NAME",
+    "DB_USER",
+    "DB_PASSWORD",
+    "DB_NAME",
+  ];
+
+  for (const key of requiredCloudSqlKeys) {
+    if (!values[key]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `${key} is required when DATABASE_URL is not set`,
+      });
+    }
+  }
 });
 
 function createEnv() {
