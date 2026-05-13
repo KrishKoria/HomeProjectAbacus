@@ -4,16 +4,12 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Final
-
-_SCRIPT_PATH: Final[Path] = Path(
-    globals().get("__file__", sys._getframe().f_code.co_filename)
-).resolve()
-_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+_PROJECT_ROOT = Path(globals().get("__file__", sys._getframe().f_code.co_filename)).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.analytics.observability_assets import write_observability_tables
+from src.common.bronze_pipeline_config import add_common_databricks_args
 from src.common.diagnostics import DIAGNOSTIC_DOMAIN_OBSERVABILITY, format_claimops_diagnostic_id
 from src.framework import HealthCheckResult
 
@@ -23,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build observability tables from pipeline event logs.")
-    parser.add_argument("--catalog", default="healthcare")
+    add_common_databricks_args(parser)
     parser.add_argument("--analytics-schema", default="analytics")
     parser.add_argument("--pipeline-id", default=None)
     parser.add_argument("--published-event-log-table", default=None)

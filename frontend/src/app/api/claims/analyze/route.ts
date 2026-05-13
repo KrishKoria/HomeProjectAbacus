@@ -50,11 +50,17 @@ export async function POST(request: Request) {
 
   let persisted = true;
   try {
+    const topReason =
+      analysis.data.topReasons?.find((r) => r.direction === "increases_risk")?.description ??
+      analysis.data.topReasons?.[0]?.description ??
+      null;
+
     await upsertClaimReview({
       claimId,
       riskScore: analysis.data.riskScore,
       riskLevel: analysis.data.riskLevel.toLowerCase(),
       narrative: analysis.data.narrative ?? "",
+      topReason,
     });
   } catch (err) {
     console.error("[analyze] failed to upsert claim review", err);

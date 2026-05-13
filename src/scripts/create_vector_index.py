@@ -335,30 +335,6 @@ def create_vector_index(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def _legacy_payload(args: argparse.Namespace) -> dict:
-    """Compatibility helper retained for older tests and external callers."""
-    return {
-        "name": args.index_name,
-        "endpoint_name": args.endpoint_name,
-        "index_name": args.index_name,
-        "primary_key": args.primary_key,
-        "index_type": "DELTA_SYNC",
-        "source_table": args.source_table,
-        "mv_source_table": args.mv_source_table,
-        "query_model_endpoint": args.query_model_endpoint,
-        "delta_sync_index_spec": {
-            "source_table": args.source_table,
-            "pipeline_type": PIPELINE_TYPE,
-            "embedding_source_columns": [
-                {
-                    "name": args.embedding_column,
-                    "embedding_dimension": EMBEDDING_DIM,
-                }
-            ],
-        },
-    }
-
-
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()

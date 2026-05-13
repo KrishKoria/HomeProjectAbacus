@@ -5,14 +5,7 @@ import logging
 import pickle
 import sys
 from pathlib import Path
-from typing import Final
-
-import pandas as pd
-
-_SCRIPT_PATH: Final[Path] = Path(
-    globals().get("__file__", sys._getframe().f_code.co_filename)
-).resolve()
-_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+_PROJECT_ROOT = Path(globals().get("__file__", sys._getframe().f_code.co_filename)).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 

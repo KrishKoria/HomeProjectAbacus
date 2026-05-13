@@ -6,8 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MagnifyingGlass, ArrowDown, ArrowUp } from "@phosphor-icons/react";
 import { AppShell } from "@/components/app-shell";
-import { RiskBadge } from "@/components/risk-badge";
-import { RiskScoreCell } from "@/components/risk-score-cell";
+import { RiskBar } from "@/components/risk-bar";
 import { useAnalysisQueue } from "@/hooks/use-analysis-queue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,7 +52,9 @@ function StatusBadge({ status }: { status: string }) {
   const label = status.charAt(0).toUpperCase() + status.slice(1);
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium ${cls}`}>
+    <span
+      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
       {label}
     </span>
   );
@@ -62,7 +63,7 @@ function StatusBadge({ status }: { status: string }) {
 function SkeletonTable() {
   return (
     <div className="border border-border overflow-x-auto">
-      <div className="grid min-w-[540px] grid-cols-[minmax(120px,1fr)_minmax(120px,2fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-4 border-b border-border px-4 py-3">
+      <div className="grid min-w-135 grid-cols-[minmax(120px,1fr)_minmax(120px,2fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-4 border-b border-border px-4 py-3">
         {Array.from({ length: 5 }).map((_, index) => (
           <Skeleton key={index} className="h-3 w-full" />
         ))}
@@ -70,7 +71,7 @@ function SkeletonTable() {
       {Array.from({ length: 8 }).map((_, index) => (
         <div
           key={index}
-          className="grid min-w-[540px] grid-cols-[minmax(120px,1fr)_minmax(120px,2fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-4 border-b border-border px-4 py-3 last:border-b-0"
+          className="grid min-w-135 grid-cols-[minmax(120px,1fr)_minmax(120px,2fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-4 border-b border-border px-4 py-3 last:border-b-0"
         >
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-2/3" />
@@ -143,19 +144,30 @@ function ClaimsContent() {
   const autoEnqueuedClaimIdsRef = useRef(new Set<string>());
 
   const currentSearch = searchParams.get("search") ?? "";
-  const riskFilter = VALID_RISK.includes((searchParams.get("risk") ?? "") as RiskLevel)
+  const riskFilter = VALID_RISK.includes(
+    (searchParams.get("risk") ?? "") as RiskLevel,
+  )
     ? ((searchParams.get("risk") ?? "all") as RiskLevel)
     : "all";
-  const statusFilter = (VALID_STATUS as readonly string[]).includes(searchParams.get("status") ?? "")
+  const statusFilter = (VALID_STATUS as readonly string[]).includes(
+    searchParams.get("status") ?? "",
+  )
     ? ((searchParams.get("status") ?? "all") as StatusFilter)
     : "all";
-  const sortField = VALID_SORT.includes((searchParams.get("sort") ?? "") as SortField)
+  const sortField = VALID_SORT.includes(
+    (searchParams.get("sort") ?? "") as SortField,
+  )
     ? ((searchParams.get("sort") ?? "riskScore") as SortField)
     : "riskScore";
-  const sortDir = VALID_ORDER.includes((searchParams.get("order") ?? "") as SortDir)
+  const sortDir = VALID_ORDER.includes(
+    (searchParams.get("order") ?? "") as SortDir,
+  )
     ? ((searchParams.get("order") ?? "desc") as SortDir)
     : "desc";
-  const page = Math.max(1, Number.parseInt(searchParams.get("page") ?? "1", 10) || 1);
+  const page = Math.max(
+    1,
+    Number.parseInt(searchParams.get("page") ?? "1", 10) || 1,
+  );
 
   const buildHref = (updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -200,7 +212,17 @@ function ClaimsContent() {
   }, []);
 
   const claimsQuery = useQuery({
-    queryKey: ["claims", { order: sortDir, page, risk: riskFilter, search: currentSearch, sort: sortField, status: statusFilter }],
+    queryKey: [
+      "claims",
+      {
+        order: sortDir,
+        page,
+        risk: riskFilter,
+        search: currentSearch,
+        sort: sortField,
+        status: statusFilter,
+      },
+    ],
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: "20",
@@ -223,7 +245,12 @@ function ClaimsContent() {
       const response = await fetch("/api/claims/statuses");
       if (!response.ok) throw new Error("Failed to fetch statuses");
       return response.json() as Promise<{
-        statuses: { analyzedAt: string | null; claimId: string; riskLevel: string | null; status: string }[];
+        statuses: {
+          analyzedAt: string | null;
+          claimId: string;
+          riskLevel: string | null;
+          status: string;
+        }[];
       }>;
     },
     staleTime: 5 * 60 * 1000,
@@ -234,8 +261,12 @@ function ClaimsContent() {
   const total = claimsQuery.data?.total ?? 0;
   const totalPages = claimsQuery.data?.totalPages ?? 1;
   const statuses = statusesQuery.data?.statuses ?? [];
-  const statusesByClaimId = new Map(statuses.map((status) => [status.claimId, status]));
-  const analyzedCount = statuses.filter((status) => status.riskLevel !== null).length;
+  const statusesByClaimId = new Map(
+    statuses.map((status) => [status.claimId, status]),
+  );
+  const analyzedCount = statuses.filter(
+    (status) => status.riskLevel !== null,
+  ).length;
   const totalInDb = statuses.length;
   const allUnanalyzedClaimIds = statuses
     .filter((status) => status.riskLevel === null)
@@ -304,7 +335,9 @@ function ClaimsContent() {
       <div className="flex items-baseline justify-between">
         <h1 className="type-headline">Claims</h1>
         <span className="type-caption text-muted-foreground">
-          {totalInDb > 0 ? `${analyzedCount} analyzed, ${totalInDb - analyzedCount} pending` : ""}
+          {totalInDb > 0
+            ? `${analyzedCount} analyzed, ${totalInDb - analyzedCount} pending`
+            : ""}
         </span>
       </div>
 
@@ -315,7 +348,15 @@ function ClaimsContent() {
               aria-label="Analysis progress"
               aria-valuemax={100}
               aria-valuemin={0}
-              aria-valuenow={progress.total === 0 ? 0 : Math.round(((progress.completed + progress.failed) / progress.total) * 100)}
+              aria-valuenow={
+                progress.total === 0
+                  ? 0
+                  : Math.round(
+                      ((progress.completed + progress.failed) /
+                        progress.total) *
+                        100,
+                    )
+              }
               className="h-0.5 flex-1 overflow-hidden bg-muted"
               role="progressbar"
             >
@@ -327,7 +368,8 @@ function ClaimsContent() {
               />
             </div>
             <span className="type-caption shrink-0 tabular-nums text-muted-foreground">
-              {isProcessing ? "Analyzing" : "Queued"} {progress.completed + progress.failed} / {progress.total}
+              {isProcessing ? "Analyzing" : "Queued"}{" "}
+              {progress.completed + progress.failed} / {progress.total}
             </span>
           </div>
           {(progress.failed > 0 || progress.current) && (
@@ -352,47 +394,53 @@ function ClaimsContent() {
           }
         />
 
-        <div aria-hidden className="h-5 w-px shrink-0 bg-border" />
-
-        <div className="flex items-center gap-2">
-          <span className="type-label shrink-0 text-muted-foreground">Risk</span>
-          <div aria-label="Filter by risk level" className="flex items-center gap-1" role="group">
-            {(["all", "high", "medium", "low"] as const).map((level) => (
-              <button
-                key={level}
-                aria-pressed={riskFilter === level}
-                className={`min-h-10 border px-2.5 py-2 text-xs font-medium transition-colors ${
-                  riskFilter === level
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                }`}
-                onClick={() =>
-                  updateRoute({
-                    page: null,
-                    risk: level === "all" ? null : level,
-                  })
-                }
-                type="button"
-              >
-                {level === "all" ? "All" : level.charAt(0).toUpperCase() + level.slice(1)}
-              </button>
-            ))}
-          </div>
+        <div
+          aria-label="Filter by risk level"
+          className="flex items-center border border-border"
+          role="group"
+        >
+          {(["all", "high", "medium", "low"] as const).map((level, i) => (
+            <button
+              key={level}
+              aria-pressed={riskFilter === level}
+              className={`h-8 px-2.5 text-label font-medium transition-colors ${
+                i > 0 ? "border-l border-border" : ""
+              } ${
+                riskFilter === level
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+              onClick={() =>
+                updateRoute({
+                  page: null,
+                  risk: level === "all" ? null : level,
+                })
+              }
+              type="button"
+            >
+              {level === "all"
+                ? "All"
+                : level.charAt(0).toUpperCase() + level.slice(1)}
+            </button>
+          ))}
         </div>
 
-        <div aria-hidden className="h-5 w-px shrink-0 bg-border" />
-
-        <div className="flex items-center gap-2">
-          <span className="type-label shrink-0 text-muted-foreground">Status</span>
-          <div aria-label="Filter by status" className="flex items-center gap-1" role="group">
-            {(["all", "new", "reviewed", "actioned"] as const).map((status) => (
+        <div
+          aria-label="Filter by status"
+          className="flex items-center border border-border"
+          role="group"
+        >
+          {(["all", "new", "reviewed", "actioned"] as const).map(
+            (status, i) => (
               <button
                 key={status}
                 aria-pressed={statusFilter === status}
-                className={`min-h-10 border px-2.5 py-2 text-xs font-medium transition-colors ${
+                className={`h-8 px-2.5 text-label font-medium transition-colors ${
+                  i > 0 ? "border-l border-border" : ""
+                } ${
                   statusFilter === status
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 }`}
                 onClick={() =>
                   updateRoute({
@@ -402,10 +450,12 @@ function ClaimsContent() {
                 }
                 type="button"
               >
-                {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1)}
+                {status === "all"
+                  ? "All"
+                  : status.charAt(0).toUpperCase() + status.slice(1)}
               </button>
-            ))}
-          </div>
+            ),
+          )}
         </div>
 
         <div className="ml-auto flex items-center gap-2">
@@ -428,27 +478,36 @@ function ClaimsContent() {
       {claimsQuery.isLoading && <SkeletonTable />}
 
       {claimsQuery.isError && (
-        <div className="flex items-center gap-4 border border-border px-5 py-4" role="alert">
+        <div
+          className="flex items-center gap-4 border border-border px-5 py-4"
+          role="alert"
+        >
           <p className="type-body flex-1 text-muted-foreground">
             Claims could not be loaded. Check your connection and try again.
           </p>
-          <Button onClick={() => claimsQuery.refetch()} size="sm" variant="outline">
+          <Button
+            onClick={() => claimsQuery.refetch()}
+            size="sm"
+            variant="outline"
+          >
             Retry
           </Button>
         </div>
       )}
 
-      {!claimsQuery.isLoading && !claimsQuery.isError && claims.length === 0 && (
-        <div className="border border-border py-16 text-center" role="status">
-          <p className="type-body mx-auto text-muted-foreground">
-            {total === 0 && statuses.length > 0
-              ? "Analyzing claims from feature table…"
-              : total === 0
-                ? "No claims found."
-                : "No claims match the current filters."}
-          </p>
-        </div>
-      )}
+      {!claimsQuery.isLoading &&
+        !claimsQuery.isError &&
+        claims.length === 0 && (
+          <div className="border border-border py-16 text-center" role="status">
+            <p className="type-body mx-auto text-muted-foreground">
+              {total === 0 && statuses.length > 0
+                ? "Analyzing claims from feature table…"
+                : total === 0
+                  ? "No claims found."
+                  : "No claims match the current filters."}
+            </p>
+          </div>
+        )}
 
       {!claimsQuery.isLoading && !claimsQuery.isError && claims.length > 0 && (
         <>
@@ -456,9 +515,32 @@ function ClaimsContent() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="type-label w-24">Risk</TableHead>
                   <TableHead
-                    aria-sort={sortField === "claimId" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                    aria-sort={
+                      sortField === "riskScore"
+                        ? sortDir === "asc"
+                          ? "ascending"
+                          : "descending"
+                        : "none"
+                    }
+                    className="type-label w-36"
+                  >
+                    <button
+                      className="flex items-center gap-1 transition-colors hover:text-foreground"
+                      onClick={() => toggleSort("riskScore")}
+                      type="button"
+                    >
+                      Risk {getSortIcon("riskScore")}
+                    </button>
+                  </TableHead>
+                  <TableHead
+                    aria-sort={
+                      sortField === "claimId"
+                        ? sortDir === "asc"
+                          ? "ascending"
+                          : "descending"
+                        : "none"
+                    }
                     className="type-label"
                   >
                     <button
@@ -469,21 +551,16 @@ function ClaimsContent() {
                       Claim ID {getSortIcon("claimId")}
                     </button>
                   </TableHead>
-                  <TableHead
-                    aria-sort={sortField === "riskScore" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
-                    className="type-label w-36"
-                  >
-                    <button
-                      className="flex items-center gap-1 transition-colors hover:text-foreground"
-                      onClick={() => toggleSort("riskScore")}
-                      type="button"
-                    >
-                      Score {getSortIcon("riskScore")}
-                    </button>
-                  </TableHead>
+                  <TableHead className="type-label">Finding</TableHead>
                   <TableHead className="type-label w-28">Status</TableHead>
                   <TableHead
-                    aria-sort={sortField === "analyzedAt" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                    aria-sort={
+                      sortField === "analyzedAt"
+                        ? sortDir === "asc"
+                          ? "ascending"
+                          : "descending"
+                        : "none"
+                    }
                     className="type-label w-36"
                   >
                     <button
@@ -491,7 +568,7 @@ function ClaimsContent() {
                       onClick={() => toggleSort("analyzedAt")}
                       type="button"
                     >
-                      Analysis Date {getSortIcon("analyzedAt")}
+                      Date {getSortIcon("analyzedAt")}
                     </button>
                   </TableHead>
                 </TableRow>
@@ -500,10 +577,15 @@ function ClaimsContent() {
                 {claims.map((claim) => (
                   <TableRow
                     key={claim.claimId}
-                    className={claim.riskLevel === null ? "opacity-50" : undefined}
+                    className={
+                      claim.riskLevel === null ? "opacity-50" : undefined
+                    }
                   >
                     <TableCell>
-                      <RiskBadge level={claim.riskLevel} />
+                      <RiskBar
+                        level={claim.riskLevel}
+                        score={claim.riskScore}
+                      />
                     </TableCell>
                     <TableCell className="type-mono font-medium">
                       <Link
@@ -513,26 +595,59 @@ function ClaimsContent() {
                         {claim.claimId}
                       </Link>
                     </TableCell>
-                    <TableCell>
-                      <RiskScoreCell score={claim.riskScore} />
+                    <TableCell className="type-caption text-muted-foreground truncate max-w-50">
+                      {claim.topReason ?? "—"}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={claim.status} />
                     </TableCell>
                     <TableCell className="type-caption text-muted-foreground">
                       {claim.analyzedAt
-                        ? new Date(claim.analyzedAt).toLocaleDateString(undefined, {
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            month: "short",
-                          })
+                        ? new Date(claim.analyzedAt).toLocaleDateString(
+                            undefined,
+                            {
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              month: "short",
+                            },
+                          )
                         : "—"}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+          </div>
+
+          <div className="h-10 flex items-center gap-6 px-1 text-[11.5px] text-muted-foreground border-t border-border/40">
+            <span>
+              <span className="tabular-nums text-foreground font-medium">
+                {total}
+              </span>{" "}
+              claims
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-none bg-risk-high inline-block" />
+              <span className="tabular-nums text-foreground font-medium">
+                {statuses.filter((s) => s.riskLevel === "high").length}
+              </span>{" "}
+              high
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-none bg-risk-medium inline-block" />
+              <span className="tabular-nums text-foreground font-medium">
+                {statuses.filter((s) => s.riskLevel === "medium").length}
+              </span>{" "}
+              medium
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-none bg-risk-low inline-block" />
+              <span className="tabular-nums text-foreground font-medium">
+                {statuses.filter((s) => s.riskLevel === "low").length}
+              </span>{" "}
+              low
+            </span>
           </div>
 
           <div className="flex items-center justify-between gap-4">
@@ -544,20 +659,26 @@ function ClaimsContent() {
               <PaginationContent className="flex-nowrap">
                 <PaginationItem>
                   <PaginationPrevious
-                    className={page <= 1 ? "pointer-events-none opacity-50" : undefined}
-                    href={buildHref({ page: page > 1 ? String(page - 1) : null })}
+                    className={
+                      page <= 1 ? "pointer-events-none opacity-50" : undefined
+                    }
+                    href={buildHref({
+                      page: page > 1 ? String(page - 1) : null,
+                    })}
                   />
                 </PaginationItem>
 
                 {Array.from({ length: totalPages }, (_, index) => index + 1)
                   .filter((candidatePage) => {
                     if (totalPages <= 7) return true;
-                    if (candidatePage === 1 || candidatePage === totalPages) return true;
+                    if (candidatePage === 1 || candidatePage === totalPages)
+                      return true;
                     return Math.abs(candidatePage - page) <= 1;
                   })
                   .flatMap((candidatePage, index, pages) => {
                     const items: ReactNode[] = [];
-                    const shouldShowEllipsis = index > 0 && candidatePage - pages[index - 1] > 1;
+                    const shouldShowEllipsis =
+                      index > 0 && candidatePage - pages[index - 1] > 1;
 
                     if (shouldShowEllipsis) {
                       items.push(
@@ -583,8 +704,17 @@ function ClaimsContent() {
 
                 <PaginationItem>
                   <PaginationNext
-                    className={page >= totalPages ? "pointer-events-none opacity-50" : undefined}
-                    href={buildHref({ page: page < totalPages ? String(page + 1) : String(totalPages) })}
+                    className={
+                      page >= totalPages
+                        ? "pointer-events-none opacity-50"
+                        : undefined
+                    }
+                    href={buildHref({
+                      page:
+                        page < totalPages
+                          ? String(page + 1)
+                          : String(totalPages),
+                    })}
                   />
                 </PaginationItem>
               </PaginationContent>

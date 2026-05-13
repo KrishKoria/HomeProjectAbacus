@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pyspark import pipelines as dp
-from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
@@ -23,6 +22,7 @@ from common.silver_cleaning import (
 from common.silver_pipeline_config import (
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
+    dedup_window,
     quarantine_table_name,
     read_bronze_snapshot,
     silver_table_name,
@@ -38,11 +38,7 @@ QUARANTINE_DIAGNOSIS_TABLE = quarantine_table_name(CATALOG_DEFAULT, "diagnosis",
 @dp.temporary_view(name="diagnosis_stream")
 def _diagnosis_stream():
     """Normalize diagnosis rows and attach validation flags for trusted/quarantine splits."""
-    duplicate_window = Window.partitionBy("diagnosis_code").orderBy(
-        F.col("_ingested_at").desc(),
-        F.col("_pipeline_run_id").desc(),
-        F.col("_source_file").desc(),
-    )
+    duplicate_window = dedup_window("diagnosis_code")
     return (
         read_bronze_snapshot(spark, BRONZE_DIAGNOSIS_TABLE)
         .withColumn("diagnosis_code", spark_normalize_code(F.col("diagnosis_code")))

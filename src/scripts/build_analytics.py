@@ -4,17 +4,14 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Final
-
-_SCRIPT_PATH: Final[Path] = Path(
-    globals().get("__file__", sys._getframe().f_code.co_filename)
-).resolve()
-_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+_PROJECT_ROOT = Path(globals().get("__file__", sys._getframe().f_code.co_filename)).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.analytics.claims_analytics import build_and_persist_claims_assets
+from src.common.bronze_pipeline_config import add_common_databricks_args
 from src.common.diagnostics import DIAGNOSTIC_DOMAIN_ANALYTICS, format_claimops_diagnostic_id
+from src.common.silver_cleaning import normalize_state
 from src.framework import HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -22,29 +19,25 @@ logger = logging.getLogger(__name__)
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build analytics tables from trusted Silver inputs.")
-    parser.add_argument("--catalog", default="healthcare")
+    add_common_databricks_args(parser)
     parser.add_argument("--bronze-schema", default="bronze")
     parser.add_argument("--analytics-schema", default="analytics")
     parser.add_argument("--upstream-status", default="success")
     return parser.parse_args(argv)
 
 
-def _normalize_state(value: str | None) -> str:
-    return (value or "").strip().lower()
-
-
 def main(argv: list[str] | None = None) -> int:
     from pyspark.sql import SparkSession
 
     args = _parse_args(argv)
-    if _normalize_state(args.upstream_status) != "success":
+    if normalize_state(args.upstream_status) != "success":
         print(
             HealthCheckResult(
                 service_name="analytics",
                 healthy=True,
                 message=(
                     "skipped_due_upstream_status "
-                    f"upstream_status={_normalize_state(args.upstream_status) or 'unknown'}"
+                    f"upstream_status={normalize_state(args.upstream_status) or 'unknown'}"
                 ),
             ).summary_line()
         )

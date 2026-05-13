@@ -1,0 +1,1 @@
+ALTER TABLE "claim_reviews" ADD COLUMN "top_reason" text;

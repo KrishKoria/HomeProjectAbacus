@@ -9,7 +9,6 @@ patient values in logs.
 from __future__ import annotations
 
 from pyspark import pipelines as dp
-from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
@@ -33,6 +32,7 @@ from common.silver_pipeline_config import (
     MONEY_DECIMAL_SCALE,
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
+    dedup_window,
     quarantine_table_name,
     read_bronze_snapshot,
     silver_table_name,
@@ -140,12 +140,7 @@ def _claims_validated_rows():
         "missing_billed_amount": F.col("billed_amount").isNull(),
     }
 
-    duplicate_window = Window.partitionBy("claim_id").orderBy(
-        # Keep the latest ingested row when the same claim_id appears multiple times.
-        F.col("_ingested_at").desc(),
-        F.col("_pipeline_run_id").desc(),
-        F.col("_source_file").desc(),
-    )
+    duplicate_window = dedup_window("claim_id")
 
     with_flags = (
         cleaned.withColumn("_data_quality_flags", spark_quality_flags(quality_flags))

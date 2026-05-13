@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pyspark import pipelines as dp
-from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import CATALOG_DEFAULT, bronze_table_name
@@ -25,6 +24,7 @@ from common.silver_pipeline_config import (
     MONEY_DECIMAL_SCALE,
     QUARANTINE_SCHEMA_DEFAULT,
     SILVER_SCHEMA_DEFAULT,
+    dedup_window,
     quarantine_table_name,
     read_bronze_snapshot,
     silver_table_name,
@@ -40,12 +40,7 @@ QUARANTINE_COST_TABLE = quarantine_table_name(CATALOG_DEFAULT, "cost", QUARANTIN
 @dp.temporary_view(name="cost_stream")
 def _cost_stream():
     """Normalize regional benchmark rows and attach booleans used by the split outputs."""
-    duplicate_window = Window.partitionBy("procedure_code", "region").orderBy(
-        # Benchmarks are keyed by procedure + region, so later records replace earlier ones.
-        F.col("_ingested_at").desc(),
-        F.col("_pipeline_run_id").desc(),
-        F.col("_source_file").desc(),
-    )
+    duplicate_window = dedup_window("procedure_code", "region")
     return (
         read_bronze_snapshot(spark, BRONZE_COST_TABLE)
         .withColumn("procedure_code", spark_normalize_code(F.col("procedure_code")))

@@ -3,10 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import sys
-import time
-from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import mlflow
 import pandas as pd
@@ -17,10 +14,9 @@ from mlflow.models.resources import (
 )
 from mlflow.types.schema import ColSpec, DataType, Schema
 
-_SCRIPT_PATH: Final[Path] = Path(
-    globals().get("__file__", sys._getframe().f_code.co_filename)
-).resolve()
-_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+import sys
+from pathlib import Path
+_PROJECT_ROOT = Path(globals().get("__file__", sys._getframe().f_code.co_filename)).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 

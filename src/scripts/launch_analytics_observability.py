@@ -4,18 +4,15 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Final
 
 from databricks.sdk import WorkspaceClient
 
-_SCRIPT_PATH: Final[Path] = Path(
-    globals().get("__file__", sys._getframe().f_code.co_filename)
-).resolve()
-_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+_PROJECT_ROOT = Path(globals().get("__file__", sys._getframe().f_code.co_filename)).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.common.diagnostics import DIAGNOSTIC_DOMAIN_ANALYTICS, DIAGNOSTIC_DOMAIN_OBSERVABILITY, format_claimops_diagnostic_id
+from src.common.silver_cleaning import normalize_state
 from src.framework import HealthCheckResult
 
 
@@ -34,10 +31,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _normalize_state(value: str | None) -> str:
-    return (value or "").strip().lower()
-
-
 def _resolve_job_id(workspace: WorkspaceClient, job_name: str) -> int:
     matching = [job for job in workspace.jobs.list(name=job_name) if job.job_id is not None]
     if not matching:
@@ -48,7 +41,7 @@ def _resolve_job_id(workspace: WorkspaceClient, job_name: str) -> int:
 
 
 def _compute_upstream_status(pipeline_result: str, verify_result: str) -> str:
-    if _normalize_state(pipeline_result) == "success" and _normalize_state(verify_result) == "success":
+    if normalize_state(pipeline_result) == "success" and normalize_state(verify_result) == "success":
         return "success"
     return "failure"
 

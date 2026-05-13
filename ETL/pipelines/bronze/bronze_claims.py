@@ -73,10 +73,9 @@ from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
 from common.bronze_pipeline_config import (
-    stable_pipeline_run_id,
+    bronze_csv_stream,
     bronze_table_name,
     bronze_volume_path,
-    csv_autoloader_options,
     table_properties_for_sensitivity,
 )
 from common.bronze_sources import BRONZE_SOURCES
@@ -204,20 +203,4 @@ def bronze_claims():
             _rescued_data   str?       Raw unparseable content if Auto Loader could not parse
                                        a row. NULL on clean rows. Non-null value = data defect.
     """
-    return (
-        spark.readStream
-        .format("cloudFiles")
-        .options(**csv_autoloader_options())
-        .load(VOLUME_PATH)
-        .withColumn("_ingested_at", F.current_timestamp())
-        .withColumn("_source_file", F.col("_metadata.file_path"))
-        .withColumn(
-            "_pipeline_run_id",
-            # Timestamp-based run ID groups rows from the same pipeline execution.
-            # Format: yyyyMMdd_HHmmss — sortable, human-readable, no external dependency.
-            stable_pipeline_run_id(),
-        )
-        # Drop the internal _metadata struct after extracting file_path into _source_file.
-        # The struct itself is an Auto Loader implementation detail, not a business column.
-        .drop("_metadata")
-    )
+    return bronze_csv_stream(spark, VOLUME_PATH)
