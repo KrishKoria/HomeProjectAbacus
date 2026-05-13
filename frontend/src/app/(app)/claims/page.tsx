@@ -6,8 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MagnifyingGlass, ArrowDown, ArrowUp } from "@phosphor-icons/react";
 import { AppShell } from "@/components/app-shell";
-import { RiskBadge } from "@/components/risk-badge";
-import { RiskScoreCell } from "@/components/risk-score-cell";
+import { RiskBar } from "@/components/risk-bar";
 import { useAnalysisQueue } from "@/hooks/use-analysis-queue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -352,60 +351,62 @@ function ClaimsContent() {
           }
         />
 
-        <div aria-hidden className="h-5 w-px shrink-0 bg-border" />
-
-        <div className="flex items-center gap-2">
-          <span className="type-label shrink-0 text-muted-foreground">Risk</span>
-          <div aria-label="Filter by risk level" className="flex items-center gap-1" role="group">
-            {(["all", "high", "medium", "low"] as const).map((level) => (
-              <button
-                key={level}
-                aria-pressed={riskFilter === level}
-                className={`min-h-10 border px-2.5 py-2 text-xs font-medium transition-colors ${
-                  riskFilter === level
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                }`}
-                onClick={() =>
-                  updateRoute({
-                    page: null,
-                    risk: level === "all" ? null : level,
-                  })
-                }
-                type="button"
-              >
-                {level === "all" ? "All" : level.charAt(0).toUpperCase() + level.slice(1)}
-              </button>
-            ))}
-          </div>
+        <div
+          aria-label="Filter by risk level"
+          className="flex items-center border border-border"
+          role="group"
+        >
+          {(["all", "high", "medium", "low"] as const).map((level, i) => (
+            <button
+              key={level}
+              aria-pressed={riskFilter === level}
+              className={`h-8 px-2.5 text-[12px] font-medium transition-colors ${
+                i > 0 ? "border-l border-border" : ""
+              } ${
+                riskFilter === level
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+              onClick={() =>
+                updateRoute({
+                  page: null,
+                  risk: level === "all" ? null : level,
+                })
+              }
+              type="button"
+            >
+              {level === "all" ? "All" : level.charAt(0).toUpperCase() + level.slice(1)}
+            </button>
+          ))}
         </div>
 
-        <div aria-hidden className="h-5 w-px shrink-0 bg-border" />
-
-        <div className="flex items-center gap-2">
-          <span className="type-label shrink-0 text-muted-foreground">Status</span>
-          <div aria-label="Filter by status" className="flex items-center gap-1" role="group">
-            {(["all", "new", "reviewed", "actioned"] as const).map((status) => (
-              <button
-                key={status}
-                aria-pressed={statusFilter === status}
-                className={`min-h-10 border px-2.5 py-2 text-xs font-medium transition-colors ${
-                  statusFilter === status
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                }`}
-                onClick={() =>
-                  updateRoute({
-                    page: null,
-                    status: status === "all" ? null : status,
-                  })
-                }
-                type="button"
-              >
-                {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1)}
-              </button>
-            ))}
-          </div>
+        <div
+          aria-label="Filter by status"
+          className="flex items-center border border-border"
+          role="group"
+        >
+          {(["all", "new", "reviewed", "actioned"] as const).map((status, i) => (
+            <button
+              key={status}
+              aria-pressed={statusFilter === status}
+              className={`h-8 px-2.5 text-[12px] font-medium transition-colors ${
+                i > 0 ? "border-l border-border" : ""
+              } ${
+                statusFilter === status
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+              onClick={() =>
+                updateRoute({
+                  page: null,
+                  status: status === "all" ? null : status,
+                })
+              }
+              type="button"
+            >
+              {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1)}
+            </button>
+          ))}
         </div>
 
         <div className="ml-auto flex items-center gap-2">
@@ -456,7 +457,18 @@ function ClaimsContent() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="type-label w-24">Risk</TableHead>
+                  <TableHead
+                    aria-sort={sortField === "riskScore" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                    className="type-label w-36"
+                  >
+                    <button
+                      className="flex items-center gap-1 transition-colors hover:text-foreground"
+                      onClick={() => toggleSort("riskScore")}
+                      type="button"
+                    >
+                      Risk {getSortIcon("riskScore")}
+                    </button>
+                  </TableHead>
                   <TableHead
                     aria-sort={sortField === "claimId" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                     className="type-label"
@@ -469,18 +481,7 @@ function ClaimsContent() {
                       Claim ID {getSortIcon("claimId")}
                     </button>
                   </TableHead>
-                  <TableHead
-                    aria-sort={sortField === "riskScore" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
-                    className="type-label w-36"
-                  >
-                    <button
-                      className="flex items-center gap-1 transition-colors hover:text-foreground"
-                      onClick={() => toggleSort("riskScore")}
-                      type="button"
-                    >
-                      Score {getSortIcon("riskScore")}
-                    </button>
-                  </TableHead>
+                  <TableHead className="type-label">Finding</TableHead>
                   <TableHead className="type-label w-28">Status</TableHead>
                   <TableHead
                     aria-sort={sortField === "analyzedAt" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
@@ -491,7 +492,7 @@ function ClaimsContent() {
                       onClick={() => toggleSort("analyzedAt")}
                       type="button"
                     >
-                      Analysis Date {getSortIcon("analyzedAt")}
+                      Date {getSortIcon("analyzedAt")}
                     </button>
                   </TableHead>
                 </TableRow>
@@ -503,7 +504,7 @@ function ClaimsContent() {
                     className={claim.riskLevel === null ? "opacity-50" : undefined}
                   >
                     <TableCell>
-                      <RiskBadge level={claim.riskLevel} />
+                      <RiskBar level={claim.riskLevel} score={claim.riskScore} />
                     </TableCell>
                     <TableCell className="type-mono font-medium">
                       <Link
@@ -513,8 +514,8 @@ function ClaimsContent() {
                         {claim.claimId}
                       </Link>
                     </TableCell>
-                    <TableCell>
-                      <RiskScoreCell score={claim.riskScore} />
+                    <TableCell className="type-caption text-muted-foreground truncate max-w-[200px]">
+                      {claim.topReason ?? "—"}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={claim.status} />
@@ -533,6 +534,33 @@ function ClaimsContent() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+
+          <div className="h-10 flex items-center gap-6 px-1 text-[11.5px] text-muted-foreground border-t border-border/40">
+            <span>
+              <span className="tabular-nums text-foreground font-medium">{total}</span> claims
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-none bg-risk-high inline-block" />
+              <span className="tabular-nums text-foreground font-medium">
+                {statuses.filter((s) => s.riskLevel === "high").length}
+              </span>{" "}
+              high
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-none bg-risk-medium inline-block" />
+              <span className="tabular-nums text-foreground font-medium">
+                {statuses.filter((s) => s.riskLevel === "medium").length}
+              </span>{" "}
+              medium
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-none bg-risk-low inline-block" />
+              <span className="tabular-nums text-foreground font-medium">
+                {statuses.filter((s) => s.riskLevel === "low").length}
+              </span>{" "}
+              low
+            </span>
           </div>
 
           <div className="flex items-center justify-between gap-4">
