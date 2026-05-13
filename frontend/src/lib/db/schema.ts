@@ -58,6 +58,7 @@ export const claimReviews = pgTable("claim_reviews", {
   riskScore: real("risk_score"),
   riskLevel: text("risk_level"),
   narrative: text("narrative").default(""),
+  topReason: text("top_reason"),
   status: text("status").notNull().default("new"),
   analyzedAt: timestamp("analyzed_at"),
   reviewedAt: timestamp("reviewed_at"),

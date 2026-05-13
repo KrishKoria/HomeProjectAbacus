@@ -100,6 +100,7 @@ export async function upsertClaimReview(data: {
   riskScore: number;
   riskLevel: string;
   narrative: string;
+  topReason?: string | null;
 }): Promise<void> {
   const id = `cr_${data.claimId}`;
   await db
@@ -110,6 +111,7 @@ export async function upsertClaimReview(data: {
       riskScore: data.riskScore,
       riskLevel: data.riskLevel,
       narrative: data.narrative,
+      topReason: data.topReason ?? null,
       status: "new",
       analyzedAt: new Date(),
     })
@@ -119,9 +121,19 @@ export async function upsertClaimReview(data: {
         riskScore: data.riskScore,
         riskLevel: data.riskLevel,
         narrative: data.narrative,
+        topReason: data.topReason ?? null,
         analyzedAt: new Date(),
       },
     });
+}
+
+export async function getTopClaims(limit = 5): Promise<ClaimReview[]> {
+  return db
+    .select()
+    .from(claimReviews)
+    .where(isNotNull(claimReviews.riskScore))
+    .orderBy(desc(sql`COALESCE(${claimReviews.riskScore}, -1)`))
+    .limit(limit);
 }
 
 export interface ClaimStats {
