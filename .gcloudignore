@@ -39,3 +39,8 @@ opencode/
 frontend/node_modules/
 frontend/.next/
 frontend/coverage/
+frontend/*.tsbuildinfo
+
+# Local frontend env files must not be uploaded to Cloud Build.
+frontend/.env*
+!frontend/.env.example
