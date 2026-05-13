@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { getDb } from "@/lib/db";
 import { claimReviews } from "@/lib/db/schema";
 import { and, asc, count, desc, eq, ilike, isNotNull, sql, type SQL } from "drizzle-orm";
 
@@ -23,6 +23,7 @@ export interface PaginatedClaims {
 }
 
 export async function getClaims(params: GetClaimsParams = {}): Promise<PaginatedClaims> {
+  const db = getDb();
   const page = Math.max(1, params.page ?? 1);
   const limit = Math.min(100, Math.max(1, params.limit ?? 20));
   const offset = (page - 1) * limit;
@@ -72,6 +73,7 @@ export async function getClaims(params: GetClaimsParams = {}): Promise<Paginated
 export async function getClaimReviewByClaimId(
   claimId: string,
 ): Promise<ClaimReview | null> {
+  const db = getDb();
   const result = await db
     .select()
     .from(claimReviews)
@@ -84,6 +86,7 @@ export async function getClaimReviewByClaimId(
 export async function getClaimStatuses(): Promise<
   { claimId: string; riskLevel: string | null; status: string; analyzedAt: Date | null }[]
 > {
+  const db = getDb();
   return db
     .select({
       claimId: claimReviews.claimId,
@@ -102,6 +105,7 @@ export async function upsertClaimReview(data: {
   narrative: string;
   topReason?: string | null;
 }): Promise<void> {
+  const db = getDb();
   const id = `cr_${data.claimId}`;
   await db
     .insert(claimReviews)
@@ -128,6 +132,7 @@ export async function upsertClaimReview(data: {
 }
 
 export async function getTopClaims(limit = 5): Promise<ClaimReview[]> {
+  const db = getDb();
   return db
     .select()
     .from(claimReviews)
@@ -151,6 +156,7 @@ export interface ClaimStats {
 }
 
 export async function getClaimStats(): Promise<ClaimStats> {
+  const db = getDb();
   const [riskStats, statusStats] = await Promise.all([
     db
       .select({
@@ -191,6 +197,7 @@ export async function updateClaimStatus(
   status: "new" | "reviewed" | "actioned",
   reviewedById: string,
 ): Promise<{ ok: boolean }> {
+  const db = getDb();
   const result = await db
     .update(claimReviews)
     .set({

@@ -1,8 +1,6 @@
 import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
+import { getAuth, type Session } from "@/lib/auth";
 import { env } from "@/lib/server/env";
-
-type Session = typeof auth.$Infer.Session;
 
 function isAuthorized(email: string | null | undefined): boolean {
   if (!email) return false;
@@ -18,7 +16,7 @@ function isAuthorized(email: string | null | undefined): boolean {
 export async function getOptionalSession(): Promise<Session | null> {
   try {
     const h = await headers();
-    const session = await auth.api.getSession({ headers: h });
+    const session = await getAuth().api.getSession({ headers: h });
     return session;
   } catch {
     return null;

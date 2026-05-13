@@ -32,9 +32,20 @@ function resolveConnectionConfig() {
   };
 }
 
-const connectionConfig = resolveConnectionConfig();
-const queryClient =
-  typeof connectionConfig === "string"
-    ? postgres(connectionConfig)
-    : postgres(connectionConfig);
-export const db = drizzle(queryClient, { schema });
+function createDatabase() {
+  const connectionConfig = resolveConnectionConfig();
+  const queryClient =
+    typeof connectionConfig === "string"
+      ? postgres(connectionConfig)
+      : postgres(connectionConfig);
+  return drizzle(queryClient, { schema });
+}
+
+type Database = ReturnType<typeof createDatabase>;
+
+let database: Database | null = null;
+
+export function getDb(): Database {
+  database ??= createDatabase();
+  return database;
+}
