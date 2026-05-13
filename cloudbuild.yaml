@@ -65,12 +65,12 @@ steps:
 
         echo ":: Starting Cloud SQL Auth Proxy..."
         /tmp/cloud-sql-proxy "${_CLOUD_SQL_CONNECTION_NAME}" --port=5432 &
-        PROXY_PID=$!
+        PROXY_PID=$$!
 
         echo ":: Waiting for proxy..."
         for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
           bash -c "echo > /dev/tcp/127.0.0.1/5432" 2>/dev/null && break
-          if [ "$i" -ge 20 ]; then
+          if [ "$$i" -ge 20 ]; then
             echo ":: ERROR: Cloud SQL proxy failed to start" >&2
             exit 1
           fi
@@ -87,7 +87,7 @@ steps:
           bunx drizzle-kit migrate
 
         echo ":: Stopping Cloud SQL Auth Proxy..."
-        kill $PROXY_PID 2>/dev/null || true
+        kill $$PROXY_PID 2>/dev/null || true
     secretEnv:
       - DB_PASS
     waitFor:
