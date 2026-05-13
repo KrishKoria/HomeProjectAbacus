@@ -3,25 +3,21 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Final
-
-_SCRIPT_PATH: Final[Path] = Path(
-    globals().get("__file__", sys._getframe().f_code.co_filename)
-).resolve()
-_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+_PROJECT_ROOT = Path(globals().get("__file__", sys._getframe().f_code.co_filename)).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from src.common.bronze_pipeline_config import bronze_table_name
+from src.common.bronze_pipeline_config import add_common_databricks_args, bronze_table_name
 from src.common.bronze_sources import BRONZE_SOURCES
 from src.common.gold_pipeline_config import gold_table_name
 from src.common.silver_pipeline_config import quarantine_table_name, silver_table_name
+from src.common.silver_cleaning import normalize_state
 from src.framework import HealthCheckResult
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run lightweight ETL health checks.")
-    parser.add_argument("--catalog", default="healthcare")
+    add_common_databricks_args(parser)
     parser.add_argument("--bronze-schema", default="bronze")
     parser.add_argument("--silver-schema", default="silver")
     parser.add_argument("--gold-schema", default="gold")
@@ -34,15 +30,11 @@ def _has_rows(dataframe) -> bool:
     return dataframe.limit(1).count() > 0
 
 
-def _normalize_state(value: str | None) -> str:
-    return (value or "").strip().lower()
-
-
 def main(argv: list[str] | None = None) -> int:
     from pyspark.sql import SparkSession
 
     args = _parse_args(argv)
-    pipeline_result = _normalize_state(args.pipeline_result)
+    pipeline_result = normalize_state(args.pipeline_result)
     if pipeline_result != "success":
         print(
             HealthCheckResult(

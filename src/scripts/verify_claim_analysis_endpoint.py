@@ -1,18 +1,16 @@
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import DataframeSplitInput
 
-_SCRIPT_PATH: Final[Path] = Path(
-    globals().get("__file__", sys._getframe().f_code.co_filename)
-).resolve()
-_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+_PROJECT_ROOT = Path(globals().get("__file__", sys._getframe().f_code.co_filename)).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
@@ -48,8 +46,18 @@ def _verify_response(response: dict[str, Any]) -> list[str]:
     return errors
 
 
-def main() -> None:
-    endpoint_name = _env("CLAIMOPS_ANALYSIS_ENDPOINT", "claim-denial-analysis")
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Verify claim analysis serving endpoint.")
+    parser.add_argument(
+        "--endpoint-name",
+        default=_env("CLAIMOPS_ANALYSIS_ENDPOINT", "claim-denial-analysis"),
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
+    endpoint_name: str = args.endpoint_name
     features = _build_synthetic_features()
 
     payload = DataframeSplitInput(

@@ -3,23 +3,20 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Final
-
-_SCRIPT_PATH: Final[Path] = Path(
-    globals().get("__file__", sys._getframe().f_code.co_filename)
-).resolve()
-_PROJECT_ROOT: Final[Path] = _SCRIPT_PATH.parents[2]
+_PROJECT_ROOT = Path(globals().get("__file__", sys._getframe().f_code.co_filename)).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.analytics.quality_assets import WEEK3_DATASETS, write_quality_assets
+from src.common.bronze_pipeline_config import add_common_databricks_args
 from src.common.silver_pipeline_config import quarantine_table_name, silver_table_name
+from src.common.silver_cleaning import normalize_state
 from src.framework import HealthCheckResult
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Verify Silver and quarantine outputs.")
-    parser.add_argument("--catalog", default="healthcare")
+    add_common_databricks_args(parser)
     parser.add_argument("--silver-schema", default="silver")
     parser.add_argument("--quarantine-schema", default="quarantine")
     parser.add_argument("--analytics-schema", default="analytics")
@@ -32,22 +29,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _normalize_state(value: str | None) -> str:
-    return (value or "").strip().lower()
-
-
 def main(argv: list[str] | None = None) -> int:
     from pyspark.sql import SparkSession
 
     args = _parse_args(argv)
-    if args.emit_quality_assets and _normalize_state(args.upstream_status) != "success":
+    if args.emit_quality_assets and normalize_state(args.upstream_status) != "success":
         print(
             HealthCheckResult(
                 "silver",
                 True,
                 (
                     "quality_assets_skipped_due_upstream_status "
-                    f"upstream_status={_normalize_state(args.upstream_status) or 'unknown'}"
+                    f"upstream_status={normalize_state(args.upstream_status) or 'unknown'}"
                 ),
             ).summary_line()
         )

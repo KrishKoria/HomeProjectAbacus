@@ -175,10 +175,15 @@ def spark_quality_flags(flag_expressions: Mapping[str, object]):
     )
 
 
+def normalize_state(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
 __all__ = [
     "build_quality_flags",
     "normalize_code_value",
     "normalize_nullable_string",
+    "normalize_state",
     "normalize_title_value",
     "parse_bool_value",
     "parse_date_value",
