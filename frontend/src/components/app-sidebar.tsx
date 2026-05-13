@@ -23,6 +23,7 @@ import {
   ClipboardTextIcon,
   SignOutIcon,
 } from "@phosphor-icons/react";
+import type { ClaimStats } from "@/lib/db/claims";
 
 const navItems = [
   {
@@ -94,7 +95,18 @@ export function AppSidebar() {
     staleTime: 60_000,
   });
 
+  const statsQuery = useQuery({
+    queryKey: ["claim-stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/claims/stats");
+      if (!res.ok) throw new Error("Failed to load stats");
+      return res.json() as Promise<ClaimStats>;
+    },
+    staleTime: 60_000,
+  });
+
   const user = sessionQuery.data?.user;
+  const stats = statsQuery.data ?? null;
 
   return (
     <Sidebar>
@@ -136,6 +148,42 @@ export function AppSidebar() {
                 );
               })}
             </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <div className="px-3 pt-3 pb-1">
+              <p className="type-label text-[10px] text-muted-foreground uppercase tracking-widest">
+                Quick filters
+              </p>
+            </div>
+            <div className="space-y-0.5 px-1">
+              <Link
+                href="/claims?risk=high"
+                className="flex items-center gap-2 h-7 px-2 text-[12.5px] text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+              >
+                <span className="size-1.5 shrink-0 bg-risk-high" />
+                <span className="flex-1">High risk</span>
+                {stats && (
+                  <span className="type-mono tabular-nums text-[11px] text-muted-foreground">
+                    {stats.risk.high}
+                  </span>
+                )}
+              </Link>
+              <Link
+                href="/claims?status=new"
+                className="flex items-center gap-2 h-7 px-2 text-[12.5px] text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+              >
+                <span className="size-1.5 shrink-0 bg-foreground opacity-40" />
+                <span className="flex-1">Awaiting me</span>
+                {stats && (
+                  <span className="type-mono tabular-nums text-[11px] text-muted-foreground">
+                    {stats.status.new}
+                  </span>
+                )}
+              </Link>
+            </div>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
