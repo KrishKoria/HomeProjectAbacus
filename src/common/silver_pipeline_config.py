@@ -76,6 +76,17 @@ def read_bronze_snapshot(spark, table_name: str):
     return spark.read.table(table_name)
 
 
+def dedup_window(*partition_cols: str):
+    from pyspark.sql import Window
+    from pyspark.sql import functions as F
+
+    return Window.partitionBy(*partition_cols).orderBy(
+        F.col("_ingested_at").desc(),
+        F.col("_pipeline_run_id").desc(),
+        F.col("_source_file").desc(),
+    )
+
+
 __all__ = [
     "ANALYTICS_SCHEMA_DEFAULT",
     "MAX_CHUNK_COUNT",
@@ -95,6 +106,7 @@ __all__ = [
     "SILVER_AUDIT_COLUMNS",
     "SILVER_SCHEMA_DEFAULT",
     "create_required_schemas",
+    "dedup_window",
     "quarantine_table_name",
     "read_bronze_snapshot",
     "silver_table_name",
