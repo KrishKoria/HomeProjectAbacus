@@ -1,8 +1,19 @@
 import { getDb } from "@/lib/db";
-import { claimReviews } from "@/lib/db/schema";
+import { claimReviews, claimSyncState } from "@/lib/db/schema";
 import { and, asc, count, desc, eq, ilike, isNotNull, sql, type SQL } from "drizzle-orm";
 
 export type ClaimReview = typeof claimReviews.$inferSelect;
+export type ClaimSyncState = typeof claimSyncState.$inferSelect;
+
+export interface DiscoveredClaimId {
+  claimId: string;
+  ingestedAt: Date;
+}
+
+export interface ClaimSyncCursor {
+  lastClaimId: string | null;
+  lastIngestedAt: Date | null;
+}
 
 export interface GetClaimsParams {
   page?: number;
@@ -155,6 +166,13 @@ export interface ClaimStats {
   total: number;
 }
 
+export interface ClaimSyncResult {
+  discovered: number;
+  inserted: number;
+  skipped: number;
+  syncedAt: Date;
+}
+
 export async function getClaimStats(): Promise<ClaimStats> {
   const db = getDb();
   const [riskStats, statusStats] = await Promise.all([
@@ -190,6 +208,116 @@ export async function getClaimStats(): Promise<ClaimStats> {
     },
     total,
   };
+}
+
+export async function getClaimSyncState(
+  sourceTable: string,
+): Promise<ClaimSyncState | null> {
+  const db = getDb();
+  const result = await db
+    .select()
+    .from(claimSyncState)
+    .where(eq(claimSyncState.sourceTable, sourceTable))
+    .limit(1);
+
+  return result[0] ?? null;
+}
+
+export async function syncDiscoveredClaimIds(
+  sourceTable: string,
+  discoveredClaims: DiscoveredClaimId[],
+): Promise<ClaimSyncResult> {
+  const db = getDb();
+  const syncedAt = new Date();
+
+  return db.transaction(async (tx) => {
+    let inserted = 0;
+
+    if (discoveredClaims.length > 0) {
+      const insertedRows = await tx
+        .insert(claimReviews)
+        .values(
+          discoveredClaims.map((claim) => ({
+            analyzedAt: null,
+            claimId: claim.claimId,
+            id: `cr_${claim.claimId}`,
+            narrative: "",
+            riskLevel: null,
+            riskScore: null,
+            status: "new",
+            topReason: null,
+          })),
+        )
+        .onConflictDoNothing({ target: claimReviews.claimId })
+        .returning({ claimId: claimReviews.claimId });
+
+      inserted = insertedRows.length;
+    }
+
+    const latestClaim = discoveredClaims.at(-1) ?? null;
+    await upsertClaimSyncState(tx, {
+      discovered: discoveredClaims.length,
+      inserted,
+      lastClaimId: latestClaim?.claimId ?? null,
+      lastIngestedAt: latestClaim?.ingestedAt ?? null,
+      sourceTable,
+      syncedAt,
+    });
+
+    return {
+      discovered: discoveredClaims.length,
+      inserted,
+      skipped: discoveredClaims.length - inserted,
+      syncedAt,
+    };
+  });
+}
+
+async function upsertClaimSyncState(
+  tx: Pick<ReturnType<typeof getDb>, "insert">,
+  data: {
+    discovered: number;
+    inserted: number;
+    lastClaimId: string | null;
+    lastIngestedAt: Date | null;
+    sourceTable: string;
+    syncedAt: Date;
+  },
+): Promise<void> {
+  const sourceTableSql = sql.raw(`"claim_sync_state"`);
+  const excludedSql = sql.raw("excluded");
+  const cursorShouldAdvanceSql = sql`(
+        ${excludedSql}.last_ingested_at IS NOT NULL
+        AND (
+        ${sourceTableSql}.last_ingested_at IS NULL
+          OR ${excludedSql}.last_ingested_at > ${sourceTableSql}.last_ingested_at
+        OR (
+            ${excludedSql}.last_ingested_at = ${sourceTableSql}.last_ingested_at
+            AND COALESCE(${excludedSql}.last_claim_id, '') > COALESCE(${sourceTableSql}.last_claim_id, '')
+          )
+        )
+      )`;
+
+  await tx
+    .insert(claimSyncState)
+    .values({
+      lastClaimId: data.lastClaimId,
+      lastDiscoveredCount: data.discovered,
+      lastIngestedAt: data.lastIngestedAt,
+      lastInsertedCount: data.inserted,
+      lastSyncedAt: data.syncedAt,
+      sourceTable: data.sourceTable,
+    })
+    .onConflictDoUpdate({
+      set: {
+        lastClaimId: sql`CASE WHEN ${cursorShouldAdvanceSql} THEN excluded.last_claim_id ELSE ${sourceTableSql}.last_claim_id END`,
+        lastDiscoveredCount: data.discovered,
+        lastIngestedAt: sql`CASE WHEN ${cursorShouldAdvanceSql} THEN excluded.last_ingested_at ELSE ${sourceTableSql}.last_ingested_at END`,
+        lastInsertedCount: data.inserted,
+        lastSyncedAt: sql`GREATEST(${sourceTableSql}.last_synced_at, excluded.last_synced_at)`,
+      },
+      target: claimSyncState.sourceTable,
+    });
 }
 
 export async function updateClaimStatus(
