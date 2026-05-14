@@ -23,12 +23,33 @@ substitutions:
   _DATABRICKS_CLIENT_SECRET_SECRET: databricks-client-secret
   _CLAIMOPS_ALLOWED_EMAIL_DOMAINS_SECRET: claimops-allowed-email-domains
   _CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS_SECRET: claimops-bootstrap-admin-emails
+  _RUN_DB_MIGRATIONS: "false"
 
 options:
   logging: CLOUD_LOGGING_ONLY
   dynamic_substitutions: true
 
 steps:
+  - id: run-db-migrations
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -Eeuo pipefail
+        if [ "${_RUN_DB_MIGRATIONS}" != "true" ]; then
+          echo "Skipping database migrations"
+          exit 0
+        fi
+
+        gcloud builds submit . \
+          --config=cloudbuild.migrations.yaml \
+          --project=${PROJECT_ID} \
+          --region=${_REGION} \
+          --substitutions=_CLOUD_SQL_CONNECTION_NAME=${_CLOUD_SQL_CONNECTION_NAME},_DB_NAME=${_DB_NAME},_DB_PASSWORD_SECRET=${_DB_PASSWORD_SECRET},_DB_PORT=${_DB_PORT},_DB_USER=${_DB_USER}
+    waitFor:
+      - "-"
+
   - id: build-image
     name: gcr.io/cloud-builders/docker
     args:
@@ -72,6 +93,7 @@ steps:
       - --set-secrets=BETTER_AUTH_SECRET=${_BETTER_AUTH_SECRET_SECRET}:latest,GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID_SECRET}:latest,GOOGLE_CLIENT_SECRET=${_GOOGLE_CLIENT_SECRET_SECRET}:latest,DB_PASSWORD=${_DB_PASSWORD_SECRET}:latest,DATABRICKS_CLIENT_ID=${_DATABRICKS_CLIENT_ID_SECRET}:latest,DATABRICKS_CLIENT_SECRET=${_DATABRICKS_CLIENT_SECRET_SECRET}:latest,CLAIMOPS_ALLOWED_EMAIL_DOMAINS=${_CLAIMOPS_ALLOWED_EMAIL_DOMAINS_SECRET}:latest,CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS=${_CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS_SECRET}:latest
     waitFor:
       - push-image
+      - run-db-migrations
 
 images:
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${BUILD_ID}

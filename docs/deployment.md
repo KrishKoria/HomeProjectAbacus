@@ -30,6 +30,10 @@
    - `DATABRICKS_CLIENT_SECRET`
    - `CLAIMOPS_ALLOWED_EMAIL_DOMAINS`
    - `CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS`
+6. Grant the Cloud Build execution service account:
+   - `roles/secretmanager.secretAccessor`
+   - `roles/cloudsql.client`
+   - `roles/cloudbuild.builds.editor` if you want `cloudbuild.yaml` to launch `cloudbuild.migrations.yaml` as a child build
 
 ## 2) Environment Contract
 
@@ -55,13 +59,21 @@ The pipeline will:
    - `--set-env-vars` for non-sensitive config
    - `--set-secrets` for sensitive config
 
-Database migrations are intentionally not part of the normal deploy. Run them only when committed files under `frontend/drizzle/` change:
+Database migrations can still be run as a dedicated build when committed files under `frontend/drizzle/` change:
 
 ```bash
 gcloud builds submit --config cloudbuild.migrations.yaml --region asia-south1 --project monthhome
 ```
 
-The migration pipeline connects to Cloud SQL through the Cloud SQL Auth Proxy and applies the committed Drizzle migrations with `bunx drizzle-kit migrate`.
+The migration pipeline connects to Cloud SQL through the Cloud SQL Auth Proxy, waits for proxy readiness with `cloud-sql-proxy wait`, and then applies committed Drizzle migrations with `bunx drizzle-kit migrate`.
+
+If you want the main deploy to launch the migration build first, set `_RUN_DB_MIGRATIONS=true` on the main build:
+
+```bash
+gcloud builds submit --config cloudbuild.yaml --region asia-south1 --project monthhome --substitutions=_RUN_DB_MIGRATIONS=true
+```
+
+Cloud Build does not provide a native `include` or `import` feature for one build config to embed another. The `_RUN_DB_MIGRATIONS=true` path works by starting a nested child build with `gcloud builds submit --config cloudbuild.migrations.yaml .`, which resubmits the current workspace as build source before the Cloud Run deploy step is allowed to continue. If proxy startup fails, the build now fails at the `cloud-sql-proxy wait` timeout boundary instead of retry-loop TCP probe errors.
 
 ## 4) OAuth Callback Configuration
 
