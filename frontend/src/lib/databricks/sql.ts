@@ -125,7 +125,7 @@ export async function fetchClaimIdsForSync(
     ok: true,
     rows: rows.data.map((row) => ({
       claimId: String(row[0]),
-      ingestedAt: new Date(String(row[1])),
+      ingestedAt: parseDatabricksTimestampAsUtc(String(row[1])),
     })),
   };
 }
@@ -293,6 +293,19 @@ function buildClaimIdSyncParameters(
       value: cursor.lastClaimId ?? "",
     },
   ];
+}
+
+function parseDatabricksTimestampAsUtc(raw: string): Date {
+  const normalized = raw.trim();
+  if (normalized === "") {
+    return new Date(NaN);
+  }
+
+  const hasExplicitTimezone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized);
+  const isoLike = normalized.replace(" ", "T");
+  const utcCandidate = hasExplicitTimezone ? isoLike : `${isoLike}Z`;
+
+  return new Date(utcCandidate);
 }
 
 function formatDatabricksTimestamp(value: Date): string {
