@@ -3,6 +3,16 @@ import { FEATURE_COLUMNS } from "@/lib/contracts/claimops";
 import type { ClaimFeatureRow } from "@/lib/databricks/types";
 import { env } from "@/lib/server/env";
 
+export interface DatabricksClaimIdRow {
+  claimId: string;
+  ingestedAt: Date;
+}
+
+export interface ClaimSyncCursor {
+  lastClaimId: string | null;
+  lastIngestedAt: Date | null;
+}
+
 interface SqlStatementResponse {
   statement_id: string;
   status: {
@@ -17,7 +27,13 @@ interface SqlStatementResponse {
   };
   result?: {
     data_array: Array<Array<unknown>>;
+    next_chunk_internal_link?: string | null;
   };
+}
+
+interface SqlChunkResponse {
+  data_array?: Array<Array<unknown>>;
+  next_chunk_internal_link?: string | null;
 }
 
 async function ensureWarehouseRunning(): Promise<void> {
@@ -86,6 +102,34 @@ export async function fetchFeatureRow(
   return extractRow(stmt);
 }
 
+export async function fetchClaimIdsForSync(
+  cursor: ClaimSyncCursor,
+): Promise<
+  | { ok: true; rows: DatabricksClaimIdRow[] }
+  | { ok: false; status: number; message: string }
+> {
+  const query = buildClaimIdSyncQuery(cursor);
+  const parameters = buildClaimIdSyncParameters(cursor);
+
+  const statementResult = await executeSqlStatement(query, parameters);
+  if (!statementResult.ok) {
+    return statementResult;
+  }
+
+  const rows = await collectStatementRows(statementResult.data);
+  if (!rows.ok) {
+    return rows;
+  }
+
+  return {
+    ok: true,
+    rows: rows.data.map((row) => ({
+      claimId: String(row[0]),
+      ingestedAt: parseDatabricksTimestampAsUtc(String(row[1])),
+    })),
+  };
+}
+
 async function pollStatement(
   statementId: string,
   maxRetries = 10,
@@ -108,6 +152,70 @@ async function pollStatement(
     }
   }
   return { ok: false, status: 504, message: "SQL statement timed out" };
+}
+
+async function executeSqlStatement(
+  statement: string,
+  parameters: Array<{ name: string; value: string; type?: string }> = [],
+): Promise<
+  | { ok: true; data: SqlStatementResponse }
+  | { ok: false; status: number; message: string }
+> {
+  await ensureWarehouseRunning();
+
+  const statementResult = await databricksFetch<SqlStatementResponse>(
+    "/api/2.0/sql/statements",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        disposition: "INLINE",
+        format: "JSON_ARRAY",
+        parameters,
+        statement,
+        wait_timeout: "30s",
+        warehouse_id: env.DATABRICKS_SQL_WAREHOUSE_ID,
+      }),
+    },
+  );
+
+  if (!statementResult.ok) {
+    return statementResult;
+  }
+
+  if (
+    statementResult.data.status.state === "PENDING" ||
+    statementResult.data.status.state === "RUNNING"
+  ) {
+    return pollStatement(statementResult.data.statement_id);
+  }
+
+  return statementResult;
+}
+
+async function collectStatementRows(
+  stmt: SqlStatementResponse,
+): Promise<
+  | { ok: true; data: Array<Array<unknown>> }
+  | { ok: false; status: number; message: string }
+> {
+  if (stmt.status.state === "FAILED") {
+    return { ok: false, status: 500, message: "SQL statement failed" };
+  }
+
+  const rows = [...(stmt.result?.data_array ?? [])];
+  let nextChunkLink = stmt.result?.next_chunk_internal_link ?? null;
+
+  while (nextChunkLink) {
+    const chunkResult = await databricksFetch<SqlChunkResponse>(nextChunkLink);
+    if (!chunkResult.ok) {
+      return chunkResult;
+    }
+
+    rows.push(...(chunkResult.data.data_array ?? []));
+    nextChunkLink = chunkResult.data.next_chunk_internal_link ?? null;
+  }
+
+  return { ok: true, data: rows };
 }
 
 function extractRow(
@@ -148,4 +256,58 @@ function coerceSqlValue(raw: unknown): number | null {
   if (str === "false") return 0;
   const num = Number(str);
   return Number.isNaN(num) ? null : num;
+}
+
+function buildClaimIdSyncQuery(cursor: ClaimSyncCursor): string {
+  const baseQuery = [
+    `SELECT claim_id, _ingested_at`,
+    `FROM ${env.CLAIMOPS_FEATURE_TABLE}`,
+  ];
+
+  if (cursor.lastIngestedAt) {
+    baseQuery.push(
+      `WHERE _ingested_at > :lastIngestedAt`,
+      `OR (_ingested_at = :lastIngestedAt AND claim_id > :lastClaimId)`,
+    );
+  }
+
+  baseQuery.push(`ORDER BY _ingested_at ASC, claim_id ASC`);
+  return baseQuery.join(" ");
+}
+
+function buildClaimIdSyncParameters(
+  cursor: ClaimSyncCursor,
+): Array<{ name: string; value: string; type?: string }> {
+  if (!cursor.lastIngestedAt) {
+    return [];
+  }
+
+  return [
+    {
+      name: "lastIngestedAt",
+      type: "TIMESTAMP",
+      value: formatDatabricksTimestamp(cursor.lastIngestedAt),
+    },
+    {
+      name: "lastClaimId",
+      value: cursor.lastClaimId ?? "",
+    },
+  ];
+}
+
+function parseDatabricksTimestampAsUtc(raw: string): Date {
+  const normalized = raw.trim();
+  if (normalized === "") {
+    return new Date(NaN);
+  }
+
+  const hasExplicitTimezone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized);
+  const isoLike = normalized.replace(" ", "T");
+  const utcCandidate = hasExplicitTimezone ? isoLike : `${isoLike}Z`;
+
+  return new Date(utcCandidate);
+}
+
+function formatDatabricksTimestamp(value: Date): string {
+  return value.toISOString().replace("T", " ").replace("Z", "");
 }

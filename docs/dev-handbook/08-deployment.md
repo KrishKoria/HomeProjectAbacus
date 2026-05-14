@@ -409,3 +409,70 @@ python src/scripts/maybe_retrain_model.py --force
 # Local test (no Spark)
 python src/scripts/train_denial_model.py --gold-csv datasets/claims_features.csv --no-tune --registered-model-name ""
 ```
+
+---
+
+## 8.11 GCP App Runtime (Cloud Run + Cloud SQL)
+
+The frontend/BFF deployment target is Cloud Run with Cloud SQL PostgreSQL for Better Auth and `claim_reviews` persistence.
+
+### Required Google Cloud Services
+
+- Cloud Run
+- Cloud Build
+- Artifact Registry
+- Cloud SQL Admin API
+- Secret Manager
+
+### Required Runtime Service Account Roles
+
+- `roles/secretmanager.secretAccessor`
+- `roles/cloudsql.client`
+
+### Container and Build Assets
+
+- `frontend/Dockerfile` (Next.js standalone runtime)
+- `frontend/.dockerignore`
+- `cloudbuild.yaml` (build/push/deploy pipeline)
+
+### Deploy Command
+
+```bash
+gcloud builds submit --config cloudbuild.yaml --region us-central1
+```
+
+### Runtime Health Checks
+
+1. Cloud Run revision is healthy.
+2. `/api/runtime/status` reports healthy Databricks OAuth/warehouse/serving endpoint checks.
+3. Google OAuth callback resolves to:
+   - `http://localhost:3000/api/auth/callback/google` (local)
+   - `https://<prod-domain>/api/auth/callback/google` (prod)
+
+### Rollback Command
+
+```bash
+gcloud run services update-traffic <service> --region <region> --to-revisions <revision>=100
+```
+
+Restore latest-revision routing:
+
+```bash
+gcloud run services update-traffic <service> --region <region> --to-latest
+```
+
+### Databricks Runtime Identity Permissions
+
+For the Cloud Run app's Databricks service principal:
+
+- SQL warehouse: `CAN_USE`
+- Gold table: `SELECT` + `USE CATALOG` + `USE SCHEMA`
+- Serving endpoints: `CAN_QUERY`
+
+---
+
+## 8.12 Phase-2 Hardening (Deferred, Non-blocking)
+
+- External HTTPS load balancer + Cloud Armor policy
+- IAP fronting pattern (if authentication policy requires it)
+- Private ingress / PSC networking patterns

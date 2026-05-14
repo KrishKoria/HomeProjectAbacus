@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getSessionCookie } from "better-auth/cookies";
 
 const PUBLIC_PATHS = ["/sign-in", "/api/", "/_next/", "/favicon.ico"];
 
@@ -10,7 +11,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const hasSessionCookie = request.cookies.has("better-auth.session_token");
+  const hasSessionCookie = getSessionCookie(request) !== null;
 
   if (!hasSessionCookie) {
     const signInUrl = new URL("/sign-in", request.url);

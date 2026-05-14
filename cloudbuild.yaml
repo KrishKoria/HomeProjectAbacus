@@ -1,0 +1,99 @@
+substitutions:
+  _REGION: asia-south1
+  _SERVICE: homeprojectabacus-frontend
+  _AR_REPOSITORY: homeprojectabacus
+  _IMAGE_NAME: homeprojectabacus-frontend
+  _RUNTIME_SERVICE_ACCOUNT: homeprojectabacus-cloud-run@monthhome.iam.gserviceaccount.com
+  _CLOUD_SQL_CONNECTION_NAME: monthhome:asia-south1:homeprojectabacus
+  _BETTER_AUTH_URL: https://homeprojectabacus-frontend-88897055243.asia-south1.run.app
+  _DATABRICKS_HOST: https://8259552159587810.0.gcp.databricks.com/
+  _DATABRICKS_SQL_WAREHOUSE_ID: 26e842cddb906c23
+  _DATABRICKS_SQL_HTTP_PATH: /sql/1.0/warehouses/26e842cddb906c23
+  _CLAIMOPS_FEATURE_TABLE: healthcare.gold.claim_features
+  _CLAIMOPS_ANALYSIS_ENDPOINT: claim-denial-analysis
+  _CLAIMOPS_CHAT_MODEL: databricks-meta-llama-3-3-70b-instruct
+  _DB_NAME: homeprojectabacus
+  _DB_USER: postgres
+  _DB_PORT: "5432"
+  _BETTER_AUTH_SECRET_SECRET: better-auth-secret
+  _GOOGLE_CLIENT_ID_SECRET: google-client-id
+  _GOOGLE_CLIENT_SECRET_SECRET: google-client-secret
+  _DB_PASSWORD_SECRET: db-password
+  _DATABRICKS_CLIENT_ID_SECRET: databricks-client-id
+  _DATABRICKS_CLIENT_SECRET_SECRET: databricks-client-secret
+  _CLAIMOPS_ALLOWED_EMAIL_DOMAINS_SECRET: claimops-allowed-email-domains
+  _CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS_SECRET: claimops-bootstrap-admin-emails
+  _RUN_DB_MIGRATIONS: "false"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  dynamic_substitutions: true
+
+steps:
+  - id: run-db-migrations
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -Eeuo pipefail
+        if [ "${_RUN_DB_MIGRATIONS}" != "true" ]; then
+          echo "Skipping database migrations"
+          exit 0
+        fi
+
+        gcloud builds submit . \
+          --config=cloudbuild.migrations.yaml \
+          --project=${PROJECT_ID} \
+          --region=${_REGION} \
+          --substitutions=_CLOUD_SQL_CONNECTION_NAME=${_CLOUD_SQL_CONNECTION_NAME},_DB_NAME=${_DB_NAME},_DB_PASSWORD_SECRET=${_DB_PASSWORD_SECRET},_DB_PORT=${_DB_PORT},_DB_USER=${_DB_USER}
+    waitFor:
+      - "-"
+
+  - id: build-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - frontend/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${BUILD_ID}
+      - frontend
+    waitFor:
+      - "-"
+
+  - id: push-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${BUILD_ID}
+    waitFor:
+      - build-image
+
+  - id: deploy-cloud-run
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --region=${_REGION}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${BUILD_ID}
+      - --service-account=${_RUNTIME_SERVICE_ACCOUNT}
+      - --allow-unauthenticated
+      - --ingress=all
+      - --port=8080
+      - --min-instances=0
+      - --max-instances=6
+      - --concurrency=40
+      - --cpu=1
+      - --memory=1Gi
+      - --set-cloudsql-instances=${_CLOUD_SQL_CONNECTION_NAME}
+      - --set-env-vars=BETTER_AUTH_URL=${_BETTER_AUTH_URL},CLOUD_SQL_CONNECTION_NAME=${_CLOUD_SQL_CONNECTION_NAME},DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_PORT=${_DB_PORT},DATABRICKS_HOST=${_DATABRICKS_HOST},DATABRICKS_SQL_WAREHOUSE_ID=${_DATABRICKS_SQL_WAREHOUSE_ID},DATABRICKS_SQL_HTTP_PATH=${_DATABRICKS_SQL_HTTP_PATH},CLAIMOPS_FEATURE_TABLE=${_CLAIMOPS_FEATURE_TABLE},CLAIMOPS_ANALYSIS_ENDPOINT=${_CLAIMOPS_ANALYSIS_ENDPOINT},CLAIMOPS_CHAT_MODEL=${_CLAIMOPS_CHAT_MODEL}
+      - --set-secrets=BETTER_AUTH_SECRET=${_BETTER_AUTH_SECRET_SECRET}:latest,GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID_SECRET}:latest,GOOGLE_CLIENT_SECRET=${_GOOGLE_CLIENT_SECRET_SECRET}:latest,DB_PASSWORD=${_DB_PASSWORD_SECRET}:latest,DATABRICKS_CLIENT_ID=${_DATABRICKS_CLIENT_ID_SECRET}:latest,DATABRICKS_CLIENT_SECRET=${_DATABRICKS_CLIENT_SECRET_SECRET}:latest,CLAIMOPS_ALLOWED_EMAIL_DOMAINS=${_CLAIMOPS_ALLOWED_EMAIL_DOMAINS_SECRET}:latest,CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS=${_CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS_SECRET}:latest
+    waitFor:
+      - push-image
+      - run-db-migrations
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/${_IMAGE_NAME}:${BUILD_ID}

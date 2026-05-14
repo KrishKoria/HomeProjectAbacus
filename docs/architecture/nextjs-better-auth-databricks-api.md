@@ -1,12 +1,12 @@
 # BFF Architecture: Next.js + Better Auth + Databricks API
 
-## Why auth moved to Vercel
+## Why auth moved out of Databricks-hosted frontend
 
-Databricks free-edition workspaces do not support OAuth identity federation for web apps. The Databricks Apps feature (which would host a FastAPI + React frontend with integrated auth) is blocked by this tier constraint. Vercel provides the OAuth callback endpoint, session management, and serverless API routes without any Databricks runtime dependency.
+Databricks Apps auth constraints made a separate web runtime the practical path for production-grade deployment. The current target is a GCP-native runtime where auth/session logic and BFF routes run in Cloud Run, while Databricks remains the system of record for data, model, and policy retrieval.
 
 ## BFF Pattern
 
-Next.js API routes act as a Backend-for-Frontend (BFF):
+Next.js API routes act as a Backend-for-Frontend (BFF) in Cloud Run:
 
 ```
 Browser → Next.js API Route (BFF) → Databricks API
@@ -31,15 +31,15 @@ Instead, the Python logic is packaged as a Databricks Model Serving endpoint (`s
 
 ```mermaid
 sequenceDiagram
-    Browser->>Vercel: GET /dashboard
-    Vercel->>Neon (Postgres): Session check via Better Auth
-    Vercel->>Databricks API: M2M OAuth token request
-    Databricks API-->>Vercel: Bearer token
-    Vercel->>Databricks SQL: SELECT features FROM claim_features
-    Databricks SQL-->>Vercel: Feature row
-    Vercel->>Databricks Serving: POST analyze_claim (dataframe_split)
-    Databricks Serving-->>Vercel: Predictions
-    Vercel-->>Browser: UI-ready JSON
+    Browser->>Cloud Run: GET /dashboard
+    Cloud Run->>Cloud SQL (Postgres): Session check via Better Auth
+    Cloud Run->>Databricks API: M2M OAuth token request
+    Databricks API-->>Cloud Run: Bearer token
+    Cloud Run->>Databricks SQL: SELECT features FROM claim_features
+    Databricks SQL-->>Cloud Run: Feature row
+    Cloud Run->>Databricks Serving: POST analyze_claim (dataframe_split)
+    Databricks Serving-->>Cloud Run: Predictions
+    Cloud Run-->>Browser: UI-ready JSON
 ```
 
 ## Key decisions
@@ -50,10 +50,10 @@ sequenceDiagram
 | Postgres + Drizzle (not Prisma) | Lightweight, no code generation step |
 | SQL Statement Execution API (not JDBC/ODBC) | Suitable for serverless, no heavy driver |
 | M2M OAuth (not PAT) | Standardized OAuth flow, easy rotation |
-| Neon PgBouncer (port 5433) | Prevents connection exhaustion in serverless |
+| Cloud SQL unix socket in Cloud Run | Avoids direct DB host exposure and matches Cloud Run integration model |
 
 ## Security boundaries
 
 - Better Auth DB stores identity/session metadata only — no claims data
 - Databricks remains system of record for claims, model, and policy data
-- Real PHI requires Vercel BAA review, private networking, and audit controls
+- Real PHI requires BAA + private networking and audit controls across cloud boundaries

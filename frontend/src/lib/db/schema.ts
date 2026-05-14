@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, real } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, real, integer } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -63,4 +63,13 @@ export const claimReviews = pgTable("claim_reviews", {
   analyzedAt: timestamp("analyzed_at"),
   reviewedAt: timestamp("reviewed_at"),
   reviewedById: text("reviewed_by_id").references(() => user.id),
+});
+
+export const claimSyncState = pgTable("claim_sync_state", {
+  sourceTable: text("source_table").primaryKey(),
+  lastIngestedAt: timestamp("last_ingested_at"),
+  lastClaimId: text("last_claim_id"),
+  lastSyncedAt: timestamp("last_synced_at").notNull(),
+  lastDiscoveredCount: integer("last_discovered_count").notNull().default(0),
+  lastInsertedCount: integer("last_inserted_count").notNull().default(0),
 });

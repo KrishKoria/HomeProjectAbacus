@@ -1,56 +1,141 @@
 # Deployment Guide
 
-## Vercel Deployment
+## Target Topology
 
-### Environment Variables
+- Frontend/BFF runtime: **Cloud Run**
+- App database: **Cloud SQL for PostgreSQL**
+- Secrets: **Secret Manager**
+- Build/deploy: **Cloud Build + Artifact Registry**
+- Data/ML/RAG backend: **Databricks on GCP**
 
-Set all vars from `frontend/.env.example` in Vercel project settings.
+## 1) Prerequisites
 
-### Google OAuth Callback URLs
+1. Enable APIs:
+   - `run.googleapis.com`
+   - `cloudbuild.googleapis.com`
+   - `artifactregistry.googleapis.com`
+   - `secretmanager.googleapis.com`
+   - `sqladmin.googleapis.com`
+2. Create Artifact Registry Docker repo.
+3. Create Cloud SQL PostgreSQL instance and database/user.
+4. Create Cloud Run runtime service account and grant:
+   - `roles/secretmanager.secretAccessor`
+   - `roles/cloudsql.client`
+5. Create Secret Manager secrets for:
+   - `BETTER_AUTH_SECRET`
+   - `GOOGLE_CLIENT_ID`
+   - `GOOGLE_CLIENT_SECRET`
+   - `DB_PASSWORD`
+   - `DATABRICKS_CLIENT_ID`
+   - `DATABRICKS_CLIENT_SECRET`
+   - `CLAIMOPS_ALLOWED_EMAIL_DOMAINS`
+   - `CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS`
+6. Grant the Cloud Build execution service account:
+   - `roles/secretmanager.secretAccessor`
+   - `roles/cloudsql.client`
+   - `roles/cloudbuild.builds.editor` if you want `cloudbuild.yaml` to launch `cloudbuild.migrations.yaml` as a child build
 
-| Environment | URL |
-|-------------|-----|
-| Local dev | `http://localhost:3000/api/auth/callback/google` |
-| Production | `https://<vercel-domain>/api/auth/callback/google` |
+## 2) Environment Contract
 
-Add both to Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID → Authorized redirect URIs.
+See [frontend/.env.example](/C:/Users/Krish/Desktop/projects/homeprojectabacus/frontend/.env.example).
 
-### Neon Database Connection
+Runtime supports two DB modes:
+- **Local/dev mode**: `DATABASE_URL`
+- **Cloud Run mode**: `CLOUD_SQL_CONNECTION_NAME` + `DB_USER` + `DB_PASSWORD` + `DB_NAME` (+ optional `DB_PORT`)
 
-Use the **pooled connection string** (port 5433 via PgBouncer), NOT the direct connection (port 5432):
+## 3) Build and Deploy
 
-```
-postgresql://user:pass@ep-xxxx.us-east-2.aws.neon.tech:5433/neondb
-```
-
-## Databricks Service Principal Setup
-
-1. Create service principal in Databricks admin console
-2. Grant permissions:
-   - SQL warehouse: `USE`, `READ` on feature table schema
-   - Table: `SELECT` on `healthcare.gold.claim_features`
-   - Model serving: `Can Query` on the claim-denial-analysis endpoint
-3. Generate OAuth client ID and secret for M2M auth
-
-## Security Notes
-
-- Vercel handles authentication only (Better Auth + Google OAuth)
-- Better Auth Postgres DB stores identity/session metadata only — no claims data
-- Databricks remains system of record for claims, model, and policy data
-- Real PHI deployment requires Vercel BAA review, private networking, and audit controls
-
-## CI Commands
+Use [cloudbuild.yaml](/C:/Users/Krish/Desktop/projects/homeprojectabacus/cloudbuild.yaml) for normal frontend deploys.
 
 ```bash
-# Frontend
-bun run lint        # ESLint
-bun x tsc --noEmit  # TypeScript check
-bun test            # Vitest
-bun run build       # Next.js build
-
-# Python
-uv run pytest -q    # Python tests
-
-# Databricks
-databricks bundle validate -t dev --profile dev
+gcloud builds submit --config cloudbuild.yaml --region asia-south1 --project monthhome
 ```
+
+The pipeline will:
+1. Build `frontend/Dockerfile`
+2. Push image to Artifact Registry
+3. Deploy Cloud Run revision with:
+   - Cloud SQL instance attachment
+   - `--set-env-vars` for non-sensitive config
+   - `--set-secrets` for sensitive config
+
+Database migrations can still be run as a dedicated build when committed files under `frontend/drizzle/` change:
+
+```bash
+gcloud builds submit --config cloudbuild.migrations.yaml --region asia-south1 --project monthhome
+```
+
+The migration pipeline connects to Cloud SQL through the Cloud SQL Auth Proxy, waits for proxy readiness with `cloud-sql-proxy wait`, and then applies committed Drizzle migrations with `bunx drizzle-kit migrate`.
+
+If you want the main deploy to launch the migration build first, set `_RUN_DB_MIGRATIONS=true` on the main build:
+
+```bash
+gcloud builds submit --config cloudbuild.yaml --region asia-south1 --project monthhome --substitutions=_RUN_DB_MIGRATIONS=true
+```
+
+Cloud Build does not provide a native `include` or `import` feature for one build config to embed another. The `_RUN_DB_MIGRATIONS=true` path works by starting a nested child build with `gcloud builds submit --config cloudbuild.migrations.yaml .`, which resubmits the current workspace as build source before the Cloud Run deploy step is allowed to continue. If proxy startup fails, the build now fails at the `cloud-sql-proxy wait` timeout boundary instead of retry-loop TCP probe errors.
+
+## 4) OAuth Callback Configuration
+
+Set Google OAuth redirect URIs:
+
+| Environment | URL |
+|---|---|
+| Local dev | `http://localhost:3000/api/auth/callback/google` |
+| Cloud Run / Custom domain | `https://<your-domain>/api/auth/callback/google` |
+
+## 5) Databricks Runtime Identity
+
+Create a Databricks service principal for the Cloud Run BFF and grant least privilege:
+- SQL warehouse: `CAN_USE`
+- Feature table: `SELECT` on `healthcare.gold.claim_features` (+ `USE CATALOG`, `USE SCHEMA`)
+- Serving endpoints: `CAN_QUERY` on claim analysis endpoint and chat model endpoint
+
+Use OAuth M2M credentials for:
+- `DATABRICKS_CLIENT_ID`
+- `DATABRICKS_CLIENT_SECRET`
+
+## 6) Verification
+
+```bash
+# Frontend runtime checks
+cd frontend
+bun run typecheck
+bun run test
+bun run build
+
+# Python/serving checks
+cd ..
+uv run pytest -q tests/test_claim_analysis_serving.py tests/test_frontend_contract_generation.py
+```
+
+Operational checks:
+1. `GET /api/runtime/status` returns healthy Databricks dependencies.
+2. Sign in flow succeeds.
+3. Claim analysis API completes and persists status to Cloud SQL.
+
+## 7) Rollback
+
+List revisions:
+
+```bash
+gcloud run revisions list --service <service> --region <region>
+```
+
+Route all traffic back to previous stable revision:
+
+```bash
+gcloud run services update-traffic <service> --region <region> --to-revisions <revision>=100
+```
+
+Restore normal latest-revision behavior:
+
+```bash
+gcloud run services update-traffic <service> --region <region> --to-latest
+```
+
+## 8) Phase-2 Hardening (Not Blocking First Deploy)
+
+- External HTTPS Load Balancer + Cloud Armor policy
+- IAP fronting pattern (if app-level auth policy changes)
+- Private networking / PSC-based reachability refinements

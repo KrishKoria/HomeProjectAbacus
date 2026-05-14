@@ -1,6 +1,6 @@
 # ADR 0002: claim_reviews Table in Neon PostgreSQL
 
-**Status**: Accepted
+**Status**: Superseded by ADR 0003
 **Date**: 2026-05-12
 
 ---

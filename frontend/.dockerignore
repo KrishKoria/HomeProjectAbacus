@@ -1,0 +1,11 @@
+node_modules
+.next/cache
+.git
+.github
+.vscode
+coverage
+test-results
+*.log
+*.tsbuildinfo
+.env*
+!.env.example
