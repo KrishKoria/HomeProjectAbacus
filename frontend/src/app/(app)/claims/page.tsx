@@ -142,6 +142,7 @@ function ClaimsContent() {
   const searchParams = useSearchParams();
   const searchRef = useRef<HTMLInputElement>(null);
   const autoEnqueuedClaimIdsRef = useRef(new Set<string>());
+  const lastHandledSyncAtRef = useRef(0);
 
   const currentSearch = searchParams.get("search") ?? "";
   const riskFilter = VALID_RISK.includes(
@@ -257,6 +258,29 @@ function ClaimsContent() {
   });
 
   const { enqueueBatch, isProcessing, progress } = useAnalysisQueue();
+  const syncQuery = useQuery({
+    queryKey: ["claim-sync"],
+    queryFn: async () => {
+      const response = await fetch("/api/claims/sync", {
+        method: "POST",
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => ({ error: "Failed to sync claim IDs" }))) as {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to sync claim IDs");
+      }
+
+      return payload;
+    },
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
   const claims = claimsQuery.data?.claims ?? [];
   const total = claimsQuery.data?.total ?? 0;
   const totalPages = claimsQuery.data?.totalPages ?? 1;
@@ -284,6 +308,19 @@ function ClaimsContent() {
   const showingStart = claims.length > 0 ? (page - 1) * 20 + 1 : 0;
   const showingEnd = Math.min(page * 20, total);
   const hasQueueActivity = progress.total > 0;
+
+  useEffect(() => {
+    if (!syncQuery.isSuccess || syncQuery.dataUpdatedAt === 0) return;
+    if (lastHandledSyncAtRef.current === syncQuery.dataUpdatedAt) return;
+
+    lastHandledSyncAtRef.current = syncQuery.dataUpdatedAt;
+    void Promise.all([claimsQuery.refetch(), statusesQuery.refetch()]);
+  }, [
+    claimsQuery,
+    statusesQuery,
+    syncQuery.dataUpdatedAt,
+    syncQuery.isSuccess,
+  ]);
 
   useEffect(() => {
     const autoAnalyzeClaimIds = autoAnalyzeSeedClaimIds.filter(
@@ -381,6 +418,24 @@ function ClaimsContent() {
         </div>
       )}
 
+      {syncQuery.isError && (
+        <div
+          className="flex items-center gap-4 border border-border px-5 py-4"
+          role="alert"
+        >
+          <p className="type-body flex-1 text-muted-foreground">
+            {(syncQuery.error as Error).message}
+          </p>
+          <Button
+            onClick={() => syncQuery.refetch()}
+            size="sm"
+            variant="outline"
+          >
+            Retry sync
+          </Button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-4">
         <SearchField
           key={currentSearch}
@@ -465,7 +520,7 @@ function ClaimsContent() {
             size="sm"
             variant="outline"
           >
-            Analyze remaining
+            Analyze all pending
           </Button>
           {remainingUnanalyzedClaimIds.length > 0 && (
             <span className="type-caption text-muted-foreground">
