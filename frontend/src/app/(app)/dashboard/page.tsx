@@ -9,9 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBar } from "@/components/risk-bar";
-import type { DatabricksStatus } from "@/lib/databricks/types";
 import type { ClaimReview, ClaimStats } from "@/lib/db/claims";
-import { MagnifyingGlass, Circle, ArrowRight } from "@phosphor-icons/react";
+import { MagnifyingGlass, ArrowRight } from "@phosphor-icons/react";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -47,16 +46,6 @@ export default function DashboardPage() {
     },
   });
 
-  const statusQuery = useQuery({
-    queryKey: ["runtime-status"],
-    queryFn: async () => {
-      const res = await fetch("/api/runtime/status");
-      if (!res.ok) throw new Error("Failed to fetch status");
-      return res.json() as Promise<DatabricksStatus>;
-    },
-    refetchInterval: 30_000,
-  });
-
   useEffect(() => {
     if (sessionQuery.isFetched && !sessionQuery.data) {
       router.push("/sign-in");
@@ -86,9 +75,10 @@ export default function DashboardPage() {
   if (sessionQuery.isLoading) {
     return (
       <AppShell>
-        <div className="p-6 space-y-4">
+        <div role="status" aria-label="Loading dashboard" className="p-6 space-y-4">
           <Skeleton className="h-7 w-32" />
           <Skeleton className="h-10 w-full max-w-md" />
+          <span className="sr-only">Loading dashboard…</span>
         </div>
       </AppShell>
     );
@@ -101,29 +91,22 @@ export default function DashboardPage() {
       <div className="p-6 space-y-8 max-w-5xl">
         <div className="flex items-baseline justify-between">
           <h1 className="type-headline">Dashboard</h1>
-          {statusQuery.data && (
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <StatusDot name="OAuth" ok={statusQuery.data.oauth} />
-              <StatusDot name="SQL" ok={statusQuery.data.sqlWarehouse} />
-              <StatusDot name="Model" ok={statusQuery.data.analysisEndpoint} />
-            </div>
-          )}
         </div>
 
         {/* Queue overview — 3-column strip */}
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="type-title">Queue Overview</h2>
-            <button
-              onClick={() => router.push("/claims")}
+            <Link
+              href="/claims"
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               View all <ArrowRight className="size-3" aria-hidden="true" />
-            </button>
+            </Link>
           </div>
 
           {(statsQuery.isLoading || statsQuery.isPending) && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div role="status" aria-label="Loading queue metrics" className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="space-y-3">
                   <Skeleton className="h-3 w-24" />
@@ -132,6 +115,7 @@ export default function DashboardPage() {
                   <Skeleton className="h-2 w-full" />
                 </div>
               ))}
+              <span className="sr-only">Loading queue metrics…</span>
             </div>
           )}
 
@@ -167,11 +151,10 @@ export default function DashboardPage() {
                     const pct =
                       stats.total > 0 ? (count / stats.total) * 100 : 0;
                     return (
-                      <button
+                      <Link
                         key={level}
-                        onClick={() => router.push(`/claims?risk=${level}`)}
+                        href={`/claims?risk=${level}`}
                         className="w-full grid grid-cols-[56px_1fr_28px] items-center gap-3 text-label group"
-                        type="button"
                       >
                         <span
                           className={`text-right type-mono text-risk-${level} capitalize group-hover:opacity-80 transition-opacity`}
@@ -187,7 +170,7 @@ export default function DashboardPage() {
                         <span className="type-mono tabular-nums text-foreground text-right">
                           {count}
                         </span>
-                      </button>
+                      </Link>
                     );
                   })}
                 </div>
@@ -198,20 +181,31 @@ export default function DashboardPage() {
                 <p className="type-label text-muted-foreground">Workflow</p>
                 <div className="space-y-2">
                   {(["new", "reviewed", "actioned"] as const).map((s) => (
-                    <button
+                    <Link
                       key={s}
-                      onClick={() => router.push(`/claims?status=${s}`)}
-                      type="button"
+                      href={`/claims?status=${s}`}
                       className="w-full flex items-center justify-between border border-border px-3 py-2.5 hover:bg-muted/50 transition-colors group"
                     >
-                      <span className="text-caption text-muted-foreground capitalize group-hover:text-foreground transition-colors">
+                      <span className="type-caption text-muted-foreground capitalize group-hover:text-foreground transition-colors">
                         {s}
                       </span>
-                      <span className="type-mono tabular-nums text-foreground font-medium">
+                      <span className="type-mono tabular-nums text-foreground font-medium group-hover:underline underline-offset-4 decoration-foreground/30">
                         {stats.status[s]}
                       </span>
-                    </button>
+                    </Link>
                   ))}
+                </div>
+
+                {/* Team throughput strip */}
+                <div className="border-t border-border/60 pt-3 mt-1">
+                  <p className="type-label text-muted-foreground">Team throughput</p>
+                  <p className="type-mono tabular-nums text-foreground mt-1">
+                    {stats.status.actioned}
+                  </p>
+                  <p className="type-caption text-muted-foreground">
+                    Actioned (all time)
+                    {/* TODO: needs time-filtered API to show today's throughput — /api/claims?status=actioned&since=24h not yet supported */}
+                  </p>
                 </div>
               </div>
 
@@ -223,16 +217,17 @@ export default function DashboardPage() {
                   </p>
                   <Link
                     href="/claims?sort=riskScore&order=desc"
-                    className="text-caption text-muted-foreground hover:text-foreground transition-colors"
+                    className="type-caption text-muted-foreground hover:text-foreground transition-colors"
                   >
                     View all →
                   </Link>
                 </div>
                 {topClaimsQuery.isLoading && (
-                  <div className="space-y-2">
+                  <div role="status" aria-label="Loading top claims" className="space-y-2">
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Skeleton key={i} className="h-8 w-full" />
                     ))}
+                    <span className="sr-only">Loading top claims…</span>
                   </div>
                 )}
                 {topClaims.length > 0 && (
@@ -247,18 +242,15 @@ export default function DashboardPage() {
                           score={claim.riskScore}
                           level={claim.riskLevel}
                         />
-                        <span className="type-mono text-[11.5px] text-foreground truncate flex-1 min-w-0">
+                        <span className="type-mono type-caption text-foreground truncate flex-1 min-w-0">
                           {claim.claimId}
                         </span>
                         {claim.analyzedAt && (
-                          <span className="type-caption text-muted-foreground text-[10px] shrink-0">
-                            {new Date(claim.analyzedAt).toLocaleDateString(
-                              undefined,
-                              {
-                                month: "short",
-                                day: "numeric",
-                              },
-                            )}
+                          <span className="type-caption text-muted-foreground shrink-0">
+                            {/* Time in current status, approximated from analyzedAt.
+                                TODO: add assignedTo + a dedicated status_changed_at column
+                                to claim_reviews to unlock team-level assignment signal. */}
+                            {formatDaysAgo(claim.analyzedAt)} in {claim.status}
                           </span>
                         )}
                       </Link>
@@ -288,7 +280,7 @@ export default function DashboardPage() {
                 className="pr-8"
                 aria-label="Claim ID"
               />
-              <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-mono pointer-events-none">
+              <kbd className="absolute right-2 top-1/2 -translate-y-1/2 type-caption text-muted-foreground font-mono pointer-events-none">
                 /
               </kbd>
             </div>
@@ -307,21 +299,10 @@ export default function DashboardPage() {
   );
 }
 
-function StatusDot({ name, ok }: { name: string; ok: boolean }) {
-  return (
-    <span
-      className="flex items-center gap-1.5"
-      role="img"
-      aria-label={`${name}: ${ok ? "connected" : "disconnected"}`}
-    >
-      <Circle
-        size={8}
-        weight="fill"
-        className={ok ? "text-status-ok" : "text-status-err"}
-        aria-hidden="true"
-      />
-      <span aria-hidden="true">{name}</span>
-      {!ok && <span className="type-caption text-status-err">(offline)</span>}
-    </span>
-  );
+/** Returns a compact duration label like "3d" or "<1d" from a date to now. */
+function formatDaysAgo(date: Date | string): string {
+  const ms = Date.now() - new Date(date).getTime();
+  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+  if (days === 0) return "<1d";
+  return `${days}d`;
 }

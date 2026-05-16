@@ -14,10 +14,10 @@ export default function SignInPage() {
             Claim Denial Risk Assessment Console
           </p>
         </div>
-        <blockquote className="type-body text-auth-text/50 max-w-sm">
+        <p className="type-body text-auth-text/50 max-w-sm">
           AI-powered claim denial risk scoring and remediation. A pre-submission
           quality gate that intercepts every claim before it reaches the insurer.
-        </blockquote>
+        </p>
       </div>
 
       <div className="flex-1 flex items-center justify-center p-8">

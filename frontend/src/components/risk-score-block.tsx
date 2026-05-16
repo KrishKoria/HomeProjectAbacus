@@ -1,7 +1,6 @@
 "use client";
 
 import { RiskBadge } from "@/components/risk-badge";
-import { useCounter } from "@/hooks/use-counter";
 
 interface RiskScoreBlockProps {
   score: number;
@@ -11,15 +10,20 @@ interface RiskScoreBlockProps {
 
 const subtext: Record<string, string> = {
   high: "Strong denial signal. Resolve findings before submission.",
-  medium: "Mixed signals. Review findings and patch before submission.",
-  low: "Clean claim. Ready to submit unless something else changes.",
+  medium: "Mixed signals. Review findings before submission.",
+  low: "Clean claim. No action required.",
+};
+
+const riskGlyph: Record<string, string> = {
+  high: "▲",
+  medium: "■",
+  low: "▼",
 };
 
 export function RiskScoreBlock({ score, level, analyzedAt }: RiskScoreBlockProps) {
   const target = Math.round(score * 100);
-  const display = useCounter(target);
   const normalized = level.toLowerCase();
-  const filled = Math.round((display / 100) * 20);
+  const filled = Math.round((target / 100) * 20);
 
   const timeStr = analyzedAt
     ? new Date(analyzedAt).toLocaleTimeString("en-US", {
@@ -38,12 +42,19 @@ export function RiskScoreBlock({ score, level, analyzedAt }: RiskScoreBlockProps
               className="type-display tabular-nums leading-none"
               style={{ color: `var(--risk-${normalized})` }}
             >
-              {display}
+              <span
+                aria-hidden="true"
+                className="opacity-70 mr-1"
+                style={{ fontSize: "40%", color: `var(--risk-${normalized})` }}
+              >
+                {riskGlyph[normalized] ?? riskGlyph.low}
+              </span>
+              {target}
               <span className="text-[1.5rem] align-top ml-0.5 opacity-70">%</span>
             </span>
             <RiskBadge level={normalized} />
           </div>
-          <p className="text-[12.5px] text-muted-foreground mt-2 max-w-[42ch]">
+          <p className="type-caption text-muted-foreground mt-2 max-w-[42ch]">
             {subtext[normalized] ?? subtext.low}
           </p>
         </div>
@@ -62,15 +73,14 @@ export function RiskScoreBlock({ score, level, analyzedAt }: RiskScoreBlockProps
                       height: h,
                       backgroundColor: on
                         ? `var(--risk-${normalized})`
-                        : "oklch(0.88 0.015 260 / 0.6)",
-                      transition: "background-color 220ms ease-out",
+                        : "color-mix(in oklch, var(--border) 60%, transparent)",
                     }}
                   />
                 </div>
               );
             })}
           </div>
-          <div className="flex justify-between text-[10px] text-muted-foreground type-mono mt-1.5">
+          <div className="flex justify-between type-caption text-muted-foreground type-mono mt-1.5">
             <span>0%</span>
             <span>50%</span>
             <span>100%</span>
@@ -78,7 +88,7 @@ export function RiskScoreBlock({ score, level, analyzedAt }: RiskScoreBlockProps
         </div>
 
         {timeStr && (
-          <div className="text-[11px] text-muted-foreground type-mono tabular-nums text-right shrink-0">
+          <div className="type-caption text-muted-foreground type-mono tabular-nums text-right shrink-0">
             <div>
               <span className="text-foreground">{timeStr}</span> · today
             </div>

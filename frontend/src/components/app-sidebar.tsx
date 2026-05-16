@@ -112,7 +112,7 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="px-4 py-3 border-b border-sidebar-border">
         <Link
-          href="/claims"
+          href="/dashboard"
           className="text-sm font-semibold tracking-tight text-sidebar-foreground hover:text-sidebar-primary transition-colors"
         >
           ClaimOps
@@ -154,31 +154,31 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <div className="px-3 pt-3 pb-1">
-              <p className="type-label text-[10px] text-muted-foreground uppercase tracking-widest">
+              <p className="type-label text-muted-foreground">
                 Quick filters
               </p>
             </div>
             <div className="space-y-0.5 px-1">
               <Link
                 href="/claims?risk=high"
-                className="flex items-center gap-2 h-7 px-2 text-[12.5px] text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+                className="flex items-center gap-2 h-8 pointer-coarse:h-11 px-2 type-caption text-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
               >
                 <span className="size-1.5 shrink-0 bg-risk-high" />
                 <span className="flex-1">High risk</span>
                 {stats && (
-                  <span className="type-mono tabular-nums text-[11px] text-muted-foreground">
+                  <span className="font-mono tabular-nums type-caption text-muted-foreground">
                     {stats.risk.high}
                   </span>
                 )}
               </Link>
               <Link
                 href="/claims?status=new"
-                className="flex items-center gap-2 h-7 px-2 text-[12.5px] text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+                className="flex items-center gap-2 h-8 pointer-coarse:h-11 px-2 type-caption text-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
               >
                 <span className="size-1.5 shrink-0 bg-foreground opacity-40" />
                 <span className="flex-1">Awaiting me</span>
                 {stats && (
-                  <span className="type-mono tabular-nums text-[11px] text-muted-foreground">
+                  <span className="font-mono tabular-nums type-caption text-muted-foreground">
                     {stats.status.new}
                   </span>
                 )}
@@ -191,19 +191,19 @@ export function AppSidebar() {
       <SidebarFooter className="p-4 border-t border-sidebar-border space-y-3">
         <div className="px-1 flex items-center gap-3 flex-wrap">
           <span className="type-caption text-muted-foreground">
-            <kbd className="font-mono text-[10px] px-1 border border-sidebar-border">
+            <kbd className="font-mono type-caption px-1 border border-sidebar-border">
               /
             </kbd>{" "}
             search
           </span>
           <span className="type-caption text-muted-foreground">
-            <kbd className="font-mono text-[10px] px-1 border border-sidebar-border">
+            <kbd className="font-mono type-caption px-1 border border-sidebar-border">
               C
             </kbd>{" "}
             chat
           </span>
           <span className="type-caption text-muted-foreground">
-            <kbd className="font-mono text-[10px] px-1 border border-sidebar-border">
+            <kbd className="font-mono type-caption px-1 border border-sidebar-border">
               G
             </kbd>{" "}
             nav
@@ -211,7 +211,7 @@ export function AppSidebar() {
         </div>
         <div className="px-1 flex items-center justify-between">
           <span className="type-caption text-muted-foreground">
-            <kbd className="font-mono text-[10px] px-1 border border-sidebar-border">
+            <kbd className="font-mono type-caption px-1 border border-sidebar-border">
               ⌘ + B
             </kbd>{" "}
             sidebar
@@ -219,7 +219,7 @@ export function AppSidebar() {
           <button
             type="button"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="flex size-6 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            className="flex size-6 pointer-coarse:size-11 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Toggle theme"
           >
             {theme === "dark" ? (
@@ -246,7 +246,7 @@ export function AppSidebar() {
               window.location.href = "/sign-in";
             });
           }}
-          className="w-full text-muted-foreground hover:text-foreground"
+          className="w-full text-muted-foreground hover:text-foreground pointer-coarse:h-11"
         >
           <SignOutIcon />
           <span className="text-sm">Sign out</span>

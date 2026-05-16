@@ -1,12 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MagnifyingGlass, ArrowDown, ArrowUp } from "@phosphor-icons/react";
 import { AppShell } from "@/components/app-shell";
 import { RiskBar } from "@/components/risk-bar";
+import { QueueHelpPanel } from "@/components/queue-help-panel";
 import { useAnalysisQueue } from "@/hooks/use-analysis-queue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +29,11 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -41,6 +56,10 @@ const VALID_SORT = ["riskScore", "analyzedAt", "claimId"] as const;
 const VALID_ORDER = ["asc", "desc"] as const;
 const AUTO_ANALYZE_LIMIT = 20;
 
+// statusColors rationale:
+//   reviewed = analyst acknowledgment = primary tint (intentional visual weight)
+//   actioned = terminal state = accent (distinct, signals completion)
+//   new = no signal yet = muted (neutral until reviewed)
 const statusColors: Record<string, string> = {
   actioned: "bg-accent text-accent-foreground",
   new: "bg-muted text-muted-foreground",
@@ -62,24 +81,27 @@ function StatusBadge({ status }: { status: string }) {
 
 function SkeletonTable() {
   return (
-    <div className="border border-border overflow-x-auto">
-      <div className="grid min-w-135 grid-cols-[minmax(120px,1fr)_minmax(120px,2fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-4 border-b border-border px-4 py-3">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <Skeleton key={index} className="h-3 w-full" />
+    <div role="status" aria-label="Loading claims">
+      <span className="sr-only">Loading claims…</span>
+      <div className="border border-border overflow-x-auto">
+        <div className="grid min-w-[540px] grid-cols-[minmax(120px,1fr)_minmax(120px,2fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-4 border-b border-border px-4 py-3">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Skeleton key={index} className="h-3 w-full" />
+          ))}
+        </div>
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div
+            key={index}
+            className="grid min-w-[540px] grid-cols-[minmax(120px,1fr)_minmax(120px,2fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-4 border-b border-border px-4 py-3 last:border-b-0"
+          >
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
         ))}
       </div>
-      {Array.from({ length: 8 }).map((_, index) => (
-        <div
-          key={index}
-          className="grid min-w-135 grid-cols-[minmax(120px,1fr)_minmax(120px,2fr)_minmax(120px,1fr)_minmax(100px,1fr)_minmax(100px,1fr)] gap-4 border-b border-border px-4 py-3 last:border-b-0"
-        >
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-4 w-1/2" />
-        </div>
-      ))}
     </div>
   );
 }
@@ -129,11 +151,16 @@ function SearchField({
         placeholder="Search claim ID…"
         value={search}
       />
-      <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 font-mono text-[10px] text-muted-foreground">
+      <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 font-mono type-caption text-muted-foreground">
         /
       </kbd>
     </div>
   );
+}
+
+/** sessionStorage key scoped to the current URL for scroll restore */
+function scrollKey(pathname: string, search: string) {
+  return `scroll:${pathname}${search}`;
 }
 
 function ClaimsContent() {
@@ -143,6 +170,12 @@ function ClaimsContent() {
   const searchRef = useRef<HTMLInputElement>(null);
   const autoEnqueuedClaimIdsRef = useRef(new Set<string>());
   const lastHandledSyncAtRef = useRef(0);
+
+  // FIX 2: large-batch confirmation popover state
+  const [analyzePopoverOpen, setAnalyzePopoverOpen] = useState(false);
+
+  // FIX 1: keyboard row focus — pure state
+  const [focusedRowIndex, setFocusedRowIndex] = useState(-1);
 
   const currentSearch = searchParams.get("search") ?? "";
   const riskFilter = VALID_RISK.includes(
@@ -196,21 +229,16 @@ function ClaimsContent() {
     router.replace(buildHref(updates));
   };
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.key === "/" &&
-        document.activeElement !== searchRef.current &&
-        document.activeElement?.tagName !== "INPUT"
-      ) {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  // FIX 1: Scroll restore — read snapshot on mount before paint to avoid flash
+  useLayoutEffect(() => {
+    const key = scrollKey(pathname, window.location.search);
+    const raw = sessionStorage.getItem(key);
+    if (raw !== null) {
+      const top = Number(raw);
+      sessionStorage.removeItem(key);
+      window.scrollTo({ top, behavior: "instant" });
+    }
+  }, [pathname]);
 
   const claimsQuery = useQuery({
     queryKey: [
@@ -258,6 +286,8 @@ function ClaimsContent() {
   });
 
   const { enqueueBatch, isProcessing, progress } = useAnalysisQueue();
+
+  // FIX 3: only refetch sync if stale (> 60 s since last success)
   const syncQuery = useQuery({
     queryKey: ["claim-sync"],
     queryFn: async () => {
@@ -277,34 +307,133 @@ function ClaimsContent() {
 
       return payload;
     },
-    refetchOnMount: "always",
+    staleTime: 60_000,
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
     retry: false,
   });
-  const claims = claimsQuery.data?.claims ?? [];
+
+  const claims = useMemo(
+    () => claimsQuery.data?.claims ?? [],
+    [claimsQuery.data],
+  );
   const total = claimsQuery.data?.total ?? 0;
   const totalPages = claimsQuery.data?.totalPages ?? 1;
-  const statuses = statusesQuery.data?.statuses ?? [];
-  const statusesByClaimId = new Map(
-    statuses.map((status) => [status.claimId, status]),
+  const statuses = useMemo(
+    () => statusesQuery.data?.statuses ?? [],
+    [statusesQuery.data],
   );
-  const analyzedCount = statuses.filter(
-    (status) => status.riskLevel !== null,
-  ).length;
-  const totalInDb = statuses.length;
-  const allUnanalyzedClaimIds = statuses
-    .filter((status) => status.riskLevel === null)
-    .map((status) => status.claimId);
-  const visibleUnanalyzedClaimIds = claims
-    .map((claim) => claim.claimId)
-    .filter((claimId) => statusesByClaimId.get(claimId)?.riskLevel === null);
-  const autoAnalyzeSeedClaimIds =
-    visibleUnanalyzedClaimIds.length > 0
-      ? visibleUnanalyzedClaimIds
-      : allUnanalyzedClaimIds.slice(0, AUTO_ANALYZE_LIMIT);
-  const remainingUnanalyzedClaimIds = allUnanalyzedClaimIds.filter(
-    (claimId) => !autoAnalyzeSeedClaimIds.includes(claimId),
+
+  // FIX 1: navigate to claim, snapshot scroll position before leaving
+  const navigateToClaim = useCallback(
+    (claimId: string) => {
+      const key = scrollKey(pathname, window.location.search);
+      sessionStorage.setItem(key, String(window.scrollY));
+      router.push(`/claims/${claimId}`);
+    },
+    [pathname, router],
   );
+
+  // Clamp focused row to valid range — derived, no effect needed.
+  // Automatically resets to -1 when claims data changes and index is out of bounds.
+  const effectiveFocusedRow =
+    focusedRowIndex >= 0 && focusedRowIndex < claims.length
+      ? focusedRowIndex
+      : -1;
+
+  // Refs that are updated only in useLayoutEffect (after paint) to avoid
+  // the React Compiler's "no ref access during render" rule.
+  const claimsSnapshotRef = useRef<Array<{ claimId: string }>>([]);
+  const focusedRowIndexRef = useRef(-1);
+
+  // Sync refs after each render — useLayoutEffect runs after DOM commit, never during render.
+  useLayoutEffect(() => {
+    claimsSnapshotRef.current = claims;
+    focusedRowIndexRef.current = effectiveFocusedRow;
+  });
+
+  useEffect(() => {
+    const isInputFocused = () => {
+      const tag = document.activeElement?.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA";
+    };
+
+    const onKey = (event: KeyboardEvent) => {
+      // "/" — focus search field
+      if (
+        event.key === "/" &&
+        document.activeElement !== searchRef.current &&
+        !isInputFocused()
+      ) {
+        event.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+
+      if (isInputFocused()) return;
+
+      // FIX 1: j/k — move focus between rows
+      if (event.key === "j") {
+        event.preventDefault();
+        const len = claimsSnapshotRef.current.length;
+        if (len === 0) return;
+        setFocusedRowIndex((prev) => Math.min(prev + 1, len - 1));
+        return;
+      }
+
+      if (event.key === "k") {
+        event.preventDefault();
+        const len = claimsSnapshotRef.current.length;
+        if (len === 0) return;
+        setFocusedRowIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+
+      // FIX 1: Enter — navigate to focused row's claim
+      if (event.key === "Enter") {
+        const idx = focusedRowIndexRef.current;
+        const snapshot = claimsSnapshotRef.current;
+        if (idx >= 0 && idx < snapshot.length) {
+          event.preventDefault();
+          navigateToClaim(snapshot[idx].claimId);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navigateToClaim]);
+
+  const { statusesByClaimId, analyzedCount, totalInDb, allUnanalyzedClaimIds } =
+    useMemo(() => {
+      const statusesByClaimId = new Map(
+        statuses.map((status) => [status.claimId, status]),
+      );
+      const analyzedCount = statuses.filter(
+        (status) => status.riskLevel !== null,
+      ).length;
+      const totalInDb = statuses.length;
+      const allUnanalyzedClaimIds = statuses
+        .filter((status) => status.riskLevel === null)
+        .map((status) => status.claimId);
+      return { statusesByClaimId, analyzedCount, totalInDb, allUnanalyzedClaimIds };
+    }, [statuses]);
+
+  const { autoAnalyzeSeedClaimIds, remainingUnanalyzedClaimIds } =
+    useMemo(() => {
+      const visibleUnanalyzedClaimIds = claims
+        .map((claim) => claim.claimId)
+        .filter((claimId) => statusesByClaimId.get(claimId)?.riskLevel === null);
+      const autoAnalyzeSeedClaimIds =
+        visibleUnanalyzedClaimIds.length > 0
+          ? visibleUnanalyzedClaimIds
+          : allUnanalyzedClaimIds.slice(0, AUTO_ANALYZE_LIMIT);
+      const remainingUnanalyzedClaimIds = allUnanalyzedClaimIds.filter(
+        (claimId) => !autoAnalyzeSeedClaimIds.includes(claimId),
+      );
+      return { autoAnalyzeSeedClaimIds, remainingUnanalyzedClaimIds };
+    }, [claims, statusesByClaimId, allUnanalyzedClaimIds]);
+
   const showingStart = claims.length > 0 ? (page - 1) * 20 + 1 : 0;
   const showingEnd = Math.min(page * 20, total);
   const hasQueueActivity = progress.total > 0;
@@ -344,6 +473,7 @@ function ClaimsContent() {
     }
 
     enqueueBatch(remainingUnanalyzedClaimIds, 0);
+    setAnalyzePopoverOpen(false);
   };
 
   const toggleSort = (field: SortField) => {
@@ -367,15 +497,24 @@ function ClaimsContent() {
     );
   };
 
+  const pendingCount = remainingUnanalyzedClaimIds.length;
+  const analyzeBtnLabel =
+    pendingCount > 0 ? `Analyze ${pendingCount} pending` : "Analyze all pending";
+  const estimatedSeconds = Math.ceil(pendingCount * 0.3);
+
   return (
     <div className="space-y-5 p-6">
-      <div className="flex items-baseline justify-between">
+      {/* FIX 4: header row with help icon right-aligned next to caption */}
+      <div className="flex items-center justify-between">
         <h1 className="type-headline">Claims</h1>
-        <span className="type-caption text-muted-foreground">
-          {totalInDb > 0
-            ? `${analyzedCount} analyzed, ${totalInDb - analyzedCount} pending`
-            : ""}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="type-caption text-muted-foreground">
+            {totalInDb > 0
+              ? `${analyzedCount} analyzed, ${totalInDb - analyzedCount} pending`
+              : ""}
+          </span>
+          <QueueHelpPanel />
+        </div>
       </div>
 
       {hasQueueActivity && (
@@ -452,13 +591,14 @@ function ClaimsContent() {
         <div
           aria-label="Filter by risk level"
           className="flex items-center border border-border"
-          role="group"
+          role="radiogroup"
         >
           {(["all", "high", "medium", "low"] as const).map((level, i) => (
             <button
               key={level}
-              aria-pressed={riskFilter === level}
-              className={`h-8 px-2.5 text-label font-medium transition-colors ${
+              role="radio"
+              aria-checked={riskFilter === level}
+              className={`h-8 px-2.5 text-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:h-11 ${
                 i > 0 ? "border-l border-border" : ""
               } ${
                 riskFilter === level
@@ -483,14 +623,15 @@ function ClaimsContent() {
         <div
           aria-label="Filter by status"
           className="flex items-center border border-border"
-          role="group"
+          role="radiogroup"
         >
           {(["all", "new", "reviewed", "actioned"] as const).map(
             (status, i) => (
               <button
                 key={status}
-                aria-pressed={statusFilter === status}
-                className={`h-8 px-2.5 text-label font-medium transition-colors ${
+                role="radio"
+                aria-checked={statusFilter === status}
+                className={`h-8 px-2.5 text-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pointer-coarse:h-11 ${
                   i > 0 ? "border-l border-border" : ""
                 } ${
                   statusFilter === status
@@ -513,20 +654,64 @@ function ClaimsContent() {
           )}
         </div>
 
+        {/* FIX 2: dynamic count label; confirmation popover when > 50 pending */}
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            disabled={remainingUnanalyzedClaimIds.length === 0}
-            onClick={enqueueRemainingClaims}
-            size="sm"
-            variant="outline"
-          >
-            Analyze all pending
-          </Button>
-          {remainingUnanalyzedClaimIds.length > 0 && (
-            <span className="type-caption text-muted-foreground">
-              {remainingUnanalyzedClaimIds.length} waiting
-            </span>
+          {pendingCount > 50 ? (
+            <Popover
+              open={analyzePopoverOpen}
+              onOpenChange={setAnalyzePopoverOpen}
+            >
+              <PopoverTrigger
+                render={
+                  <Button
+                    disabled={pendingCount === 0}
+                    size="sm"
+                    variant="outline"
+                  />
+                }
+              >
+                {analyzeBtnLabel}
+              </PopoverTrigger>
+              <PopoverContent align="end" side="bottom" className="w-80 p-4">
+                <p className="type-body mb-3">
+                  Will analyze {pendingCount} claims. Estimated time: ~
+                  {estimatedSeconds}s. Fires {pendingCount} model serving
+                  requests.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setAnalyzePopoverOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={enqueueRemainingClaims}>
+                    Start analysis
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : (
+            <Button
+              disabled={pendingCount === 0}
+              onClick={enqueueRemainingClaims}
+              size="sm"
+              variant="outline"
+            >
+              {analyzeBtnLabel}
+            </Button>
           )}
+          {/*
+            TODO: cancel in-progress analysis
+            useAnalysisQueue does not expose a cancel() method. A cancel button
+            would require adding a cancel() to UseAnalysisQueueReturn that clears
+            the queue and aborts the in-flight fetch (via AbortController).
+            Once added, render:
+              {isProcessing && (
+                <Button size="sm" variant="ghost" onClick={cancel}>Cancel</Button>
+              )}
+          */}
         </div>
       </div>
 
@@ -550,17 +735,35 @@ function ClaimsContent() {
         </div>
       )}
 
+      {/* FIX 5: improved empty states */}
       {!claimsQuery.isLoading &&
         !claimsQuery.isError &&
         claims.length === 0 && (
           <div className="border border-border py-16 text-center" role="status">
-            <p className="type-body mx-auto text-muted-foreground">
-              {total === 0 && statuses.length > 0
-                ? "Analyzing claims from feature table…"
-                : total === 0
-                  ? "No claims found."
-                  : "No claims match the current filters."}
-            </p>
+            {total === 0 && statuses.length > 0 ? (
+              <p className="type-body mx-auto text-muted-foreground">
+                Analyzing claims from feature table&hellip;{" "}
+                {progress.total > 0
+                  ? `(${progress.completed}/${progress.total} analyzed)`
+                  : "Queueing up…"}
+              </p>
+            ) : total === 0 ? (
+              <>
+                <p className="type-body mx-auto max-w-md text-muted-foreground">
+                  No claims in your queue yet. Once claims land in the feature
+                  table, they&apos;ll be analyzed automatically and appear here
+                  sorted by denial risk.
+                </p>
+                <p className="type-caption mx-auto mt-2 text-muted-foreground">
+                  Check back in a few minutes, or visit the dashboard for system
+                  status.
+                </p>
+              </>
+            ) : (
+              <p className="type-body mx-auto text-muted-foreground">
+                No claims match the current filters.
+              </p>
+            )}
           </div>
         )}
 
@@ -629,12 +832,20 @@ function ClaimsContent() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {claims.map((claim) => (
+                {/* FIX 1: apply keyboard focus outline to the active row */}
+                {claims.map((claim, index) => (
                   <TableRow
                     key={claim.claimId}
-                    className={
-                      claim.riskLevel === null ? "opacity-50" : undefined
-                    }
+                    className={[
+                      claim.riskLevel === null ? "opacity-50" : "",
+                      effectiveFocusedRow === index
+                        ? "outline outline-1 outline-ring -outline-offset-1"
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => navigateToClaim(claim.claimId)}
+                    style={{ cursor: "pointer" }}
                   >
                     <TableCell>
                       <RiskBar
@@ -646,11 +857,18 @@ function ClaimsContent() {
                       <Link
                         className="underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         href={`/claims/${claim.claimId}`}
+                        onClick={(e) => {
+                          // Prevent row onClick double-fire; navigateToClaim
+                          // snapshots scroll before router.push
+                          e.stopPropagation();
+                          e.preventDefault();
+                          navigateToClaim(claim.claimId);
+                        }}
                       >
                         {claim.claimId}
                       </Link>
                     </TableCell>
-                    <TableCell className="type-caption text-muted-foreground truncate max-w-50">
+                    <TableCell className="type-caption text-muted-foreground truncate max-w-[200px]">
                       {claim.topReason ?? "—"}
                     </TableCell>
                     <TableCell>
@@ -675,7 +893,7 @@ function ClaimsContent() {
             </Table>
           </div>
 
-          <div className="h-10 flex items-center gap-6 px-1 text-[11.5px] text-muted-foreground border-t border-border/40">
+          <div className="h-10 flex items-center gap-6 px-1 type-caption text-muted-foreground border-t border-border/40">
             <span>
               <span className="tabular-nums text-foreground font-medium">
                 {total}

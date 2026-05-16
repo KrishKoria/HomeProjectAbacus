@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useRef, useState } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Sheet,
   SheetContent,
@@ -43,15 +49,25 @@ import {
 function DirectionTag({ direction }: { direction: string }) {
   if (direction === "increases_risk")
     return (
-      <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-up-bg text-direction-up">
-        Raises denial risk
-      </span>
+      <Tooltip>
+        <TooltipTrigger render={<span />} className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-up-bg text-direction-up cursor-default">
+          Raises denial risk
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          This feature pushed the model toward predicting denial. Higher contribution = stronger signal.
+        </TooltipContent>
+      </Tooltip>
     );
   if (direction === "decreases_risk")
     return (
-      <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-down-bg text-direction-down">
-        Lowers denial risk
-      </span>
+      <Tooltip>
+        <TooltipTrigger render={<span />} className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-down-bg text-direction-down cursor-default">
+          Lowers denial risk
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          This feature pulled the model away from predicting denial.
+        </TooltipContent>
+      </Tooltip>
     );
   return (
     <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
@@ -183,6 +199,19 @@ function ChatPanel({
     }
   }
 
+  // Build Q+A pairs from messages array
+  const qaPairs: Array<{ question: string; answer: string | null }> = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === "user") {
+      const next = messages[i + 1];
+      qaPairs.push({
+        question: messages[i].content,
+        answer: next?.role === "assistant" ? next.content : null,
+      });
+      if (next?.role === "assistant") i++; // skip the answer in outer loop
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="px-5 py-3 border-b border-border shrink-0">
@@ -195,7 +224,7 @@ function ChatPanel({
         </div>
         <p className="type-caption text-muted-foreground mt-0.5">
           Press{" "}
-          <kbd className="font-mono text-[10px] px-1 border border-border">
+          <kbd className="font-mono type-caption px-1 border border-border">
             C
           </kbd>{" "}
           to focus
@@ -204,7 +233,7 @@ function ChatPanel({
 
       <div
         ref={threadRef}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-6"
         aria-live="polite"
         aria-label="Chat messages"
       >
@@ -213,22 +242,42 @@ function ChatPanel({
             Waiting for analysis…
           </p>
         )}
-        {visibleMessages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <div
-              className={`max-w-[85%] px-3 py-2 text-sm leading-relaxed ${
-                msg.role === "user"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-foreground border border-border"
-              }`}
-            >
-              {msg.content}
+
+        {/* System opener — rendered as a header above Q&A log */}
+        {openingMessage && (
+          <div className="pb-4 border-b border-border/40">
+            <p className="type-caption text-muted-foreground uppercase tracking-wide mb-1">
+              Context
+            </p>
+            <p className="type-body max-w-none text-muted-foreground leading-relaxed">
+              {openingMessage.content}
+            </p>
+          </div>
+        )}
+
+        {/* Q+A log */}
+        {qaPairs.map((pair, i) => (
+          <div key={i} className={i < qaPairs.length - 1 || isWaiting ? "pb-6 border-b border-border/40" : "pb-2"}>
+            {/* Question row */}
+            <div className="flex items-start gap-2.5 mb-3">
+              <div className="w-0.5 self-stretch bg-foreground/20 shrink-0 mt-0.5" aria-hidden="true" />
+              <p className="type-label text-foreground leading-snug">
+                {pair.question}
+              </p>
             </div>
+            {/* Answer row */}
+            {pair.answer !== null && (
+              <div className="pl-[13px]">
+                <p className="type-caption text-muted-foreground mb-1">Answer</p>
+                <p className="type-body max-w-none text-foreground leading-relaxed">
+                  {pair.answer}
+                </p>
+              </div>
+            )}
           </div>
         ))}
+
+        {/* Suggested questions — shown when no user messages yet */}
         {messages.length === 0 &&
           analysis &&
           (() => {
@@ -253,7 +302,7 @@ function ChatPanel({
             if (!items.length) return null;
             return (
               <div className="mt-2">
-                <p className="type-label text-[10px] text-muted-foreground mb-2">
+                <p className="type-label text-muted-foreground mb-3">
                   Suggested
                 </p>
                 <div className="space-y-1.5">
@@ -262,7 +311,7 @@ function ChatPanel({
                       key={s}
                       type="button"
                       onClick={() => sendMessage(s)}
-                      className="block w-full text-left text-label text-foreground/80 hover:text-foreground border border-border hover:border-foreground/30 px-2.5 py-1.5 transition-colors"
+                      className="block w-full text-left type-label text-foreground/80 hover:text-foreground border border-border hover:border-foreground/30 px-2.5 py-1.5 transition-colors"
                     >
                       {s}
                     </button>
@@ -272,20 +321,20 @@ function ChatPanel({
             );
           })()}
 
+        {/* Typing indicator */}
         {isWaiting && (
-          <div className="flex justify-start">
-            <div className="bg-muted border border-border px-3 py-2">
-              <div className="flex items-center gap-1">
-                <span className="size-1.5 bg-muted-foreground rounded-full animate-pulse" />
-                <span
-                  className="size-1.5 bg-muted-foreground rounded-full animate-pulse"
-                  style={{ animationDelay: "150ms" }}
-                />
-                <span
-                  className="size-1.5 bg-muted-foreground rounded-full animate-pulse"
-                  style={{ animationDelay: "300ms" }}
-                />
-              </div>
+          <div className="pl-[13px]">
+            <p className="type-caption text-muted-foreground mb-1">Answer</p>
+            <div className="flex items-center gap-1 py-1">
+              <span className="size-1.5 bg-muted-foreground rounded-full animate-pulse" />
+              <span
+                className="size-1.5 bg-muted-foreground rounded-full animate-pulse"
+                style={{ animationDelay: "150ms" }}
+              />
+              <span
+                className="size-1.5 bg-muted-foreground rounded-full animate-pulse"
+                style={{ animationDelay: "300ms" }}
+              />
             </div>
           </div>
         )}
@@ -377,7 +426,7 @@ function StatusControl({
       }}
       disabled={mutation.isPending}
     >
-      <SelectTrigger className="w-36 h-10 text-xs" aria-label="Claim status">
+      <SelectTrigger className="w-36 h-10 pointer-coarse:h-11 text-xs" aria-label="Claim status">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -404,6 +453,7 @@ export default function ClaimDetailPage({
   const queryClient = useQueryClient();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const router = useRouter();
 
   const analysisQuery = useQuery({
     queryKey: ["claim-analysis", claimId],
@@ -435,12 +485,87 @@ export default function ClaimDetailPage({
     staleTime: 5 * 60 * 1000,
   });
 
+  // FIX 2: Next high-risk claim query
+  // Uses /api/claims with risk=high&status=new&sort=riskScore&order=desc
+  // to find the next high-risk unactioned claim after the current one
+  const nextHighRiskQuery = useQuery({
+    queryKey: ["next-high-risk", claimId],
+    queryFn: async () => {
+      const url = new URL("/api/claims", window.location.origin);
+      url.searchParams.set("risk", "high");
+      url.searchParams.set("sort", "riskScore");
+      url.searchParams.set("order", "desc");
+      url.searchParams.set("limit", "20");
+      // Fetch new + reviewed (not actioned)
+      const [resNew, resReviewed] = await Promise.all([
+        fetch(url.toString() + "&status=new"),
+        fetch(url.toString() + "&status=reviewed"),
+      ]);
+      const [dataNew, dataReviewed] = await Promise.all([
+        resNew.ok ? resNew.json() : { claims: [] },
+        resReviewed.ok ? resReviewed.json() : { claims: [] },
+      ]);
+      const allClaims: Array<{ claimId: string; riskScore: number | null }> = [
+        ...(dataNew.claims ?? []),
+        ...(dataReviewed.claims ?? []),
+      ];
+      // Sort by riskScore desc, deduplicate, find first claim that isn't current
+      const seen = new Set<string>();
+      const sorted = allClaims
+        .filter((c) => {
+          if (seen.has(c.claimId)) return false;
+          seen.add(c.claimId);
+          return true;
+        })
+        .sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0));
+      const next = sorted.find((c) => c.claimId !== claimId);
+      return next?.claimId ?? null;
+    },
+    staleTime: 2 * 60 * 1000,
+  });
+
+  // FIX 3: Runtime status query (for diagnostic error messages)
+  const runtimeStatusQuery = useQuery({
+    queryKey: ["runtime-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/runtime/status");
+      if (!res.ok) return null;
+      return res.json() as Promise<{
+        analysisEndpoint?: boolean;
+        sqlWarehouse?: boolean;
+      }>;
+    },
+    enabled: analysisQuery.isError,
+    staleTime: 30 * 1000,
+  });
+
   useEffect(() => {
     if (analysisQuery.data) {
       queryClient.invalidateQueries({ queryKey: ["claims"] });
       headingRef.current?.focus();
     }
   }, [analysisQuery.data, queryClient]);
+
+  // FIX 2: "n" keyboard shortcut for Next high-risk
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (
+        e.key === "n" &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        document.activeElement?.tagName !== "INPUT" &&
+        document.activeElement?.tagName !== "TEXTAREA"
+      ) {
+        const nextId = nextHighRiskQuery.data;
+        if (nextId) {
+          e.preventDefault();
+          router.push(`/claims/${nextId}`);
+        }
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [nextHighRiskQuery.data, router]);
 
   const analysis = analysisQuery.data;
   const riskLevel = analysis?.riskLevel ?? "low";
@@ -491,7 +616,8 @@ export default function ClaimDetailPage({
 
             {/* Loading */}
             {analysisQuery.isLoading && (
-              <div className="space-y-4">
+              <div role="status" aria-label="Loading claim analysis" className="space-y-4">
+                <span className="sr-only">Loading claim analysis…</span>
                 <div className="border border-border p-5 space-y-3">
                   <Skeleton className="h-12 w-32" />
                   <Skeleton className="h-2 w-48" />
@@ -516,27 +642,48 @@ export default function ClaimDetailPage({
               </div>
             )}
 
-            {/* Error */}
-            {analysisQuery.isError && (
-              <section className="border border-border py-5 px-5">
-                <div className="flex items-center gap-3">
-                  <Warning
-                    className="size-4 text-status-err shrink-0"
-                    aria-hidden="true"
-                  />
-                  <p className="type-body text-muted-foreground flex-1">
-                    Could not analyze this claim. Please try again.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => analysisQuery.refetch()}
-                  >
-                    Retry
-                  </Button>
-                </div>
-              </section>
-            )}
+            {/* FIX 3: Diagnostic error block */}
+            {analysisQuery.isError && (() => {
+              const errMsg =
+                analysisQuery.error instanceof Error
+                  ? analysisQuery.error.message
+                  : "Analysis failed";
+              const runtimeData = runtimeStatusQuery.data;
+              let runtimeHint: string | null = null;
+              if (runtimeData) {
+                if (runtimeData.analysisEndpoint === false) {
+                  runtimeHint = "The model endpoint appears offline.";
+                } else if (runtimeData.sqlWarehouse === false) {
+                  runtimeHint = "The SQL warehouse appears offline.";
+                }
+              }
+              return (
+                <section className="border border-border py-5 px-5">
+                  <div className="flex items-start gap-3">
+                    <Warning
+                      className="size-4 text-status-err shrink-0 mt-0.5"
+                      aria-hidden="true"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="type-body text-foreground">{errMsg}</p>
+                      {runtimeHint && (
+                        <p className="type-caption text-muted-foreground mt-1">
+                          {runtimeHint}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => analysisQuery.refetch()}
+                      className="shrink-0"
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                </section>
+              );
+            })()}
 
             {/* Analysis */}
             {analysis && (
@@ -658,13 +805,47 @@ export default function ClaimDetailPage({
                     </ul>
                   </section>
                 )}
+
+                {/* FIX 2: Next high-risk button — after Policy Sources */}
+                <div className="flex items-center justify-between pt-2 pb-4">
+                  {nextHighRiskQuery.data ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        router.push(`/claims/${nextHighRiskQuery.data}`)
+                      }
+                      aria-label="Navigate to next high-risk claim"
+                    >
+                      Next high-risk →
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled
+                      aria-label="No more high-risk claims"
+                    >
+                      <span className="text-muted-foreground">
+                        No more high-risk claims
+                      </span>
+                    </Button>
+                  )}
+                  <p className="type-caption text-muted-foreground">
+                    Press{" "}
+                    <kbd className="font-mono type-caption px-1 border border-border">
+                      N
+                    </kbd>{" "}
+                    to jump
+                  </p>
+                </div>
               </>
             )}
           </div>
         </div>
 
         {/* RIGHT COLUMN — chat panel (hidden below lg breakpoint) */}
-        <div className="hidden lg:flex w-95 xl:w-105 shrink-0 border-l border-border flex-col h-full">
+        <div className="hidden lg:flex w-[380px] xl:w-[420px] shrink-0 border-l border-border flex-col h-full">
           <ChatPanel claimId={claimId} analysis={analysis} />
         </div>
 
@@ -674,7 +855,7 @@ export default function ClaimDetailPage({
             type="button"
             aria-label="Ask AI about this claim"
             onClick={() => setChatOpen(true)}
-            className="fixed bottom-6 right-6 z-40 size-12 bg-foreground text-background flex items-center justify-center shadow-lg hover:bg-foreground/90 transition-colors"
+            className="fixed bottom-6 right-6 z-40 size-12 bg-foreground text-background flex items-center justify-center ring-1 ring-foreground/20 hover:ring-2 hover:ring-foreground/40 hover:bg-foreground/90 transition-all"
           >
             <ChatText className="size-5" />
           </button>
@@ -682,7 +863,7 @@ export default function ClaimDetailPage({
             <SheetContent
               side="right"
               showCloseButton
-              className="w-full sm:max-w-100 p-0 flex flex-col"
+              className="w-full sm:max-w-[400px] p-0 flex flex-col"
             >
               <SheetHeader className="sr-only">
                 <SheetTitle>Ask about this claim</SheetTitle>

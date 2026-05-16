@@ -7,7 +7,7 @@ export function RiskBar({ score, level }: RiskBarProps) {
   if (score === null || level === null) {
     return (
       <div className="flex items-center gap-2">
-        <span className="type-mono tabular-nums text-[12.5px] w-9 text-right text-muted-foreground opacity-50">
+        <span className="type-mono tabular-nums type-caption w-9 text-right text-muted-foreground opacity-50">
           —
         </span>
         <div className="flex gap-0.5 w-16">
@@ -25,7 +25,7 @@ export function RiskBar({ score, level }: RiskBarProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <span className="type-mono tabular-nums text-[12.5px] w-9 text-right">{pct}%</span>
+      <span className="type-mono tabular-nums type-caption w-9 text-right">{pct}%</span>
       <div className="flex gap-0.5 w-16">
         {[0, 1, 2, 3].map((i) => (
           <div
