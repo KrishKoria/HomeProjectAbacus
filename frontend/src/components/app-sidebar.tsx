@@ -22,6 +22,7 @@ import {
   MoonIcon,
   ClipboardTextIcon,
   SignOutIcon,
+  UploadSimpleIcon,
 } from "@phosphor-icons/react";
 import type { ClaimStats } from "@/lib/db/claims";
 
@@ -37,6 +38,12 @@ const navItems = [
     href: "/dashboard",
     icon: ChartBarIcon,
     shortcut: "G + D",
+  },
+  {
+    label: "Data Upload",
+    href: "/data-upload",
+    icon: UploadSimpleIcon,
+    shortcut: "G + U",
   },
 ];
 
@@ -70,6 +77,10 @@ export function AppSidebar() {
         if (e.key === "d") {
           e.preventDefault();
           router.push("/dashboard");
+        }
+        if (e.key === "u") {
+          e.preventDefault();
+          router.push("/data-upload");
         }
         gPressed = false;
         clearTimeout(timer);
