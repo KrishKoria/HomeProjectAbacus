@@ -67,6 +67,29 @@ gcloud builds submit --config cloudbuild.migrations.yaml --region asia-south1 --
 
 The migration pipeline connects to Cloud SQL through the Cloud SQL Auth Proxy, waits for proxy readiness with `cloud-sql-proxy wait`, and then applies committed Drizzle migrations with `bunx drizzle-kit migrate`.
 
+## 3.1) GCS-backed ETL Uploads
+
+The `Data Upload` page signs browser uploads into the GCS prefix that backs the external Unity Catalog volume `healthcare.bronze.raw_landing`.
+
+Required Cloud Run env vars:
+
+| Variable | Purpose |
+|---|---|
+| `CLAIMOPS_APP_ORIGIN` | Public Cloud Run or custom-domain origin used in bucket CORS |
+| `CLAIMOPS_GCS_LANDING_BUCKET` | Bucket that backs the external raw landing volume |
+| `CLAIMOPS_GCS_LANDING_PREFIX` | Object prefix for uploaded ETL inputs |
+| `CLAIMOPS_UPLOAD_CSV_MAX_BYTES` | Max CSV upload size |
+| `CLAIMOPS_UPLOAD_PDF_MAX_BYTES` | Max policy PDF upload size |
+| `CLAIMOPS_UPLOAD_SIGNED_POLICY_TTL_SECONDS` | Signed POST policy lifetime |
+
+Before enabling uploads in production:
+
+1. Convert or recreate `healthcare.bronze.raw_landing` as an external volume at `gs://homeprojectabacus-etl-landing-monthhome/claimops-raw-landing/`. Do not write to a managed volume's hidden `__unitystorage` path.
+2. Configure bucket CORS for the app origin with `POST` and `OPTIONS`.
+3. Grant the Cloud Run runtime service account object create/read/delete permissions scoped to the landing bucket or prefix, plus service-account signing permission required for V4 signed POST policies.
+4. Run database migrations so the `ingestion_uploads` audit table exists.
+5. Validate Databricks can read `/Volumes/healthcare/bronze/raw_landing/`, then deploy the bundle.
+
 If you want the main deploy to launch the migration build first, set `_RUN_DB_MIGRATIONS=true` on the main build:
 
 ```bash
