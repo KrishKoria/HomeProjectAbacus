@@ -73,3 +73,21 @@ export const claimSyncState = pgTable("claim_sync_state", {
   lastDiscoveredCount: integer("last_discovered_count").notNull().default(0),
   lastInsertedCount: integer("last_inserted_count").notNull().default(0),
 });
+
+export const ingestionUploads = pgTable("ingestion_uploads", {
+  id: text("id").primaryKey(),
+  datasetKey: text("dataset_key").notNull(),
+  objectName: text("object_name").notNull(),
+  volumePath: text("volume_path").notNull(),
+  contentType: text("content_type").notNull(),
+  byteSize: integer("byte_size").notNull(),
+  status: text("status").notNull().default("initiated"),
+  uploadedById: text("uploaded_by_id")
+    .notNull()
+    .references(() => user.id),
+  uploadedByEmail: text("uploaded_by_email").notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  completedAt: timestamp("completed_at"),
+  gcsGeneration: text("gcs_generation"),
+  errorMessage: text("error_message"),
+});

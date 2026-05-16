@@ -29,6 +29,13 @@
       "when": 1778739600000,
       "tag": "0003_steady_mandarin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778912400000,
+      "tag": "0004_ingestion_uploads",
+      "breakpoints": true
     }
   ]
 }

@@ -106,16 +106,15 @@ if str(_PROJECT_ROOT) not in sys.path:
 <claude-mem-context>
 # Memory Context
 
-# [homeprojectabacus] recent context, 2026-05-13 7:27pm GMT+5:30
+# [homeprojectabacus] recent context, 2026-05-16 6:13pm GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (18,192t read) | 307,992t work | 94% savings
+Stats: 50 obs (18,429t read) | 466,472t work | 96% savings
 
 ### May 13, 2026
-1069 11:30a 🔵 Production codebase fully mapped — data layer, API routes, and components inventoried
 1105 5:47p 🔵 Build failure: bun runtime missing from Cloud Build container
 1106 " 🔴 Add unzip dependency to Cloud Build migration step
 1107 6:05p 🔵 Better Auth state validation failures blocking OAuth callback
@@ -148,21 +147,14 @@ Stats: 50 obs (18,192t read) | 307,992t work | 94% savings
 1085 9:58p 🔵 homeprojectabacus Missing .gcloudignore Configuration
 1086 " 🔵 homeprojectabacus .gitignore Excludes Claude Code and Development Tools
 1087 " ✅ .gcloudignore Configuration Created for Cloud Build
-S269 Resolve Cloud Build COMMIT_SHA variable substitution for manual gcloud builds submit (May 13, 9:59 PM)
-S270 Fix Docker build failure for Next.js application and submit build to Google Cloud Build (May 13, 9:59 PM)
 1088 10:03p 🔵 Next.js Docker build fails due to missing app/pages directory
 1089 " ✅ Added root-level path prefixes to gcloudignore exclusions
-S271 Resolve Docker build deployment: fix Next.js structure and resolve region mismatch between Artifact Registry and Cloud Build configuration (May 13, 10:03 PM)
 1090 10:07p 🔵 Artifact Registry repository located in asia-south1
-S272 Verify and troubleshoot Better Auth OAuth configuration for homeprojectabacus frontend deployment on Cloud Run (May 13, 10:08 PM)
 1091 10:15p ✅ homeprojectabacus frontend deployed to GCP artifact registry
-S273 Review git changes and create step-by-step GCP deployment guide for completed project using Cloud Build and Cloud Run (May 13, 10:15 PM)
 1092 10:21p 🔵 Project Stack Assessment for GCP Deployment
 1093 " 🔵 GCP Cloud Build Deployment Pipeline Configuration
 1094 10:23p ✅ Added Database Migration Step to Cloud Build Pipeline
-S274 Fix Cloud Build deployment failure due to IAM permission denied on Secret Manager access for database password secret (May 13, 10:23 PM)
 1095 10:41p 🔵 Cloud Build Migration Step Fails Due to Secret Manager IAM Permission Denial
-S275 Verify IAM permissions were granted and resubmit Cloud Build deployment pipeline (May 13, 10:41 PM)
 S276 Fix Cloud Build secret access failure by identifying and removing unsupported substitution variable in availableSecrets (May 13, 10:44 PM)
 1096 10:48p 🔵 Root Cause Analysis: db-password Secret Likely Missing from Google Secret Manager
 1097 10:49p 🔵 Cloud Build Secret Resolution: Substitutions Supported in availableSecrets with dynamic_substitutions
@@ -173,16 +165,25 @@ S277 GCP deployment guidance for a completed project; debugged and fixed Cloud B
 1101 11:00p 🔵 Cloud Build Secret Injection Root Cause: Service Agent Permission Gap
 1102 " ⚖️ Cloud Build Secret Handling: Two-Step Approach with Direct gcloud Retrieval
 1103 11:01p ✅ Cloud Build Pipeline Refactored for Direct Secret Retrieval
+S278 Deploy GCP project after git changes - research and provide step-by-step deployment guide for Cloud Build pipeline (May 13, 11:01 PM)
 1104 11:08p ✅ Consolidated GCP Cloud Build migrations step and optimized secret handling
-S278 Deploy GCP project after git changes - research and provide step-by-step deployment guide for Cloud Build pipeline (May 13, 11:08 PM)
-**Investigated**: Git changes to cloudbuild.yaml showing consolidated migration step, secrets handling refactored from file-based to inline gcloud access, base image changed from bun-specific to cloud-sdk with manual bun installation; Cloud Build service account configuration and IAM permissions for secret access; GCP's service account behavior in Cloud Build for post-Jan 2024 projects
+S285 User asked whether IAM changes would take time to propagate to Databricks and requested troubleshooting guidance for credential validation delays (May 13, 11:08 PM)
+### May 16, 2026
+1119 4:00p 🔵 Explored ETL data landing and storage architecture for upload feature planning
+S286 Operational questions on ETL file arrival job: Can the paused schedule/trigger for /Volumes/healthcare/bronze/raw_landing/ be unpaused now? Will Databricks deploy automatically create the volume once the external location exists? (May 16, 5:41 PM)
+S287 Confirmed readiness to unpause ETL file-arrival job trigger after verifying external volume configuration and accessibility (May 16, 5:45 PM)
+S288 Unpause Databricks file-arrival trigger and verify frontend upload paths align with ETL expected directory structure (May 16, 5:49 PM)
+S289 Clarify dataset upload routing behavior: does system auto-detect file content type or rely on user-selected dataset? (May 16, 5:56 PM)
+S290 Verify prerequisites and deployment requirements for upload feature before Cloud Build frontend deploy (May 16, 5:58 PM)
+S291 Debug file arrival trigger failure in ETL pipeline — datasets uploaded via frontend should automatically trigger ETL file arrival job, but trigger is not firing (May 16, 6:10 PM)
+**Investigated**: Investigation just initiated; user requested codebase examination, context7 analysis, internet search, and gcloud CLI inspection to identify root cause
 
-**Learned**: GCP Cloud Build executes build steps using Compute Engine default service account (not the Cloud Build SA) in projects created or migrated after January 2024; this is only detectable via gcloud auth output in errors; database password connection strings cannot contain URL-special characters (@, /, ?, #, %, +) or they will break the PostgreSQL connection string formatting
+**Learned**: No findings yet — investigation phase beginning
 
-**Completed**: Reviewed and consolidated cloudbuild.yaml migrations step - removed separate secret-retrieval step and merged into run-migrations with inline gcloud secrets access; changed base image from oven/bun:1.3.12 to cloud-sdk and added manual bun installation via curl; identified the correct service account (Compute Engine default) that requires IAM secretmanager.secretAccessor role
+**Completed**: Problem statement captured: file arrival trigger mechanism is not executing when datasets are uploaded through the frontend
 
-**Next Steps**: Execute gcloud IAM grant command to add secretmanager.secretAccessor permission to Compute Engine default SA; submit build to Cloud Build using gcloud builds submit with proper substitutions; monitor build logs for successful secret retrieval, Cloud SQL proxy connection, and database migrations; validate Cloud Run deployment completes with correct environment variables and secrets
+**Next Steps**: Examine codebase for file arrival trigger implementation, check cloud storage event listeners, verify frontend upload integration with trigger system, search logs for error messages, and validate gcloud configuration if using Google Cloud Storage
 
 
-Access 308k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 466k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
