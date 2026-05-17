@@ -149,6 +149,7 @@ describe("upload API routes", () => {
       id: "upl_test",
       objectName: "claims/upl_test.csv",
       uploadedById: "user-1",
+      volumePath: "/Volumes/healthcare/bronze/raw_landing/claims/upl_test.csv",
     });
     verifyUploadedObject.mockResolvedValue({
       generation: "1700000000000000",
@@ -177,6 +178,11 @@ describe("upload API routes", () => {
       "upl_test",
       "1700000000000000",
     );
+    await expect(response.json()).resolves.toMatchObject({
+      gcsGeneration: "1700000000000000",
+      uploadId: "upl_test",
+      volumePath: expect.stringContaining("/Volumes/healthcare/bronze/raw_landing/claims/"),
+    });
   });
 
   it("marks failed and deletes the object when verification detects a mismatch", async () => {

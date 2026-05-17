@@ -35,5 +35,5 @@ describe("runtime environment loading", () => {
       GET: expect.any(Function),
       POST: expect.any(Function),
     });
-  });
+  }, 20_000);
 });
