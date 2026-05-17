@@ -110,6 +110,7 @@ export interface InitiateUploadInput {
   contentType: string;
   datasetKey: UploadDatasetKey;
   fileName: string;
+  headers?: string[];
 }
 
 export interface UploadSizeLimits {
@@ -122,6 +123,7 @@ const initiateUploadSchema = z.object({
   contentType: z.string().min(1),
   datasetKey: z.enum(Object.keys(UPLOAD_DATASETS) as [UploadDatasetKey, ...UploadDatasetKey[]]),
   fileName: z.string().min(1).max(255),
+  headers: z.array(z.string().min(1)).optional(),
 });
 
 export function getUploadDatasets(): UploadDataset[] {
@@ -157,9 +159,24 @@ export function parseInitiateUploadInput(
     throw new Error(`File exceeds ${formatBytes(maxBytes)} limit`);
   }
 
+  const headers = parsed.headers?.map(normalizeHeader).filter(Boolean);
+  if (dataset.extension === ".csv") {
+    if (!headers || headers.length === 0) {
+      throw new Error(`${dataset.displayName} uploads must include CSV headers`);
+    }
+
+    const missingColumns = dataset.requiredColumns.filter(
+      (column) => !headers.includes(column),
+    );
+    if (missingColumns.length > 0) {
+      throw new Error(`Missing columns: ${missingColumns.join(", ")}`);
+    }
+  }
+
   return {
     ...parsed,
     contentType,
+    headers,
   };
 }
 
@@ -192,4 +209,8 @@ function sanitizePolicyStem(value: string): string {
 
 function formatBytes(value: number): string {
   return `${Math.floor(value / 1_000_000)} MB`;
+}
+
+export function normalizeHeader(value: string): string {
+  return value.trim().replace(/^"|"$/g, "").replace(/^\uFEFF/, "");
 }

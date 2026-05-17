@@ -153,7 +153,7 @@ export default function DataUploadPage() {
       let landed = 0;
 
       for (const item of readyFiles) {
-        const result = await uploadOne(item.file, selectedDataset, setFiles);
+        const result = await uploadOne(item, selectedDataset, setFiles);
         if (result === "failed") failed += 1;
         if (result === "ok") landed += 1;
       }
@@ -484,6 +484,13 @@ function RecentUploads({
         <h2 className="type-title">Recent Uploads</h2>
         <span className="type-caption text-muted-foreground">Last 25</span>
       </div>
+      <Alert>
+        <WarningIcon className="size-4" />
+        <AlertTitle>Ingestion timing</AlertTitle>
+        <AlertDescription>
+          Databricks waits 60 seconds after the last file change and enforces a 300 second minimum between file-arrival triggers, so ETL is not immediate.
+        </AlertDescription>
+      </Alert>
       {isLoading ? (
         <div className="space-y-2" role="status" aria-label="Loading uploads">
           {Array.from({ length: 4 }).map((_, index) => (
@@ -505,24 +512,36 @@ function RecentUploads({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Upload ID</TableHead>
                 <TableHead>Dataset</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Size</TableHead>
                 <TableHead>Created</TableHead>
+                <TableHead>Completed</TableHead>
+                <TableHead>Generation</TableHead>
+                <TableHead>Error</TableHead>
                 <TableHead>Volume path</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {uploads.map((upload) => (
                 <TableRow key={upload.id}>
+                  <TableCell className="font-mono text-xs">{upload.id}</TableCell>
                   <TableCell className="font-medium">
-                    {datasets.find(d => d.datasetKey === upload.datasetKey)?.displayName ?? upload.datasetKey}
+                    {datasets.find((d) => d.datasetKey === upload.datasetKey)?.displayName ?? upload.datasetKey}
                   </TableCell>
                   <TableCell>
                     <UploadStatusBadge status={upload.status} />
                   </TableCell>
                   <TableCell>{formatBytes(upload.byteSize)}</TableCell>
-                  <TableCell>{new Date(upload.createdAt).toLocaleString()}</TableCell>
+                  <TableCell>{formatDateTime(upload.createdAt)}</TableCell>
+                  <TableCell>{formatDateTime(upload.completedAt)}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {upload.gcsGeneration ?? "—"}
+                  </TableCell>
+                  <TableCell className="max-w-[220px] text-xs text-muted-foreground">
+                    {upload.errorMessage ?? "—"}
+                  </TableCell>
                   <TableCell className="max-w-[320px] truncate font-mono text-xs text-muted-foreground">
                     {upload.volumePath}
                   </TableCell>
@@ -598,10 +617,11 @@ async function readCsvHeaders(file: File): Promise<string[]> {
 }
 
 async function uploadOne(
-  file: File,
+  item: SelectedUpload,
   dataset: UploadDataset,
   setFiles: React.Dispatch<React.SetStateAction<SelectedUpload[]>>,
 ): Promise<"ok" | "failed" | "cancelled"> {
+  const { file, headers } = item;
   const controller = new AbortController();
   updateFile(file, setFiles, {
     status: "signing",
@@ -616,6 +636,7 @@ async function uploadOne(
         contentType: file.type || fallbackContentType(dataset.extension),
         datasetKey: dataset.datasetKey,
         fileName: file.name,
+        headers,
       }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
@@ -738,6 +759,10 @@ function throwFileError(
 
 function fallbackContentType(extension: UploadDataset["extension"]) {
   return extension === ".pdf" ? "application/pdf" : "text/csv";
+}
+
+function formatDateTime(value: string | null) {
+  return value ? new Date(value).toLocaleString() : "—";
 }
 
 function formatBytes(bytes: number) {

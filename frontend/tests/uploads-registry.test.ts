@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildUploadObjectName,
   getUploadDataset,
+  normalizeHeader,
   parseInitiateUploadInput,
 } from "@/lib/uploads/registry";
 
@@ -74,6 +75,52 @@ describe("upload dataset registry", () => {
     ).toThrow("CSV");
   });
 
+  it("requires validated CSV headers for CSV datasets", () => {
+    expect(() =>
+      parseInitiateUploadInput({
+        byteSize: 100,
+        contentType: "text/csv",
+        datasetKey: "claims",
+        fileName: "claims.csv",
+      }),
+    ).toThrow("must include CSV headers");
+
+    expect(() =>
+      parseInitiateUploadInput({
+        byteSize: 100,
+        contentType: "text/csv",
+        datasetKey: "claims",
+        fileName: "claims.csv",
+        headers: ["claim_id", "patient_id"],
+      }),
+    ).toThrow("Missing columns");
+  });
+
+  it("accepts normalized CSV headers and leaves PDF uploads unchanged", () => {
+    expect(
+      parseInitiateUploadInput({
+        byteSize: 100,
+        contentType: "text/csv",
+        datasetKey: "providers",
+        fileName: "providers.csv",
+        headers: ['\uFEFF"provider_id"', " doctor_name ", "specialty", "location"],
+      }),
+    ).toMatchObject({
+      headers: ["provider_id", "doctor_name", "specialty", "location"],
+    });
+
+    expect(
+      parseInitiateUploadInput({
+        byteSize: 100,
+        contentType: "application/pdf",
+        datasetKey: "policies",
+        fileName: "policy.pdf",
+      }),
+    ).toMatchObject({
+      datasetKey: "policies",
+    });
+  });
+
   it("uses generated names for CSV datasets and sanitized policy names for PDFs", () => {
     expect(
       buildUploadObjectName({
@@ -90,5 +137,9 @@ describe("upload dataset registry", () => {
         uploadId: "upl_456",
       }),
     ).toBe("policies/upl_456-payer-policy-v2-final.pdf");
+  });
+
+  it("normalizes client-supplied header values consistently", () => {
+    expect(normalizeHeader('\uFEFF"claim_id" ')).toBe("claim_id");
   });
 });
