@@ -50,18 +50,25 @@ function DirectionTag({ direction }: { direction: string }) {
   if (direction === "increases_risk")
     return (
       <Tooltip>
-        <TooltipTrigger render={<span />} className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-up-bg text-direction-up cursor-default">
+        <TooltipTrigger
+          render={<span />}
+          className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-up-bg text-direction-up cursor-default"
+        >
           Raises denial risk
         </TooltipTrigger>
         <TooltipContent side="top">
-          This feature pushed the model toward predicting denial. Higher contribution = stronger signal.
+          This feature pushed the model toward predicting denial. Higher
+          contribution = stronger signal.
         </TooltipContent>
       </Tooltip>
     );
   if (direction === "decreases_risk")
     return (
       <Tooltip>
-        <TooltipTrigger render={<span />} className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-down-bg text-direction-down cursor-default">
+        <TooltipTrigger
+          render={<span />}
+          className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-down-bg text-direction-down cursor-default"
+        >
           Lowers denial risk
         </TooltipTrigger>
         <TooltipContent side="top">
@@ -111,9 +118,6 @@ function ChatPanel({
           } denial risk. Ask me anything about it.`,
         }
       : null;
-  const visibleMessages = openingMessage
-    ? [openingMessage, ...messages]
-    : messages;
   const threadMessageCount = messages.length + (openingMessage ? 1 : 0);
 
   useEffect(() => {
@@ -257,18 +261,30 @@ function ChatPanel({
 
         {/* Q+A log */}
         {qaPairs.map((pair, i) => (
-          <div key={i} className={i < qaPairs.length - 1 || isWaiting ? "pb-6 border-b border-border/40" : "pb-2"}>
+          <div
+            key={i}
+            className={
+              i < qaPairs.length - 1 || isWaiting
+                ? "pb-6 border-b border-border/40"
+                : "pb-2"
+            }
+          >
             {/* Question row */}
             <div className="flex items-start gap-2.5 mb-3">
-              <div className="w-0.5 self-stretch bg-foreground/20 shrink-0 mt-0.5" aria-hidden="true" />
+              <div
+                className="w-0.5 self-stretch bg-foreground/20 shrink-0 mt-0.5"
+                aria-hidden="true"
+              />
               <p className="type-label text-foreground leading-snug">
                 {pair.question}
               </p>
             </div>
             {/* Answer row */}
             {pair.answer !== null && (
-              <div className="pl-[13px]">
-                <p className="type-caption text-muted-foreground mb-1">Answer</p>
+              <div className="pl-3.25">
+                <p className="type-caption text-muted-foreground mb-1">
+                  Answer
+                </p>
                 <p className="type-body max-w-none text-foreground leading-relaxed">
                   {pair.answer}
                 </p>
@@ -323,7 +339,7 @@ function ChatPanel({
 
         {/* Typing indicator */}
         {isWaiting && (
-          <div className="pl-[13px]">
+          <div className="pl-3.25">
             <p className="type-caption text-muted-foreground mb-1">Answer</p>
             <div className="flex items-center gap-1 py-1">
               <span className="size-1.5 bg-muted-foreground rounded-full animate-pulse" />
@@ -426,7 +442,10 @@ function StatusControl({
       }}
       disabled={mutation.isPending}
     >
-      <SelectTrigger className="w-36 h-10 pointer-coarse:h-11 text-xs" aria-label="Claim status">
+      <SelectTrigger
+        className="w-36 h-10 pointer-coarse:h-11 text-xs"
+        aria-label="Claim status"
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -622,7 +641,11 @@ export default function ClaimDetailPage({
 
             {/* Loading */}
             {analysisQuery.isLoading && (
-              <div role="status" aria-label="Loading claim analysis" className="space-y-4">
+              <div
+                role="status"
+                aria-label="Loading claim analysis"
+                className="space-y-4"
+              >
                 <span className="sr-only">Loading claim analysis…</span>
                 <div className="border border-border p-5 space-y-3">
                   <Skeleton className="h-12 w-32" />
@@ -649,47 +672,48 @@ export default function ClaimDetailPage({
             )}
 
             {/* FIX 3: Diagnostic error block */}
-            {analysisQuery.isError && (() => {
-              const errMsg =
-                analysisQuery.error instanceof Error
-                  ? analysisQuery.error.message
-                  : "Analysis failed";
-              const runtimeData = runtimeStatusQuery.data;
-              let runtimeHint: string | null = null;
-              if (runtimeData) {
-                if (runtimeData.analysisEndpoint === false) {
-                  runtimeHint = "The model endpoint appears offline.";
-                } else if (runtimeData.sqlWarehouse === false) {
-                  runtimeHint = "The SQL warehouse appears offline.";
+            {analysisQuery.isError &&
+              (() => {
+                const errMsg =
+                  analysisQuery.error instanceof Error
+                    ? analysisQuery.error.message
+                    : "Analysis failed";
+                const runtimeData = runtimeStatusQuery.data;
+                let runtimeHint: string | null = null;
+                if (runtimeData) {
+                  if (runtimeData.analysisEndpoint === false) {
+                    runtimeHint = "The model endpoint appears offline.";
+                  } else if (runtimeData.sqlWarehouse === false) {
+                    runtimeHint = "The SQL warehouse appears offline.";
+                  }
                 }
-              }
-              return (
-                <section className="border border-border py-5 px-5">
-                  <div className="flex items-start gap-3">
-                    <Warning
-                      className="size-4 text-status-err shrink-0 mt-0.5"
-                      aria-hidden="true"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="type-body text-foreground">{errMsg}</p>
-                      {runtimeHint && (
-                        <p className="type-caption text-muted-foreground mt-1">
-                          {runtimeHint}
-                        </p>
-                      )}
+                return (
+                  <section className="border border-border py-5 px-5">
+                    <div className="flex items-start gap-3">
+                      <Warning
+                        className="size-4 text-status-err shrink-0 mt-0.5"
+                        aria-hidden="true"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="type-body text-foreground">{errMsg}</p>
+                        {runtimeHint && (
+                          <p className="type-caption text-muted-foreground mt-1">
+                            {runtimeHint}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => analysisQuery.refetch()}
+                        className="shrink-0"
+                      >
+                        Retry
+                      </Button>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => analysisQuery.refetch()}
-                      className="shrink-0"
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                </section>
-              );
-            })()}
+                  </section>
+                );
+              })()}
 
             {/* Analysis */}
             {analysis && (
@@ -851,7 +875,7 @@ export default function ClaimDetailPage({
         </div>
 
         {/* RIGHT COLUMN — chat panel (hidden below lg breakpoint) */}
-        <div className="hidden lg:flex w-[380px] xl:w-[420px] shrink-0 border-l border-border flex-col h-full">
+        <div className="hidden lg:flex w-95 xl:w-105 shrink-0 border-l border-border flex-col h-full">
           <ChatPanel claimId={claimId} analysis={analysis} />
         </div>
 
@@ -869,7 +893,7 @@ export default function ClaimDetailPage({
             <SheetContent
               side="right"
               showCloseButton
-              className="w-full sm:max-w-[400px] p-0 flex flex-col"
+              className="w-full sm:max-w-100 p-0 flex flex-col"
             >
               <SheetHeader className="sr-only">
                 <SheetTitle>Ask about this claim</SheetTitle>
