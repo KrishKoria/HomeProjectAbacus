@@ -26,6 +26,7 @@ export interface PolicyEvidence {
 
 export interface ClaimAnalysisResponse {
   claimId: string;
+  features: Record<string, number | boolean | null>;
   riskScore: number;
   riskLevel: "low" | "medium" | "high";
   predictionLabel: number;
