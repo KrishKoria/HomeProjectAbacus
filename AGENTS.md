@@ -106,7 +106,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 <claude-mem-context>
 # Memory Context
 
-# [homeprojectabacus] recent context, 2026-05-17 1:04pm GMT+5:30
+# [homeprojectabacus] recent context, 2026-05-18 1:28am GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
@@ -152,9 +152,6 @@ Stats: 50 obs (19,879t read) | 789,361t work | 97% savings
 1104 11:08p ✅ Consolidated GCP Cloud Build migrations step and optimized secret handling
 ### May 16, 2026
 1119 4:00p 🔵 Explored ETL data landing and storage architecture for upload feature planning
-S287 Confirmed readiness to unpause ETL file-arrival job trigger after verifying external volume configuration and accessibility (May 16, 5:45 PM)
-S288 Unpause Databricks file-arrival trigger and verify frontend upload paths align with ETL expected directory structure (May 16, 5:49 PM)
-S289 Clarify dataset upload routing behavior: does system auto-detect file content type or rely on user-selected dataset? (May 16, 5:56 PM)
 S290 Verify prerequisites and deployment requirements for upload feature before Cloud Build frontend deploy (May 16, 5:58 PM)
 S291 Debug file arrival trigger failure in ETL pipeline — datasets uploaded via frontend should automatically trigger ETL file arrival job, but trigger is not firing (May 16, 6:02 PM)
 S292 Debug why file arrival trigger isn't automatically triggering ETL job when datasets are uploaded via frontend — identified trigger timing behavior and delays (May 16, 6:10 PM)
@@ -170,13 +167,25 @@ S295 Evaluate and implement five frontend hardening improvements: Cloud SQL conn
 1125 " 🟣 Upload Completion Metadata Verification
 1126 " 🟣 Enhanced Upload Status UI with Ingestion Timing Guidance
 1127 " 🟣 Comprehensive Test Coverage for New Validations
+S296 Evaluate 10 proposed feature additions to healthcare claims analysis project (remediation checklist, review report generation, upload dashboard, CSV preview, ingestion results, work queue, feedback loop, policy citations, audit timeline, advanced feature view) and determine worthiness with detailed implementation plan (May 17, 12:09 PM)
 1128 12:19p 🔵 Homeprojectabacus: Existing infrastructure and completed phases mapped from project memory
-S296 Evaluate 10 proposed feature additions to healthcare claims analysis project (remediation checklist, review report generation, upload dashboard, CSV preview, ingestion results, work queue, feedback loop, policy citations, audit timeline, advanced feature view) and determine worthiness with detailed implementation plan (May 17, 12:29 PM)
+S297 Implementation of 10 feature additions to healthcare claims analysis platform (homeprojectabacus) with focus on finalizing code quality, fixing linting/type errors, and ensuring all tests pass (May 17, 12:29 PM)
 1129 12:31p 🔵 Frontend test suite times out after 120+ seconds
 1130 12:33p 🔵 Claim detail page structure and components mapped
 1131 " 🔵 Test suite structure and patterns identified for claims, uploads, and pages
 1132 12:35p 🔵 Database schema and helper functions architecture mapped for claims and uploads
 1133 12:41p 🟣 Upload/ingestion status dashboard implemented
+S298 Create comprehensive architecture diagram of ClaimOps project using imagegen skill, covering frontend, Databricks ETL, ML/RAG, and all system components (May 17, 12:59 PM)
+### May 18, 2026
+S299 Create a comprehensive frontend architecture diagram for ClaimOps by exploring the Next.js codebase in depth, understanding how all components interact, and generating a visual diagram using imagegen skill (May 18, 1:12 AM)
+**Investigated**: Conducted exhaustive frontend codebase scan including: file structure (pages, API routes, components, libs), design context (PRODUCT.md, DESIGN.md, CONTEXT.md, frontend/CLAUDE.md), auth system (Better Auth + Google OAuth), database schema (Drizzle ORM with PostgreSQL/Neon), data fetching (React Query), styling system (Tailwind v4 + shadcn/ui), Databricks integration (OAuth, SQL warehouse, ML serving endpoints), upload system (GCS + signed policies), API routes (claims analysis, chat, sync, status), React components (AppShell, claims table, chat panel, risk score display, uploads), and deployment infrastructure (Dockerfile, Cloud Build config)
+
+**Learned**: ClaimOps frontend is a clinical diagnostic console: Next.js 15 + React 19 + TypeScript architecture using split-panel layout (62%/38%) for claim details with always-visible chat at ≥1024px. Data flows: PostgreSQL (auth/sessions via Better Auth + Drizzle) ↔ React Query (client state) ↔ API routes (Node.js) ↔ Databricks (ML analysis, SQL queries, LLM chat). Risk-sorted claims queue with filtering (High/Medium/Low, New/Reviewed/Actioned). Per-claim chat uses Databricks Llama 70B with claim context. Upload flow: client → GCS signed policy → server verification → Databricks Volume. Design: flat surfaces, semantic colors only (risk levels + status), typography-forward hierarchy, sharp corners, light mode, no decorative elements. Deployed via Cloud Run with Cloud SQL Proxy, secrets management via Google Secret Manager
+
+**Completed**: Full codebase exploration complete: 50+ files read spanning pages, API routes, components, libs, configs, and deployment infrastructure. Design/product context loaded and analyzed. Architecture mentally modeled across auth, data access, state management, UI layers, and external integrations
+
+**Next Steps**: Generate frontend architecture diagram using imagegen skill that visualizes: (1) Browser UI layer with pages and components; (2) React state/data fetching (React Query + hooks); (3) API routes as middleware layer; (4) Server libs (Databricks client, SQL, auth, uploads); (5) External services (PostgreSQL, Databricks, GCS); (6) Data flow arrows between layers showing claim analysis, chat, uploads, sync workflows. Diagram should be 16:9 infographic, legible, showing component groups and key interactions without overwhelming detail
+
 
 Access 789k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
