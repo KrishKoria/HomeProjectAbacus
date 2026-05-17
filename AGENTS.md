@@ -106,17 +106,16 @@ if str(_PROJECT_ROOT) not in sys.path:
 <claude-mem-context>
 # Memory Context
 
-# [homeprojectabacus] recent context, 2026-05-16 6:13pm GMT+5:30
+# [homeprojectabacus] recent context, 2026-05-17 11:55am GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (18,429t read) | 466,472t work | 96% savings
+Stats: 50 obs (19,184t read) | 605,067t work | 97% savings
 
 ### May 13, 2026
-1105 5:47p 🔵 Build failure: bun runtime missing from Cloud Build container
-1106 " 🔴 Add unzip dependency to Cloud Build migration step
+1106 5:47p 🔴 Add unzip dependency to Cloud Build migration step
 1107 6:05p 🔵 Better Auth state validation failures blocking OAuth callback
 1108 " 🔵 Cloud SQL proxy attached but service references multiple instances
 1109 6:06p 🔵 No recent build history found or migration logs unavailable
@@ -155,12 +154,10 @@ Stats: 50 obs (18,429t read) | 466,472t work | 96% savings
 1093 " 🔵 GCP Cloud Build Deployment Pipeline Configuration
 1094 10:23p ✅ Added Database Migration Step to Cloud Build Pipeline
 1095 10:41p 🔵 Cloud Build Migration Step Fails Due to Secret Manager IAM Permission Denial
-S276 Fix Cloud Build secret access failure by identifying and removing unsupported substitution variable in availableSecrets (May 13, 10:44 PM)
 1096 10:48p 🔵 Root Cause Analysis: db-password Secret Likely Missing from Google Secret Manager
 1097 10:49p 🔵 Cloud Build Secret Resolution: Substitutions Supported in availableSecrets with dynamic_substitutions
 1098 " 🔵 db-password Secret Exists in Secret Manager; Root Cause is Secret-Level Permissions
 1099 10:50p ✅ Hardcode Secret Name in cloudbuild.yaml to Eliminate Substitution Variable
-S277 GCP deployment guidance for a completed project; debugged and fixed Cloud Build secret injection failures (May 13, 10:50 PM)
 1100 10:54p 🔵 IAM Permission Denied for Secret Manager Access in Cloud Build
 1101 11:00p 🔵 Cloud Build Secret Injection Root Cause: Service Agent Permission Gap
 1102 " ⚖️ Cloud Build Secret Handling: Two-Step Approach with Direct gcloud Retrieval
@@ -175,15 +172,41 @@ S287 Confirmed readiness to unpause ETL file-arrival job trigger after verifying
 S288 Unpause Databricks file-arrival trigger and verify frontend upload paths align with ETL expected directory structure (May 16, 5:49 PM)
 S289 Clarify dataset upload routing behavior: does system auto-detect file content type or rely on user-selected dataset? (May 16, 5:56 PM)
 S290 Verify prerequisites and deployment requirements for upload feature before Cloud Build frontend deploy (May 16, 5:58 PM)
-S291 Debug file arrival trigger failure in ETL pipeline — datasets uploaded via frontend should automatically trigger ETL file arrival job, but trigger is not firing (May 16, 6:10 PM)
-**Investigated**: Investigation just initiated; user requested codebase examination, context7 analysis, internet search, and gcloud CLI inspection to identify root cause
+S291 Debug file arrival trigger failure in ETL pipeline — datasets uploaded via frontend should automatically trigger ETL file arrival job, but trigger is not firing (May 16, 6:02 PM)
+S292 Debug why file arrival trigger isn't automatically triggering ETL job when datasets are uploaded via frontend — identified trigger timing behavior and delays (May 16, 6:10 PM)
+### May 17, 2026
+1120 11:48a 🔵 Five proposed backend and frontend improvements all map to real code patterns and unaddressed risks
+S293 Continue implementation of five validated backend/frontend improvements to homeprojectabacus healthcare claims platform. Items cover: (1) Cloud SQL connection pool limits, (2) Query validation enums, (3) GCS metadata fields, (4) Upload status messaging, (5) Server-side CSV validation. (May 17, 11:51 AM)
+**Investigated**: - Previous session validation notes confirming all 5 items are production-grade improvements with specific code locations
+    - Parallel documentation queries for postgres.js connection pooling, Google Cloud Storage metadata APIs, Next.js App Router patterns, and project configuration (shadcn/ui, Tailwind v4, environment schema)
+    - Examined test files (runtime-env.test.ts, claims-page.test.tsx, claims-routes.test.ts, uploads-routes.test.ts) to understand mocking and testing patterns
+    - Reviewed database schema (ingestion_uploads table structure with gcs_generation field already present)
+    - Confirmed shadcn/ui project configuration: base library, phosphor icons, "base-lyra" style, Tailwind v4, Next.js 16.2.6 with RSC enabled
 
-**Learned**: No findings yet — investigation phase beginning
+**Learned**: - Postgres.js supports pool configuration via options object: max, idle_timeout, connect_timeout (all in seconds)
+    - Cloud Run deployment uses --max-instances=6 and --concurrency=40, requiring conservative per-instance pool sizing (~15 max)
+    - GCS signed POST policies can enforce custom metadata fields via x-goog-meta-* with conditions matching form fields
+    - Upload status component already exists in /data-upload page; primary work is enhancement (delay messaging, metadata columns) not creation
+    - CSV validation is currently client-only; server validation must check headers before signing uploads to prevent tampering
+    - Project environment validates database config at runtime with superRefine rules
 
-**Completed**: Problem statement captured: file arrival trigger mechanism is not executing when datasets are uploaded through the frontend
+**Completed**: - Created 5 structured implementation tasks in task management system (all marked completed after implementation guidance provided)
+    - Delivered complete, production-grade code implementations for all 5 items with:
+      * File locations and line numbers
+      * Exact code changes with rationale
+      * Integration points with existing codebase
+      * Error handling and fallback patterns
+    - Task #1: Pool configuration with max=15, idle_timeout=30s, connect_timeout=10s
+    - Task #2: Query validation via z.enum() for risk/status with .catch("all") fallback
+    - Task #3: GCS metadata policy with x-goog-meta-* fields, fields/conditions, and getMetadata verification
+    - Task #4: Upload status messaging component with elapsed time and Databricks latency explanation (6-minute window)
+    - Task #5: Server-side CSV header validation before signing, with 400 error listing missing columns
 
-**Next Steps**: Examine codebase for file arrival trigger implementation, check cloud storage event listeners, verify frontend upload integration with trigger system, search logs for error messages, and validate gcloud configuration if using Google Cloud Storage
+**Next Steps**: - Background system has active queries for detailed technical documentation and project inspection
+    - Sequential thinking phase analyzed each improvement item and confirmed viability
+    - Anticipated next: Code file modifications, test implementation, and build/type verification
+    - Potential secondary review: Database connection testing under load, metadata round-trip verification, upload flow E2E testing
 
 
-Access 466k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 605k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

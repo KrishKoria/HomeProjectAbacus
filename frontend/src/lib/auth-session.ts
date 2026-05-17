@@ -4,11 +4,14 @@ import { env } from "@/lib/server/env";
 
 function isAuthorized(email: string | null | undefined): boolean {
   if (!email) return false;
-  const adminEmails = env.CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS.split(",").map((e) => e.trim());
-  if (adminEmails.includes(email)) return true;
-  const allowedDomains = env.CLAIMOPS_ALLOWED_EMAIL_DOMAINS.split(",").map((d) => d.trim());
+  const normalizedEmail = email.toLowerCase();
+  const adminEmails = env.CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS
+    .split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  if (adminEmails.includes(normalizedEmail)) return true;
+  const allowedDomains = env.CLAIMOPS_ALLOWED_EMAIL_DOMAINS
+    .split(",").map((d) => d.trim().toLowerCase()).filter(Boolean);
   if (allowedDomains.includes("*")) return true;
-  const domain = email.split("@")[1];
+  const domain = normalizedEmail.split("@")[1];
   if (domain && allowedDomains.includes(domain)) return true;
   return false;
 }

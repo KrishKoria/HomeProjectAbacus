@@ -41,7 +41,10 @@ export async function POST(request: Request) {
     const policy = await createSignedUploadPolicy({
       byteSize: row.byteSize ?? parsed.byteSize,
       contentType: row.contentType ?? parsed.contentType,
+      datasetKey: row.datasetKey,
       objectName: row.objectName,
+      uploadId: row.id,
+      uploaderId: row.uploadedById,
     });
 
     return NextResponse.json({

@@ -152,7 +152,7 @@ function ChatPanel({
     if (!text || isWaiting || !analysis) return;
     if (!overrideText) setInput("");
     const userMsg: ChatMessage = { role: "user", content: text };
-    const nextMessages = [...visibleMessages, userMsg];
+    const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     setIsWaiting(true);
 
@@ -538,6 +538,12 @@ export default function ClaimDetailPage({
     enabled: analysisQuery.isError,
     staleTime: 30 * 1000,
   });
+
+  useEffect(() => {
+    if (runtimeStatusQuery.data?.sqlWarehouse === false) {
+      fetch("/api/runtime/start-warehouse", { method: "POST" }).catch(() => {});
+    }
+  }, [runtimeStatusQuery.data]);
 
   useEffect(() => {
     if (analysisQuery.data) {

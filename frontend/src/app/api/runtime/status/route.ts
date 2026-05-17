@@ -1,4 +1,5 @@
-import { requireSession } from "@/lib/auth-session";
+import { requireAuthorizedSession } from "@/lib/auth-session";
+import { getToken } from "@/lib/databricks/oauth";
 import { databricksFetch } from "@/lib/databricks/client";
 import { env } from "@/lib/server/env";
 import type { DatabricksStatus } from "@/lib/databricks/types";
@@ -8,7 +9,7 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    await requireSession();
+    await requireAuthorizedSession();
   } catch {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -21,17 +22,14 @@ export async function GET() {
     modelServing: false,
   };
 
-  const [oauthResult, warehouseResult, endpointResult] = await Promise.all([
-    databricksFetch<{ access_token: string }>("/oidc/v1/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "client_credentials",
-          scope: "all-apis",
-          client_id: env.DATABRICKS_CLIENT_ID,
-          client_secret: env.DATABRICKS_CLIENT_SECRET,
-        }),
-    }),
+  try {
+    await getToken();
+    status.oauth = true;
+  } catch {
+    // oauth remains false
+  }
+
+  const [warehouseResult, endpointResult] = await Promise.all([
     databricksFetch<{ state: string }>(
       `/api/2.0/sql/warehouses/${env.DATABRICKS_SQL_WAREHOUSE_ID}`,
     ),
@@ -39,18 +37,9 @@ export async function GET() {
       `/api/2.0/serving-endpoints/${env.CLAIMOPS_ANALYSIS_ENDPOINT}`,
     ),
   ]);
-  if (oauthResult.ok) status.oauth = true;
-  if (warehouseResult.ok) {
-    status.sqlWarehouse = true;
-    if (warehouseResult.data.state === "STOPPED") {
-      await databricksFetch(`/api/2.0/sql/warehouses/${env.DATABRICKS_SQL_WAREHOUSE_ID}/start`, {
-        method: "POST",
-      });
-    }
-  }
-  if (endpointResult.ok) {
-    status.analysisEndpoint = true;
-  }
+
+  if (warehouseResult.ok) status.sqlWarehouse = true;
+  if (endpointResult.ok) status.analysisEndpoint = true;
 
   return Response.json(status);
 }
