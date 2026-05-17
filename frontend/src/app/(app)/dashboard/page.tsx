@@ -8,9 +8,13 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RiskBar } from "@/components/risk-bar";
+import { ArrowRight, MagnifyingGlass } from "@phosphor-icons/react";
+import { QueueBucket } from "@/components/dashboard/queue-bucket";
+import { QueueStatusBucket } from "@/components/dashboard/queue-status-bucket";
+import { RiskDistribution } from "@/components/dashboard/risk-distribution";
+import { WorkflowStatus } from "@/components/dashboard/workflow-status";
+import { TopClaims } from "@/components/dashboard/top-claims";
 import type { ClaimReview, ClaimStats } from "@/lib/db/claims";
-import { MagnifyingGlass, ArrowRight } from "@phosphor-icons/react";
 
 interface ClaimStatusRecord {
   analyzedAt: string | null;
@@ -141,7 +145,6 @@ export default function DashboardPage() {
           <h1 className="type-headline">Dashboard</h1>
         </div>
 
-        {/* Queue overview — 3-column strip */}
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="type-title">Queue Overview</h2>
@@ -188,129 +191,12 @@ export default function DashboardPage() {
 
           {stats && stats.total > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 border-t border-border pt-6">
-              {/* Column 1 — Risk distribution */}
-              <div className="space-y-3">
-                <p className="type-label text-muted-foreground">
-                  Risk distribution
-                </p>
-                <div className="space-y-2.5">
-                  {(["high", "medium", "low"] as const).map((level) => {
-                    const count = stats.risk[level];
-                    const pct =
-                      stats.total > 0 ? (count / stats.total) * 100 : 0;
-                    return (
-                      <Link
-                        key={level}
-                        href={`/claims?risk=${level}`}
-                        className="w-full grid grid-cols-[56px_1fr_28px] items-center gap-3 text-label group"
-                      >
-                        <span
-                          className={`text-right type-mono text-risk-${level} capitalize group-hover:opacity-80 transition-opacity`}
-                        >
-                          {level}
-                        </span>
-                        <div className="relative h-2 bg-muted overflow-hidden">
-                          <div
-                            className={`absolute inset-y-0 left-0 bg-risk-${level}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <span className="type-mono tabular-nums text-foreground text-right">
-                          {count}
-                        </span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Column 2 — Workflow status */}
-              <div className="space-y-3">
-                <p className="type-label text-muted-foreground">Workflow</p>
-                <div className="space-y-2">
-                  {(["new", "reviewed", "actioned"] as const).map((s) => (
-                    <Link
-                      key={s}
-                      href={`/claims?status=${s}`}
-                      className="w-full flex items-center justify-between border border-border px-3 py-2.5 hover:bg-muted/50 transition-colors group"
-                    >
-                      <span className="type-caption text-muted-foreground capitalize group-hover:text-foreground transition-colors">
-                        {s}
-                      </span>
-                      <span className="type-mono tabular-nums text-foreground font-medium group-hover:underline underline-offset-4 decoration-foreground/30">
-                        {stats.status[s]}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-
-                {/* Team throughput strip */}
-                <div className="border-t border-border/60 pt-3 mt-1">
-                  <p className="type-label text-muted-foreground">Team throughput</p>
-                  <p className="type-mono tabular-nums text-foreground mt-1">
-                    {stats.status.actioned}
-                  </p>
-                  <p className="type-caption text-muted-foreground">
-                    Actioned (all time)
-                    {/* TODO: needs time-filtered API to show today's throughput — /api/claims?status=actioned&since=24h not yet supported */}
-                  </p>
-                </div>
-              </div>
-
-              {/* Column 3 — Top 5 high-risk */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="type-label text-muted-foreground">
-                    Highest-risk claims
-                  </p>
-                  <Link
-                    href="/claims?sort=riskScore&order=desc"
-                    className="type-caption text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    View all →
-                  </Link>
-                </div>
-                {topClaimsQuery.isLoading && (
-                  <div role="status" aria-label="Loading top claims" className="space-y-2">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Skeleton key={i} className="h-8 w-full" />
-                    ))}
-                    <span className="sr-only">Loading top claims…</span>
-                  </div>
-                )}
-                {topClaims.length > 0 && (
-                  <div className="space-y-0 divide-y divide-border/60">
-                    {topClaims.map((claim) => (
-                      <Link
-                        key={claim.claimId}
-                        href={`/claims/${claim.claimId}`}
-                        className="flex items-center gap-3 py-2 hover:bg-muted/30 -mx-2 px-2 transition-colors"
-                      >
-                        <RiskBar
-                          score={claim.riskScore}
-                          level={claim.riskLevel}
-                        />
-                        <span className="type-mono type-caption text-foreground truncate flex-1 min-w-0">
-                          {claim.claimId}
-                        </span>
-                        {claim.analyzedAt && (
-                          <span className="type-caption text-muted-foreground shrink-0">
-                            {/* Time in current status, approximated from analyzedAt.
-                                TODO: add assignedTo + a dedicated status_changed_at column
-                                to claim_reviews to unlock team-level assignment signal. */}
-                            {formatDaysAgo(claim.analyzedAt)} in {claim.status}
-                          </span>
-                        )}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-                {!topClaimsQuery.isLoading && topClaims.length === 0 && (
-                  <p className="type-caption text-muted-foreground">
-                    No analyzed claims yet.
-                  </p>
-                )}
-              </div>
+              <RiskDistribution stats={stats} />
+              <WorkflowStatus stats={stats} />
+              <TopClaims
+                isLoading={topClaimsQuery.isLoading}
+                claims={topClaims}
+              />
             </div>
           )}
         </section>
@@ -372,7 +258,6 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Quick analyze */}
         <section className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative flex-1 max-w-sm">
@@ -401,110 +286,5 @@ export default function DashboardPage() {
         </section>
       </div>
     </AppShell>
-  );
-}
-
-/** Returns a compact duration label like "3d" or "<1d" from a date to now. */
-function formatDaysAgo(date: Date | string): string {
-  const ms = Date.now() - new Date(date).getTime();
-  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
-  if (days === 0) return "<1d";
-  return `${days}d`;
-}
-
-function QueueBucket({
-  claims,
-  description,
-  emptyLabel,
-  href,
-  title,
-}: {
-  claims: ClaimReview[];
-  description: string;
-  emptyLabel: string;
-  href: string;
-  title: string;
-}) {
-  return (
-    <div className="border border-border p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h3 className="type-label text-foreground">{title}</h3>
-          <p className="type-caption text-muted-foreground">{description}</p>
-        </div>
-        <Link href={href} className="type-caption text-muted-foreground hover:text-foreground transition-colors">
-          View →
-        </Link>
-      </div>
-      {claims.length === 0 ? (
-        <p className="type-caption text-muted-foreground">{emptyLabel}</p>
-      ) : (
-        <div className="space-y-2">
-          {claims.map((claim) => (
-            <Link
-              key={claim.claimId}
-              href={`/claims/${claim.claimId}`}
-              className="flex items-center gap-3 border-t border-border pt-2 first:border-t-0 first:pt-0"
-            >
-              <RiskBar score={claim.riskScore} level={claim.riskLevel} />
-              <span className="type-mono type-caption text-foreground truncate flex-1 min-w-0">
-                {claim.claimId}
-              </span>
-              <span className="type-caption text-muted-foreground capitalize shrink-0">
-                {claim.status}
-              </span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function QueueStatusBucket({
-  claims,
-  description,
-  emptyLabel,
-  href,
-  title,
-}: {
-  claims: ClaimStatusRecord[];
-  description: string;
-  emptyLabel: string;
-  href: string;
-  title: string;
-}) {
-  return (
-    <div className="border border-border p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h3 className="type-label text-foreground">{title}</h3>
-          <p className="type-caption text-muted-foreground">{description}</p>
-        </div>
-        <Link href={href} className="type-caption text-muted-foreground hover:text-foreground transition-colors">
-          View →
-        </Link>
-      </div>
-      {claims.length === 0 ? (
-        <p className="type-caption text-muted-foreground">{emptyLabel}</p>
-      ) : (
-        <div className="space-y-2">
-          {claims.map((claim) => (
-            <Link
-              key={claim.claimId}
-              href={`/claims/${claim.claimId}`}
-              className="flex items-center justify-between gap-3 border-t border-border pt-2 first:border-t-0 first:pt-0"
-            >
-              <span className="type-mono type-caption text-foreground truncate">
-                {claim.claimId}
-              </span>
-              <span className="type-caption text-muted-foreground">
-                {claim.analyzedAt ? formatDaysAgo(claim.analyzedAt) : "Pending"}
-              </span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }

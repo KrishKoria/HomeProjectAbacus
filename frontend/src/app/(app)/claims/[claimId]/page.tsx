@@ -4,11 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useRef, useState } from "react";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -26,664 +21,24 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "sonner";
 import { buildRemediationChecklist } from "@/lib/claims/remediation-checklist";
 import type { ClaimAnalysisResponse } from "@/lib/databricks/types";
 import {
   ArrowLeft,
+  ChatText,
   Copy,
   DownloadSimple,
   Files,
   Warning,
-  PaperPlaneTilt,
-  ChatText,
-  ThumbsDown,
-  ThumbsUp,
 } from "@phosphor-icons/react";
 
-// ─── Risk / Direction helpers ───────────────────────────────────────────────
-
-function DirectionTag({ direction }: { direction: string }) {
-  if (direction === "increases_risk")
-    return (
-      <Tooltip>
-        <TooltipTrigger
-          render={<span />}
-          className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-up-bg text-direction-up cursor-default"
-        >
-          Raises denial risk
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          This feature pushed the model toward predicting denial. Higher
-          contribution = stronger signal.
-        </TooltipContent>
-      </Tooltip>
-    );
-  if (direction === "decreases_risk")
-    return (
-      <Tooltip>
-        <TooltipTrigger
-          render={<span />}
-          className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-down-bg text-direction-down cursor-default"
-        >
-          Lowers denial risk
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          This feature pulled the model away from predicting denial.
-        </TooltipContent>
-      </Tooltip>
-    );
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
-      Neutral
-    </span>
-  );
-}
-
-function formatFeatureValue(value: number | null): string {
-  if (value === null) return "—";
-  if (Number.isInteger(value)) return String(value);
-  return value.toFixed(2);
-}
-
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "—";
-  return new Date(value).toLocaleString();
-}
-
-interface ClaimStatusPayload {
-  claimId: string;
-  reviewedAt: string | null;
-  reviewedByEmail: string | null;
-  reviewedById: string | null;
-  status: string;
-}
-
-interface ClaimFeedbackPayload {
-  feedback: {
-    claimId: string;
-    comment: string;
-    createdAt: string;
-    rating: "useful" | "not_useful";
-    reason:
-      | "wrong_risk_reason"
-      | "missing_policy"
-      | "too_vague"
-      | "not_actionable"
-      | null;
-    userId: string;
-  } | null;
-}
-
-interface ClaimTimelineEvent {
-  actorEmail: string | null;
-  claimId: string;
-  createdAt: string;
-  eventType:
-    | "analysis_generated"
-    | "status_changed"
-    | "feedback_recorded"
-    | "report_generated";
-  metadata: Record<string, unknown> | null;
-}
-
-function formatEventLabel(event: ClaimTimelineEvent): string {
-  switch (event.eventType) {
-    case "analysis_generated":
-      return "Analysis generated";
-    case "status_changed":
-      return `Status changed to ${String(event.metadata?.status ?? "updated")}`;
-    case "feedback_recorded":
-      return `Feedback marked ${
-        event.metadata?.rating === "useful" ? "useful" : "not useful"
-      }`;
-    case "report_generated":
-      return "Review report generated";
-    default:
-      return event.eventType;
-  }
-}
-
-// ─── Chat panel ──────────────────────────────────────────────────────────────
-
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-function ChatPanel({
-  claimId,
-  analysis,
-  queuedQuestion,
-  onQueuedQuestionHandled,
-}: {
-  claimId: string;
-  analysis: ClaimAnalysisResponse | undefined;
-  queuedQuestion: string | null;
-  onQueuedQuestionHandled: () => void;
-}) {
-  const chatInputRef = useRef<HTMLTextAreaElement>(null);
-  const threadRef = useRef<HTMLDivElement>(null);
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>(() => []);
-  const [isWaiting, setIsWaiting] = useState(false);
-  const openingMessage =
-    analysis && messages.length === 0
-      ? {
-          role: "assistant" as const,
-          content: `This claim scored ${Math.round(analysis.riskScore * 100)}%: ${
-            analysis.riskLevel.charAt(0).toUpperCase() +
-            analysis.riskLevel.slice(1)
-          } denial risk. Ask me anything about it.`,
-        }
-      : null;
-  const threadMessageCount = messages.length + (openingMessage ? 1 : 0);
-
-  useEffect(() => {
-    if (threadRef.current) {
-      threadRef.current.scrollTop = threadRef.current.scrollHeight;
-    }
-  }, [threadMessageCount, isWaiting]);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (
-        e.key === "c" &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        document.activeElement?.tagName !== "INPUT" &&
-        document.activeElement?.tagName !== "TEXTAREA"
-      ) {
-        e.preventDefault();
-        chatInputRef.current?.focus();
-      }
-      if (
-        e.key === "/" &&
-        document.activeElement?.tagName !== "INPUT" &&
-        document.activeElement?.tagName !== "TEXTAREA"
-      ) {
-        e.preventDefault();
-        chatInputRef.current?.focus();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  async function sendMessage(overrideText?: string) {
-    const text = (overrideText ?? input).trim();
-    if (!text || isWaiting || !analysis) return;
-    if (!overrideText) setInput("");
-    const userMsg: ChatMessage = { role: "user", content: text };
-    const nextMessages = [...messages, userMsg];
-    setMessages(nextMessages);
-    setIsWaiting(true);
-
-    try {
-      const res = await fetch(`/api/claims/${claimId}/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: nextMessages,
-          claimContext: {
-            claimId: analysis.claimId,
-            riskScore: analysis.riskScore,
-            riskLevel: analysis.riskLevel,
-            narrative: analysis.narrative,
-            topReasons: analysis.topReasons.map((r) => ({
-              description: r.description,
-              direction: r.direction,
-            })),
-          },
-        }),
-      });
-      const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: data.reply ?? "Sorry, I couldn't get a response.",
-        },
-      ]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Chat unavailable. Please try again." },
-      ]);
-    } finally {
-      setIsWaiting(false);
-    }
-  }
-
-  const sendMessageRef = useRef(sendMessage);
-
-  useEffect(() => {
-    sendMessageRef.current = sendMessage;
-  });
-
-  useEffect(() => {
-    if (!queuedQuestion || !analysis || isWaiting) return;
-    void sendMessageRef.current(queuedQuestion);
-    onQueuedQuestionHandled();
-  }, [queuedQuestion, analysis, isWaiting, onQueuedQuestionHandled]);
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  }
-
-  // Build Q+A pairs from messages array
-  const qaPairs: Array<{ question: string; answer: string | null }> = [];
-  for (let i = 0; i < messages.length; i++) {
-    if (messages[i].role === "user") {
-      const next = messages[i + 1];
-      qaPairs.push({
-        question: messages[i].content,
-        answer: next?.role === "assistant" ? next.content : null,
-      });
-      if (next?.role === "assistant") i++; // skip the answer in outer loop
-    }
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="px-5 py-3 border-b border-border shrink-0">
-        <div className="flex items-center gap-2">
-          <ChatText
-            className="size-4 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <span className="type-title">Ask about this claim</span>
-        </div>
-        <p className="type-caption text-muted-foreground mt-0.5">
-          Press{" "}
-          <kbd className="font-mono type-caption px-1 border border-border">
-            C
-          </kbd>{" "}
-          to focus
-        </p>
-      </div>
-
-      <div
-        ref={threadRef}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-6"
-        aria-live="polite"
-        aria-label="Chat messages"
-      >
-        {!analysis && (
-          <p className="type-caption text-muted-foreground text-center mt-8">
-            Waiting for analysis…
-          </p>
-        )}
-
-        {/* System opener — rendered as a header above Q&A log */}
-        {openingMessage && (
-          <div className="pb-4 border-b border-border/40">
-            <p className="type-caption text-muted-foreground uppercase tracking-wide mb-1">
-              Context
-            </p>
-            <p className="type-body max-w-none text-muted-foreground leading-relaxed">
-              {openingMessage.content}
-            </p>
-          </div>
-        )}
-
-        {/* Q+A log */}
-        {qaPairs.map((pair, i) => (
-          <div
-            key={i}
-            className={
-              i < qaPairs.length - 1 || isWaiting
-                ? "pb-6 border-b border-border/40"
-                : "pb-2"
-            }
-          >
-            {/* Question row */}
-            <div className="flex items-start gap-2.5 mb-3">
-              <div
-                className="w-0.5 self-stretch bg-foreground/20 shrink-0 mt-0.5"
-                aria-hidden="true"
-              />
-              <p className="type-label text-foreground leading-snug">
-                {pair.question}
-              </p>
-            </div>
-            {/* Answer row */}
-            {pair.answer !== null && (
-              <div className="pl-3.25">
-                <p className="type-caption text-muted-foreground mb-1">
-                  Answer
-                </p>
-                <p className="type-body max-w-none text-foreground leading-relaxed">
-                  {pair.answer}
-                </p>
-              </div>
-            )}
-          </div>
-        ))}
-
-        {/* Suggested questions — shown when no user messages yet */}
-        {messages.length === 0 &&
-          analysis &&
-          (() => {
-            const suggestionMap: Record<string, string[]> = {
-              high: [
-                "What's the single fastest fix?",
-                "Show me the policy rule that's failing",
-                "Draft the remediation note",
-              ],
-              medium: [
-                "What changes if I tighten the diagnosis code?",
-                "Is the documentation enough as-is?",
-                "Should I escalate for medical review?",
-              ],
-              low: [
-                "Anything I should still check?",
-                "Why is this still in the queue?",
-                "Confidence level on the score?",
-              ],
-            };
-            const items = suggestionMap[analysis.riskLevel.toLowerCase()] ?? [];
-            if (!items.length) return null;
-            return (
-              <div className="mt-2">
-                <p className="type-label text-muted-foreground mb-3">
-                  Suggested
-                </p>
-                <div className="space-y-1.5">
-                  {items.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => sendMessage(s)}
-                      className="block w-full text-left type-label text-foreground/80 hover:text-foreground border border-border hover:border-foreground/30 px-2.5 py-1.5 transition-colors"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-
-        {/* Typing indicator */}
-        {isWaiting && (
-          <div className="pl-3.25">
-            <p className="type-caption text-muted-foreground mb-1">Answer</p>
-            <div className="flex items-center gap-1 py-1">
-              <span className="size-1.5 bg-muted-foreground rounded-full animate-pulse" />
-              <span
-                className="size-1.5 bg-muted-foreground rounded-full animate-pulse"
-                style={{ animationDelay: "150ms" }}
-              />
-              <span
-                className="size-1.5 bg-muted-foreground rounded-full animate-pulse"
-                style={{ animationDelay: "300ms" }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="px-4 py-3 border-t border-border shrink-0">
-        <div className="flex items-end gap-2">
-          <textarea
-            ref={chatInputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Ask about this claim…"
-            rows={2}
-            disabled={!analysis || isWaiting}
-            aria-label="Ask a question about this claim"
-            className="flex-1 resize-none bg-transparent border border-border px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 min-h-10 max-h-28"
-          />
-          <Button
-            size="icon"
-            onClick={() => sendMessage()}
-            disabled={!input.trim() || isWaiting || !analysis}
-            className="shrink-0"
-            aria-label="Send message"
-          >
-            <PaperPlaneTilt aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Status control ───────────────────────────────────────────────────────────
-
-function StatusControl({
-  claimId,
-  initialStatus,
-}: {
-  claimId: string;
-  initialStatus: string;
-}) {
-  const queryClient = useQueryClient();
-  const [status, setStatus] = useState(initialStatus);
-  const previousStatusRef = useRef(initialStatus);
-
-  const mutation = useMutation({
-    mutationFn: async (newStatus: string) => {
-      const res = await fetch(`/api/claims/${claimId}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      if (!res.ok) throw new Error("Failed to update status");
-      return res.json();
-    },
-    onMutate: async () => {
-      previousStatusRef.current = status;
-    },
-    onSuccess: (_, newStatus) => {
-      setStatus(newStatus);
-      const label = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
-      const undoStatus = previousStatusRef.current;
-      toast(`Marked as ${label}`, {
-        action: {
-          label: "Undo",
-          onClick: () => mutation.mutate(undoStatus),
-        },
-        duration: 5000,
-      });
-      queryClient.invalidateQueries({ queryKey: ["claims"] });
-      queryClient.invalidateQueries({ queryKey: ["claim-status", claimId] });
-    },
-    onError: () => toast.error("Could not update status"),
-  });
-
-  const items = [
-    { value: "new", label: "New" },
-    { value: "reviewed", label: "Reviewed" },
-    { value: "actioned", label: "Actioned" },
-  ] as const;
-
-  return (
-    <Select
-      items={items}
-      value={status}
-      onValueChange={(v) => {
-        if (v && v !== status) mutation.mutate(v);
-      }}
-      disabled={mutation.isPending}
-    >
-      <SelectTrigger
-        className="w-36 h-10 pointer-coarse:h-11 text-xs"
-        aria-label="Claim status"
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {items.map((item) => (
-            <SelectItem key={item.value} value={item.value}>
-              {item.label}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
-  );
-}
-
-function FeedbackSection({
-  initialFeedback,
-  isPending,
-  onSubmit,
-}: {
-  initialFeedback: ClaimFeedbackPayload["feedback"];
-  isPending: boolean;
-  onSubmit: (payload: {
-    comment: string;
-    rating: "useful" | "not_useful";
-    reason:
-      | "wrong_risk_reason"
-      | "missing_policy"
-      | "too_vague"
-      | "not_actionable"
-      | null;
-  }) => void;
-}) {
-  const [comment, setComment] = useState(initialFeedback?.comment ?? "");
-  const [reason, setReason] = useState<
-    "wrong_risk_reason" | "missing_policy" | "too_vague" | "not_actionable" | ""
-  >(
-    (initialFeedback?.reason ?? "") as
-      | "wrong_risk_reason"
-      | "missing_policy"
-      | "too_vague"
-      | "not_actionable"
-      | "",
-  );
-  const [rating, setRating] = useState<"useful" | "not_useful" | null>(
-    initialFeedback?.rating ?? null,
-  );
-
-  useEffect(() => {
-    setComment(initialFeedback?.comment ?? "");
-    setReason(
-      (initialFeedback?.reason ?? "") as
-        | "wrong_risk_reason"
-        | "missing_policy"
-        | "too_vague"
-        | "not_actionable"
-        | "",
-    );
-    setRating(initialFeedback?.rating ?? null);
-  }, [initialFeedback]);
-
-  return (
-    <div className="px-5 py-4 space-y-4">
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant={rating === "useful" ? "default" : "outline"}
-          size="sm"
-          disabled={isPending}
-          onClick={() =>
-            onSubmit({
-              comment,
-              rating: "useful",
-              reason: reason || null,
-            });
-            setRating("useful")
-          }
-        >
-          <ThumbsUp data-icon="inline-start" />
-          Useful
-        </Button>
-        <Button
-          type="button"
-          variant={rating === "not_useful" ? "default" : "outline"}
-          size="sm"
-          disabled={isPending}
-          onClick={() =>
-            onSubmit({
-              comment,
-              rating: "not_useful",
-              reason: reason || null,
-            });
-            setRating("not_useful")
-          }
-        >
-          <ThumbsDown data-icon="inline-start" />
-          Not useful
-        </Button>
-      </div>
-
-      <div className="space-y-2">
-        <p className="type-label text-muted-foreground">Reason</p>
-        <Select
-          items={[
-            { value: "wrong_risk_reason", label: "Wrong risk reason" },
-            { value: "missing_policy", label: "Missing policy" },
-            { value: "too_vague", label: "Too vague" },
-            { value: "not_actionable", label: "Not actionable" },
-          ]}
-          value={reason}
-          onValueChange={(value) => setReason((value as typeof reason) ?? "")}
-        >
-          <SelectTrigger
-            className="w-full max-w-sm"
-            aria-label="Feedback reason"
-          >
-            <SelectValue placeholder="Optional reason" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="wrong_risk_reason">
-                Wrong risk reason
-              </SelectItem>
-              <SelectItem value="missing_policy">Missing policy</SelectItem>
-              <SelectItem value="too_vague">Too vague</SelectItem>
-              <SelectItem value="not_actionable">Not actionable</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        <p className="type-label text-muted-foreground">Comment</p>
-        <textarea
-          value={comment}
-          onChange={(event) => setComment(event.target.value)}
-          rows={3}
-          className="w-full max-w-xl resize-none bg-transparent border border-border px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          placeholder="Optional feedback for future model improvements"
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={isPending}
-          onClick={() =>
-            onSubmit({
-              comment,
-              rating: rating ?? "useful",
-              reason: reason || null,
-            })
-          }
-        >
-          Save feedback detail
-        </Button>
-      </div>
-    </div>
-  );
-}
+import { DirectionTag } from "@/components/claims/direction-tag";
+import { ChatPanel } from "@/components/claims/chat-panel";
+import { StatusControl } from "@/components/claims/status-control";
+import { FeedbackSection } from "@/components/claims/feedback-section";
+import { formatFeatureValue, formatDateTime, formatEventLabel } from "@/lib/claims/formatting";
+import type { ClaimStatusPayload, ClaimFeedbackPayload, ClaimTimelineEvent } from "@/lib/claims/types";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -800,9 +155,6 @@ export default function ClaimDetailPage({
     },
   });
 
-  // FIX 2: Next high-risk claim query
-  // Uses /api/claims with risk=high&status=new&sort=riskScore&order=desc
-  // to find the next high-risk unactioned claim after the current one
   const nextHighRiskQuery = useQuery({
     queryKey: ["next-high-risk", claimId],
     queryFn: async () => {
@@ -811,7 +163,6 @@ export default function ClaimDetailPage({
       url.searchParams.set("sort", "riskScore");
       url.searchParams.set("order", "desc");
       url.searchParams.set("limit", "20");
-      // Fetch new + reviewed (not actioned)
       const [resNew, resReviewed] = await Promise.all([
         fetch(url.toString() + "&status=new"),
         fetch(url.toString() + "&status=reviewed"),
@@ -824,7 +175,6 @@ export default function ClaimDetailPage({
         ...(dataNew.claims ?? []),
         ...(dataReviewed.claims ?? []),
       ];
-      // Sort by riskScore desc, deduplicate, find first claim that isn't current
       const seen = new Set<string>();
       const sorted = allClaims
         .filter((c) => {
@@ -839,7 +189,6 @@ export default function ClaimDetailPage({
     staleTime: 2 * 60 * 1000,
   });
 
-  // FIX 3: Runtime status query (for diagnostic error messages)
   const runtimeStatusQuery = useQuery({
     queryKey: ["runtime-status"],
     queryFn: async () => {
@@ -860,8 +209,6 @@ export default function ClaimDetailPage({
     }
   }, [runtimeStatusQuery.data]);
 
-
-
   useEffect(() => {
     if (analysisQuery.data) {
       queryClient.invalidateQueries({ queryKey: ["claims"] });
@@ -869,7 +216,6 @@ export default function ClaimDetailPage({
     }
   }, [analysisQuery.data, queryClient]);
 
-  // FIX 2: "n" keyboard shortcut for Next high-risk
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (
@@ -973,7 +319,7 @@ export default function ClaimDetailPage({
               </div>
             )}
 
-            {/* FIX 3: Diagnostic error block */}
+            {/* Diagnostic error block */}
             {analysisQuery.isError &&
               (() => {
                 const errMsg =
@@ -1303,7 +649,6 @@ export default function ClaimDetailPage({
                   </div>
                 </section>
 
-                {/* FIX 2: Next high-risk button — after Policy Sources */}
                 <div className="flex items-center justify-between pt-2 pb-4">
                   {nextHighRiskQuery.data ? (
                     <Button
