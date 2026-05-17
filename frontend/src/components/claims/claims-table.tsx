@@ -138,7 +138,7 @@ export function ClaimsTable({
                 className={[
                   claim.riskLevel === null ? "opacity-50" : "",
                   effectiveFocusedRow === index
-                    ? "outline-1 outline-ring -outline-offset-1"
+                    ? "outline outline-1 outline-ring -outline-offset-1"
                     : "",
                 ]
                   .filter(Boolean)
