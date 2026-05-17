@@ -36,6 +36,13 @@
       "when": 1778912400000,
       "tag": "0004_ingestion_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778994000000,
+      "tag": "0005_claim_feedback_and_events",
+      "breakpoints": true
     }
   ]
 }
