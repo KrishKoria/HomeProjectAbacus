@@ -569,13 +569,29 @@ function FeedbackSection({
       | "not_actionable"
       | "",
   );
+  const [rating, setRating] = useState<"useful" | "not_useful" | null>(
+    initialFeedback?.rating ?? null,
+  );
+
+  useEffect(() => {
+    setComment(initialFeedback?.comment ?? "");
+    setReason(
+      (initialFeedback?.reason ?? "") as
+        | "wrong_risk_reason"
+        | "missing_policy"
+        | "too_vague"
+        | "not_actionable"
+        | "",
+    );
+    setRating(initialFeedback?.rating ?? null);
+  }, [initialFeedback]);
 
   return (
     <div className="px-5 py-4 space-y-4">
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
-          variant={initialFeedback?.rating === "useful" ? "default" : "outline"}
+          variant={rating === "useful" ? "default" : "outline"}
           size="sm"
           disabled={isPending}
           onClick={() =>
@@ -583,7 +599,8 @@ function FeedbackSection({
               comment,
               rating: "useful",
               reason: reason || null,
-            })
+            });
+            setRating("useful")
           }
         >
           <ThumbsUp data-icon="inline-start" />
@@ -591,9 +608,7 @@ function FeedbackSection({
         </Button>
         <Button
           type="button"
-          variant={
-            initialFeedback?.rating === "not_useful" ? "default" : "outline"
-          }
+          variant={rating === "not_useful" ? "default" : "outline"}
           size="sm"
           disabled={isPending}
           onClick={() =>
@@ -601,7 +616,8 @@ function FeedbackSection({
               comment,
               rating: "not_useful",
               reason: reason || null,
-            })
+            });
+            setRating("not_useful")
           }
         >
           <ThumbsDown data-icon="inline-start" />
@@ -657,7 +673,7 @@ function FeedbackSection({
           onClick={() =>
             onSubmit({
               comment,
-              rating: initialFeedback?.rating ?? "useful",
+              rating: rating ?? "useful",
               reason: reason || null,
             })
           }

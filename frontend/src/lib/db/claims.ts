@@ -196,35 +196,27 @@ export async function upsertClaimFeedback(data: {
   userId: string;
   userEmail: string;
 }): Promise<ClaimFeedback> {
-  const db = getDb();
   const createdAt = new Date();
-  const existing = await getClaimFeedbackByClaimId(data.claimId, data.userId);
-
-  if (existing) {
-    const rows = await db
-      .update(claimFeedback)
-      .set({
-        comment: data.comment,
-        createdAt,
-        rating: data.rating,
-        reason: data.reason,
-      })
-      .where(eq(claimFeedback.id, existing.id))
-      .returning();
-
-    return rows[0];
-  }
-
-  const rows = await db
+  const id = `cf_${data.claimId}_${data.userId}`;
+  const rows = await getDb()
     .insert(claimFeedback)
     .values({
       claimId: data.claimId,
       comment: data.comment,
       createdAt,
-      id: `cf_${data.claimId}_${data.userId}`,
+      id,
       rating: data.rating,
       reason: data.reason,
       userId: data.userId,
+    })
+    .onConflictDoUpdate({
+      target: claimFeedback.id,
+      set: {
+        comment: data.comment,
+        createdAt,
+        rating: data.rating,
+        reason: data.reason,
+      },
     })
     .returning();
 
