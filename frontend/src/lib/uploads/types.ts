@@ -35,3 +35,46 @@ export interface ClaimSyncStateSummary {
   lastSyncedAt: string;
   sourceTable: string;
 }
+
+export interface SelectedUpload {
+  controller?: AbortController;
+  error?: string;
+  file: File;
+  headers?: string[];
+  missingColumns?: string[];
+  progress: number;
+  gcsGeneration?: string;
+  status:
+    | "selected"
+    | "invalid"
+    | "signing"
+    | "uploading"
+    | "verifying"
+    | "landed"
+    | "failed"
+    | "cancelled";
+  uploadId?: string;
+  volumePath?: string;
+}
+
+export interface SignedPolicy {
+  fields: Record<string, string>;
+  url: string;
+}
+
+export interface InitiateUploadResponse {
+  policy: SignedPolicy;
+  uploadId: string;
+  volumePath: string;
+}
+
+export const STATUS_COPY: Record<SelectedUpload["status"], string> = {
+  cancelled: "Cancelled",
+  failed: "Failed",
+  invalid: "Invalid",
+  landed: "Landed",
+  selected: "Ready",
+  signing: "Signing",
+  uploading: "Uploading",
+  verifying: "Verifying",
+};
