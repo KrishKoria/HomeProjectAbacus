@@ -4,7 +4,10 @@ import { env } from "@/lib/server/env";
 interface UploadObjectInput {
   byteSize: number;
   contentType: string;
+  datasetKey: string;
   objectName: string;
+  uploadId: string;
+  uploaderId: string;
 }
 
 export interface SignedUploadPolicy {
@@ -30,6 +33,11 @@ export async function createSignedUploadPolicy(
   input: UploadObjectInput,
 ): Promise<SignedUploadPolicy> {
   const key = getLandingObjectKey(input.objectName);
+  const metadataFields = {
+    "x-goog-meta-dataset-key": input.datasetKey,
+    "x-goog-meta-upload-id": input.uploadId,
+    "x-goog-meta-uploader-id": input.uploaderId,
+  };
   const expiresAt = new Date(
     Date.now() + env.CLAIMOPS_UPLOAD_SIGNED_POLICY_TTL_SECONDS * 1000,
   );
@@ -40,12 +48,18 @@ export async function createSignedUploadPolicy(
       conditions: [
         ["eq", "$key", key],
         ["eq", "$Content-Type", input.contentType],
+        ...Object.entries(metadataFields).map(([field, value]) => [
+          "eq",
+          `$${field}`,
+          value,
+        ]),
         ["content-length-range", 1, input.byteSize],
       ],
       expires: expiresAt,
       fields: {
         "Content-Type": input.contentType,
         key,
+        ...metadataFields,
       },
     });
 
@@ -70,6 +84,15 @@ export async function verifyUploadedObject(
     }
     if ((metadata.contentType ?? "").toLowerCase() !== input.contentType.toLowerCase()) {
       return { ok: false, errorMessage: "Uploaded object content type did not match signed request" };
+    }
+    if (metadata.metadata?.["upload-id"] !== input.uploadId) {
+      return { ok: false, errorMessage: "Uploaded object upload metadata did not match signed request" };
+    }
+    if (metadata.metadata?.["dataset-key"] !== input.datasetKey) {
+      return { ok: false, errorMessage: "Uploaded object dataset metadata did not match signed request" };
+    }
+    if (metadata.metadata?.["uploader-id"] !== input.uploaderId) {
+      return { ok: false, errorMessage: "Uploaded object uploader metadata did not match signed request" };
     }
 
     return { ok: true, generation: String(metadata.generation ?? "") };

@@ -30,7 +30,10 @@ export async function POST(request: Request) {
     const verification = await verifyUploadedObject({
       byteSize: upload.byteSize,
       contentType: upload.contentType,
+      datasetKey: upload.datasetKey,
       objectName: upload.objectName,
+      uploadId: upload.id,
+      uploaderId: upload.uploadedById,
     });
 
     if (!verification.ok) {
