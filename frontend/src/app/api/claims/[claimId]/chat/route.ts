@@ -8,11 +8,11 @@ export const runtime = "nodejs";
 
 const messageSchema = z.object({
   role: z.enum(["user", "assistant"]),
-  content: z.string().min(1),
+  content: z.string().min(1).max(2000),
 });
 
 const bodySchema = z.object({
-  messages: z.array(messageSchema).min(1),
+  messages: z.array(messageSchema).min(1).max(12),
   claimContext: z.object({
     claimId: z.string(),
     riskScore: z.number(),
