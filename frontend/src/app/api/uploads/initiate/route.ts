@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { requireAuthorizedSession } from "@/lib/auth-session";
 import { env } from "@/lib/server/env";
-import { createIngestionUpload } from "@/lib/uploads/db";
+import { createIngestionUpload, markIngestionUploadFailed } from "@/lib/uploads/db";
 import {
   buildUploadObjectName,
   buildVolumePath,
@@ -14,13 +14,15 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  let uploadId: string | null = null;
+
   try {
     const session = await requireAuthorizedSession();
     const parsed = parseInitiateUploadInput(await request.json(), {
       csvMaxBytes: env.CLAIMOPS_UPLOAD_CSV_MAX_BYTES,
       pdfMaxBytes: env.CLAIMOPS_UPLOAD_PDF_MAX_BYTES,
     });
-    const uploadId = `upl_${randomUUID()}`;
+    uploadId = `upl_${randomUUID()}`;
     const objectName = buildUploadObjectName({
       datasetKey: parsed.datasetKey,
       fileName: parsed.fileName,
@@ -49,6 +51,10 @@ export async function POST(request: Request) {
       volumePath: row.volumePath,
     });
   } catch (error) {
+    if (uploadId) {
+      const errorMessage = error instanceof Error ? error.message : "Upload initiation failed";
+      await markIngestionUploadFailed(uploadId, errorMessage);
+    }
     return uploadRouteError(error);
   }
 }

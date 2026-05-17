@@ -590,7 +590,7 @@ async function validateFile(
 
 async function readCsvHeaders(file: File): Promise<string[]> {
   const text = await file.slice(0, 64 * 1024).text();
-  const headerLine = text.split(/\r?\n/, 1)[0] ?? "";
+  const headerLine = (text.split(/\r?\n/, 1)[0] ?? "").replace(/^\uFEFF/, "");
   return headerLine
     .split(",")
     .map((header) => header.trim().replace(/^"|"$/g, ""))
