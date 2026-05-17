@@ -12,6 +12,20 @@ import { RiskBar } from "@/components/risk-bar";
 import type { ClaimReview, ClaimStats } from "@/lib/db/claims";
 import { MagnifyingGlass, ArrowRight } from "@phosphor-icons/react";
 
+interface ClaimStatusRecord {
+  analyzedAt: string | null;
+  claimId: string;
+  riskLevel: string | null;
+  status: string;
+}
+
+interface WorkQueueData {
+  highRiskNew: ClaimReview[];
+  mediumRiskNew: ClaimReview[];
+  missingAnalysis: ClaimStatusRecord[];
+  recentlyDiscovered: ClaimStatusRecord[];
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -43,6 +57,40 @@ export default function DashboardPage() {
       return (res.json() as Promise<{ claims: ClaimReview[] }>).then(
         (d) => d.claims,
       );
+    },
+  });
+
+  const workQueueQuery = useQuery({
+    queryKey: ["work-queue"],
+    queryFn: async () => {
+      const [highRes, mediumRes, statusesRes] = await Promise.all([
+        fetch("/api/claims?risk=high&status=new&sort=riskScore&order=desc&limit=3"),
+        fetch("/api/claims?risk=medium&status=new&sort=riskScore&order=desc&limit=3"),
+        fetch("/api/claims/statuses"),
+      ]);
+
+      if (!highRes.ok || !mediumRes.ok || !statusesRes.ok) {
+        throw new Error("Failed to load work queue");
+      }
+
+      const [highPayload, mediumPayload, statusesPayload] = await Promise.all([
+        highRes.json() as Promise<{ claims: ClaimReview[] }>,
+        mediumRes.json() as Promise<{ claims: ClaimReview[] }>,
+        statusesRes.json() as Promise<{ statuses: ClaimStatusRecord[] }>,
+      ]);
+
+      const missingAnalysis = (statusesPayload.statuses ?? []).filter(
+        (item) => item.riskLevel === null,
+      );
+
+      return {
+        highRiskNew: highPayload.claims ?? [],
+        mediumRiskNew: mediumPayload.claims ?? [],
+        missingAnalysis,
+        recentlyDiscovered: [...missingAnalysis].sort((a, b) =>
+          b.claimId.localeCompare(a.claimId),
+        ),
+      } satisfies WorkQueueData;
     },
   });
 
@@ -267,6 +315,63 @@ export default function DashboardPage() {
           )}
         </section>
 
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="type-title">Work Queue</h2>
+            <Link
+              href="/claims?status=new"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Open queue <ArrowRight className="size-3" aria-hidden="true" />
+            </Link>
+          </div>
+
+          {workQueueQuery.isLoading && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="border border-border p-4 space-y-3">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-5/6" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {workQueueQuery.data && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <QueueBucket
+                title="Highest-risk new claims"
+                description="Prioritize the first review pass."
+                href="/claims?risk=high&status=new&sort=riskScore&order=desc"
+                claims={workQueueQuery.data.highRiskNew}
+                emptyLabel="No new high-risk claims."
+              />
+              <QueueBucket
+                title="Medium-risk unreviewed"
+                description="Clear the next review tier."
+                href="/claims?risk=medium&status=new&sort=riskScore&order=desc"
+                claims={workQueueQuery.data.mediumRiskNew}
+                emptyLabel="No medium-risk claims waiting."
+              />
+              <QueueStatusBucket
+                title="Claims missing analysis"
+                description="These claims have been discovered but not analyzed yet."
+                href="/claims"
+                claims={workQueueQuery.data.missingAnalysis}
+                emptyLabel="No claims are waiting for analysis."
+              />
+              <QueueStatusBucket
+                title="Recently discovered claims"
+                description="Newest discovered claim IDs, using claim ID as a fallback sort."
+                href="/claims"
+                claims={workQueueQuery.data.recentlyDiscovered.slice(0, 3)}
+                emptyLabel="No recently discovered claims."
+              />
+            </div>
+          )}
+        </section>
+
         {/* Quick analyze */}
         <section className="space-y-2">
           <div className="flex items-center gap-2">
@@ -305,4 +410,101 @@ function formatDaysAgo(date: Date | string): string {
   const days = Math.floor(ms / (1000 * 60 * 60 * 24));
   if (days === 0) return "<1d";
   return `${days}d`;
+}
+
+function QueueBucket({
+  claims,
+  description,
+  emptyLabel,
+  href,
+  title,
+}: {
+  claims: ClaimReview[];
+  description: string;
+  emptyLabel: string;
+  href: string;
+  title: string;
+}) {
+  return (
+    <div className="border border-border p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h3 className="type-label text-foreground">{title}</h3>
+          <p className="type-caption text-muted-foreground">{description}</p>
+        </div>
+        <Link href={href} className="type-caption text-muted-foreground hover:text-foreground transition-colors">
+          View →
+        </Link>
+      </div>
+      {claims.length === 0 ? (
+        <p className="type-caption text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        <div className="space-y-2">
+          {claims.map((claim) => (
+            <Link
+              key={claim.claimId}
+              href={`/claims/${claim.claimId}`}
+              className="flex items-center gap-3 border-t border-border pt-2 first:border-t-0 first:pt-0"
+            >
+              <RiskBar score={claim.riskScore} level={claim.riskLevel} />
+              <span className="type-mono type-caption text-foreground truncate flex-1 min-w-0">
+                {claim.claimId}
+              </span>
+              <span className="type-caption text-muted-foreground capitalize shrink-0">
+                {claim.status}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QueueStatusBucket({
+  claims,
+  description,
+  emptyLabel,
+  href,
+  title,
+}: {
+  claims: ClaimStatusRecord[];
+  description: string;
+  emptyLabel: string;
+  href: string;
+  title: string;
+}) {
+  return (
+    <div className="border border-border p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h3 className="type-label text-foreground">{title}</h3>
+          <p className="type-caption text-muted-foreground">{description}</p>
+        </div>
+        <Link href={href} className="type-caption text-muted-foreground hover:text-foreground transition-colors">
+          View →
+        </Link>
+      </div>
+      {claims.length === 0 ? (
+        <p className="type-caption text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        <div className="space-y-2">
+          {claims.map((claim) => (
+            <Link
+              key={claim.claimId}
+              href={`/claims/${claim.claimId}`}
+              className="flex items-center justify-between gap-3 border-t border-border pt-2 first:border-t-0 first:pt-0"
+            >
+              <span className="type-mono type-caption text-foreground truncate">
+                {claim.claimId}
+              </span>
+              <span className="type-caption text-muted-foreground">
+                {claim.analyzedAt ? formatDaysAgo(claim.analyzedAt) : "Pending"}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
