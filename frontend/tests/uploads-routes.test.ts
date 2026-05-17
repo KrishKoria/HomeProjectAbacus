@@ -78,6 +78,7 @@ describe("upload API routes", () => {
           contentType: "text/csv",
           datasetKey: "claims",
           fileName: "claims.csv",
+          headers: ["claim_id"],
         }),
         method: "POST",
       }),
@@ -88,8 +89,10 @@ describe("upload API routes", () => {
 
   it("creates an upload row and returns a signed POST policy", async () => {
     createIngestionUpload.mockResolvedValue({
+      datasetKey: "claims",
       id: "upl_test",
       objectName: "claims/upl_test.csv",
+      uploadedById: "user-1",
       volumePath: "/Volumes/healthcare/bronze/raw_landing/claims/upl_test.csv",
     });
     createSignedUploadPolicy.mockResolvedValue({
@@ -106,6 +109,7 @@ describe("upload API routes", () => {
           contentType: "text/csv",
           datasetKey: "claims",
           fileName: "claims.csv",
+          headers: ["claim_id", "patient_id", "provider_id", "diagnosis_code", "procedure_code", "billed_amount", "date", "claim_status", "denial_reason_code", "allowed_amount", "paid_amount", "is_denied", "follow_up_required"],
         }),
         method: "POST",
       }),
@@ -125,7 +129,10 @@ describe("upload API routes", () => {
       expect.objectContaining({
         byteSize: 128,
         contentType: "text/csv",
+        datasetKey: "claims",
         objectName: "claims/upl_test.csv",
+        uploadId: "upl_test",
+        uploaderId: "user-1",
       }),
     );
     await expect(response.json()).resolves.toMatchObject({
@@ -138,6 +145,7 @@ describe("upload API routes", () => {
     getIngestionUploadById.mockResolvedValue({
       byteSize: 128,
       contentType: "text/csv",
+      datasetKey: "claims",
       id: "upl_test",
       objectName: "claims/upl_test.csv",
       uploadedById: "user-1",
@@ -160,7 +168,10 @@ describe("upload API routes", () => {
     expect(verifyUploadedObject).toHaveBeenCalledWith({
       byteSize: 128,
       contentType: "text/csv",
+      datasetKey: "claims",
       objectName: "claims/upl_test.csv",
+      uploadId: "upl_test",
+      uploaderId: "user-1",
     });
     expect(markIngestionUploadUploaded).toHaveBeenCalledWith(
       "upl_test",
@@ -172,12 +183,13 @@ describe("upload API routes", () => {
     getIngestionUploadById.mockResolvedValue({
       byteSize: 128,
       contentType: "text/csv",
+      datasetKey: "claims",
       id: "upl_test",
       objectName: "claims/upl_test.csv",
       uploadedById: "user-1",
     });
     verifyUploadedObject.mockResolvedValue({
-      error: "Uploaded object metadata did not match the signed request.",
+      errorMessage: "Uploaded object dataset metadata did not match signed request",
       ok: false,
     });
 
@@ -193,7 +205,27 @@ describe("upload API routes", () => {
     expect(deleteUploadedObject).toHaveBeenCalledWith("claims/upl_test.csv");
     expect(markIngestionUploadFailed).toHaveBeenCalledWith(
       "upl_test",
-      "Uploaded object metadata did not match the signed request.",
+      "Uploaded object dataset metadata did not match signed request",
     );
+  });
+
+  it("rejects CSV upload initiation when headers are missing", async () => {
+    const { POST } = await import("@/app/api/uploads/initiate/route");
+    const response = await POST(
+      new Request("http://localhost/api/uploads/initiate", {
+        body: JSON.stringify({
+          byteSize: 128,
+          contentType: "text/csv",
+          datasetKey: "claims",
+          fileName: "claims.csv",
+        }),
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("must include CSV headers"),
+    });
   });
 });

@@ -35,7 +35,7 @@ describe("claims API route", () => {
 
     const { GET } = await import("@/app/api/claims/route");
     const request = new Request(
-      "http://localhost/api/claims?page=abc&limit=abc&sort=nope&order=sideways",
+      "http://localhost/api/claims?page=abc&limit=abc&sort=nope&order=sideways&risk=urgent&status=pending",
     );
 
     const response = await GET(request);
