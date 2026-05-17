@@ -2,6 +2,12 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 
+const POOL_OPTIONS = {
+  connect_timeout: 10,
+  idle_timeout: 20,
+  max: 3,
+} as const;
+
 function resolveConnectionConfig() {
   const directUrl = process.env.DATABASE_URL?.trim();
   if (directUrl) {
@@ -36,8 +42,11 @@ function createDatabase() {
   const connectionConfig = resolveConnectionConfig();
   const queryClient =
     typeof connectionConfig === "string"
-      ? postgres(connectionConfig)
-      : postgres(connectionConfig);
+      ? postgres(connectionConfig, POOL_OPTIONS)
+      : postgres({
+          ...connectionConfig,
+          ...POOL_OPTIONS,
+        });
   return drizzle(queryClient, { schema });
 }
 

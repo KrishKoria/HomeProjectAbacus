@@ -9,10 +9,10 @@ const claimsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).catch(20),
   order: z.enum(["asc", "desc"]).catch("desc"),
   page: z.coerce.number().int().min(1).catch(1),
-  risk: z.string().catch("all"),
+  risk: z.enum(["all", "high", "medium", "low"]).catch("all"),
   search: z.string().catch(""),
   sort: z.enum(["riskScore", "analyzedAt", "claimId"]).catch("riskScore"),
-  status: z.string().catch("all"),
+  status: z.enum(["all", "new", "reviewed", "actioned"]).catch("all"),
 });
 
 export async function GET(request: Request) {

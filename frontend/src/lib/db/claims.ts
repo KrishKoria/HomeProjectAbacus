@@ -4,6 +4,10 @@ import { and, asc, count, desc, eq, ilike, isNotNull, sql, type SQL } from "driz
 
 export type ClaimReview = typeof claimReviews.$inferSelect;
 export type ClaimSyncState = typeof claimSyncState.$inferSelect;
+export type ClaimRiskFilter = "all" | "high" | "medium" | "low";
+export type ClaimSortField = "riskScore" | "analyzedAt" | "claimId";
+export type ClaimSortOrder = "asc" | "desc";
+export type ClaimStatusFilter = "all" | "new" | "reviewed" | "actioned";
 
 export interface DiscoveredClaimId {
   claimId: string;
@@ -19,10 +23,10 @@ export interface GetClaimsParams {
   page?: number;
   limit?: number;
   search?: string;
-  risk?: string;
-  status?: string;
-  sort?: string;
-  order?: string;
+  risk?: ClaimRiskFilter;
+  status?: ClaimStatusFilter;
+  sort?: ClaimSortField;
+  order?: ClaimSortOrder;
 }
 
 export interface PaginatedClaims {
@@ -339,7 +343,7 @@ export async function updateClaimStatus(
   return { ok: result.length > 0 };
 }
 
-function getOrderBy(sort: string, order: string) {
+function getOrderBy(sort: ClaimSortField, order: ClaimSortOrder) {
   const dir = order === "asc" ? asc : desc;
   switch (sort) {
     case "riskScore":
