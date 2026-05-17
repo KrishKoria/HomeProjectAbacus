@@ -684,10 +684,6 @@ export default function ClaimDetailPage({
     null,
   );
   const [retryCount, setRetryCount] = useState(0);
-  const [feedbackComment, setFeedbackComment] = useState("");
-  const [feedbackReason, setFeedbackReason] = useState<
-    "wrong_risk_reason" | "missing_policy" | "too_vague" | "not_actionable" | ""
-  >("");
   const router = useRouter();
 
   const analysisQuery = useQuery({
@@ -848,35 +844,7 @@ export default function ClaimDetailPage({
     }
   }, [runtimeStatusQuery.data]);
 
-  useEffect(() => {
-    if (feedbackQuery.data?.feedback) {
-      setFeedbackComment(feedbackQuery.data.feedback.comment ?? "");
-      setFeedbackReason(
-        (feedbackQuery.data.feedback.reason ?? "") as typeof feedbackReason
-      );
-    }
-  }, [feedbackQuery.data]);
 
-  const savedFeedbackRef = useRef<{ comment: string; reason: string }>({ comment: "", reason: "" });
-  useEffect(() => {
-    const fb = feedbackQuery.data?.feedback;
-    if (fb) {
-      savedFeedbackRef.current = { comment: fb.comment ?? "", reason: fb.reason ?? "" };
-    }
-  }, [feedbackQuery.data]);
-
-  useEffect(() => {
-    function onBeforeUnload(e: BeforeUnloadEvent) {
-      const isDirty =
-        feedbackComment !== savedFeedbackRef.current.comment ||
-        feedbackReason !== savedFeedbackRef.current.reason;
-      if (isDirty) {
-        e.preventDefault();
-      }
-    }
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [feedbackComment, feedbackReason]);
 
   useEffect(() => {
     if (analysisQuery.data) {
@@ -1273,107 +1241,18 @@ export default function ClaimDetailPage({
                 )}
 
                 <section className="border border-border">
-                  <Accordion collapsible defaultValue={[]} multiple={false}>
+                  <Accordion defaultValue={[]} multiple={false}>
                     <AccordionItem value="feedback" className="border-b-0">
                       <AccordionTrigger className="px-5 py-3 type-title hover:no-underline">
                         Explanation Feedback
                       </AccordionTrigger>
-                      <AccordionContent className="px-5 pb-4">
-                        <div className="space-y-4">
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              variant={
-                                feedbackQuery.data?.feedback?.rating === "useful"
-                                  ? "default"
-                                  : "outline"
-                              }
-                              size="sm"
-                              onClick={() =>
-                                feedbackMutation.mutate({
-                                  comment: feedbackComment,
-                                  rating: "useful",
-                                  reason: feedbackReason || null,
-                                })
-                              }
-                            >
-                              <ThumbsUp data-icon="inline-start" />
-                              Useful
-                            </Button>
-                            <Button
-                              type="button"
-                              variant={
-                                feedbackQuery.data?.feedback?.rating === "not_useful"
-                                  ? "default"
-                                  : "outline"
-                              }
-                              size="sm"
-                              onClick={() =>
-                                feedbackMutation.mutate({
-                                  comment: feedbackComment,
-                                  rating: "not_useful",
-                                  reason: feedbackReason || null,
-                                })
-                              }
-                            >
-                              <ThumbsDown data-icon="inline-start" />
-                              Not useful
-                            </Button>
-                          </div>
-
-                          <div className="space-y-2">
-                            <p className="type-label text-muted-foreground">Reason</p>
-                            <Select
-                              items={[
-                                { value: "wrong_risk_reason", label: "Wrong risk reason" },
-                                { value: "missing_policy", label: "Missing policy" },
-                                { value: "too_vague", label: "Too vague" },
-                                { value: "not_actionable", label: "Not actionable" },
-                              ]}
-                              value={feedbackReason}
-                              onValueChange={(value) =>
-                                setFeedbackReason((value as typeof feedbackReason) ?? "")
-                              }
-                            >
-                              <SelectTrigger className="w-full max-w-sm" aria-label="Feedback reason">
-                                <SelectValue placeholder="Optional reason" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectGroup>
-                                  <SelectItem value="wrong_risk_reason">Wrong risk reason</SelectItem>
-                                  <SelectItem value="missing_policy">Missing policy</SelectItem>
-                                  <SelectItem value="too_vague">Too vague</SelectItem>
-                                  <SelectItem value="not_actionable">Not actionable</SelectItem>
-                                </SelectGroup>
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-2">
-                            <p className="type-label text-muted-foreground">Comment</p>
-                            <textarea
-                              value={feedbackComment}
-                              onChange={(event) => setFeedbackComment(event.target.value)}
-                              rows={3}
-                              className="w-full max-w-xl resize-none bg-transparent border border-border px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                              placeholder="Optional feedback for future model improvements"
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                feedbackMutation.mutate({
-                                  comment: feedbackComment,
-                                  rating: feedbackQuery.data?.feedback?.rating ?? "useful",
-                                  reason: feedbackReason || null,
-                                })
-                              }
-                            >
-                              Save feedback detail
-                            </Button>
-                          </div>
-                        </div>
+                      <AccordionContent className="pb-4">
+                        <FeedbackSection
+                          key={feedbackQuery.dataUpdatedAt}
+                          initialFeedback={feedbackQuery.data?.feedback ?? null}
+                          isPending={feedbackMutation.isPending}
+                          onSubmit={(payload) => feedbackMutation.mutate(payload)}
+                        />
                       </AccordionContent>
                     </AccordionItem>
                   </Accordion>
