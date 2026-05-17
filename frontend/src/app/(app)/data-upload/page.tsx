@@ -8,18 +8,19 @@ import {
   DatabaseIcon,
   FileCsvIcon,
   FilePdfIcon,
+  ProhibitIcon,
   UploadSimpleIcon,
   WarningIcon,
   XCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { AppShell } from "@/components/app-shell";
+import { UploadsHistorySection } from "@/components/uploads/uploads-history-section";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
-  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -29,41 +30,16 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { UploadDatasetKey } from "@/lib/uploads/registry";
-
-interface UploadDataset {
-  acceptedContentTypes: string[];
-  datasetKey: UploadDatasetKey;
-  description: string;
-  displayName: string;
-  extension: ".csv" | ".pdf";
-  hasPhi: boolean;
-  landingSubdirectory: string;
-  maxBytes: number;
-  requiredColumns: string[];
-}
-
-interface UploadRecord {
-  byteSize: number;
-  completedAt: string | null;
-  contentType: string;
-  createdAt: string;
-  datasetKey: string;
-  errorMessage: string | null;
-  gcsGeneration: string | null;
-  id: string;
-  objectName: string;
-  status: "initiated" | "uploaded" | "failed";
-  uploadedByEmail: string;
-  volumePath: string;
-}
+import type {
+  ClaimSyncStateSummary,
+  UploadDataset,
+  UploadRecord,
+} from "@/lib/uploads/types";
 
 interface SelectedUpload {
   controller?: AbortController;
@@ -72,6 +48,7 @@ interface SelectedUpload {
   headers?: string[];
   missingColumns?: string[];
   progress: number;
+  gcsGeneration?: string;
   status:
     | "selected"
     | "invalid"
@@ -132,6 +109,15 @@ export default function DataUploadPage() {
     },
   });
 
+  const syncStateQuery = useQuery({
+    queryKey: ["claim-sync-state"],
+    queryFn: async () => {
+      const response = await fetch("/api/claims/sync-state");
+      if (!response.ok) throw new Error("Failed to load claim sync state");
+      return response.json() as Promise<{ syncState: ClaimSyncStateSummary | null }>;
+    },
+  });
+
   const datasets = datasetsQuery.data?.datasets ?? [];
   const selectedDataset =
     datasets.find((dataset) => dataset.datasetKey === datasetKey) ?? datasets[0];
@@ -140,6 +126,10 @@ export default function DataUploadPage() {
   const isBusy = files.some((file) =>
     ["signing", "uploading", "verifying"].includes(file.status),
   );
+  const detectedHeaders = files.find((file) => file.headers?.length)?.headers ?? [];
+  const latestLandedFile = [...files]
+    .reverse()
+    .find((file) => file.status === "landed" && file.volumePath);
 
   const landingSummary = useMemo(() => {
     if (!selectedDataset) return "Select a dataset to see its landing prefix.";
@@ -165,6 +155,7 @@ export default function DataUploadPage() {
         toast.success("Files landed — processing starts within a few minutes");
       }
       await queryClient.invalidateQueries({ queryKey: ["recent-uploads"] });
+      await queryClient.invalidateQueries({ queryKey: ["claim-sync-state"] });
     },
   });
 
@@ -204,13 +195,21 @@ export default function DataUploadPage() {
             <div>
               <h1 className="type-headline">Data Upload</h1>
               <p className="type-caption text-muted-foreground">
-                Upload claim files for processing. Uploaded files are picked up automatically.
+                Upload claim files for processing. Files are picked up automatically within 5–10 minutes.
               </p>
             </div>
-            <Badge variant="outline" className="gap-1">
-              <DatabaseIcon data-icon="inline-start" />
-              Bronze landing
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger render={<span />} className="inline-flex">
+                <Badge variant="outline" className="gap-1 cursor-help">
+                  <DatabaseIcon data-icon="inline-start" />
+                  Bronze landing
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Files land in the Bronze layer of the Delta Lake medallion
+                architecture. ETL processes them into Silver and Gold tables.
+              </TooltipContent>
+            </Tooltip>
           </div>
 
           <div className="flex items-center gap-4 border-y border-border py-2.5">
@@ -301,8 +300,7 @@ export default function DataUploadPage() {
                   <p className="type-label text-muted-foreground">Required CSV columns</p>
                   <div className="flex flex-wrap gap-1.5">
                     {selectedDataset.requiredColumns.map((column) => {
-                      const observedHeaders = files.find((file) => file.headers)?.headers ?? [];
-                      const present = observedHeaders.length === 0 || observedHeaders.includes(column);
+                      const present = detectedHeaders.length === 0 || detectedHeaders.includes(column);
                       return (
                         <Badge
                           key={column}
@@ -313,6 +311,33 @@ export default function DataUploadPage() {
                         </Badge>
                       );
                     })}
+                  </div>
+                </div>
+              ) : null}
+
+              {detectedHeaders.length > 0 && selectedDataset?.extension === ".csv" ? (
+                <div className="space-y-2">
+                  <p className="type-label text-muted-foreground">Detected columns</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {detectedHeaders.map((column) => {
+                      const isRequired = selectedDataset.requiredColumns.includes(column);
+                      return (
+                        <Badge
+                          key={column}
+                          variant={isRequired ? "outline" : "secondary"}
+                          className="font-mono"
+                        >
+                          {column}
+                        </Badge>
+                      );
+                    })}
+                    {selectedDataset.requiredColumns
+                      .filter((column) => !detectedHeaders.includes(column))
+                      .map((column) => (
+                        <Badge key={column} variant="destructive" className="font-mono">
+                          {column}
+                        </Badge>
+                      ))}
                   </div>
                 </div>
               ) : null}
@@ -365,6 +390,41 @@ export default function DataUploadPage() {
                 </p>
               )}
 
+              {latestLandedFile && (
+                <section className="border border-border p-4">
+                  <h3 className="type-title">Upload completed</h3>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <StatusMetric label="Dataset" value={selectedDataset?.displayName ?? datasetKey} />
+                    <StatusMetric label="Generation" value={latestLandedFile.gcsGeneration ?? "—"} />
+                    <StatusMetric label="Volume path" value={latestLandedFile.volumePath ?? "—"} />
+                    <StatusMetric label="Sync status" value="Waiting for ETL trigger" />
+                  </div>
+                  <p className="type-caption text-muted-foreground mt-3">
+                    Databricks waits for the file-arrival debounce window before ETL begins.
+                  </p>
+                  {syncStateQuery.data?.syncState && (
+                    <div className="mt-3 grid gap-3 md:grid-cols-4">
+                      <StatusMetric
+                        label="Discovered"
+                        value={String(syncStateQuery.data.syncState.lastDiscoveredCount)}
+                      />
+                      <StatusMetric
+                        label="Inserted"
+                        value={String(syncStateQuery.data.syncState.lastInsertedCount)}
+                      />
+                      <StatusMetric
+                        label="Last claim"
+                        value={syncStateQuery.data.syncState.lastClaimId ?? "—"}
+                      />
+                      <StatusMetric
+                        label="Synced at"
+                        value={new Date(syncStateQuery.data.syncState.lastSyncedAt).toLocaleString()}
+                      />
+                    </div>
+                  )}
+                </section>
+              )}
+
               <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
                 <Button
                   type="button"
@@ -385,7 +445,7 @@ export default function DataUploadPage() {
               </div>
             </section>
 
-            <RecentUploads
+            <UploadsHistorySection
               datasets={datasets}
               isLoading={uploadsQuery.isLoading}
               uploads={uploadsQuery.data?.uploads ?? []}
@@ -454,7 +514,7 @@ function UploadFileRow({
             onClick={onCancel}
             aria-label="Cancel upload"
           >
-            <XIcon className="size-4" />
+            <ProhibitIcon className="size-4" />
           </Button>
         )}
       </div>
@@ -467,112 +527,6 @@ function UploadFileRow({
       )}
     </div>
   );
-}
-
-function RecentUploads({
-  datasets,
-  isLoading,
-  uploads,
-}: {
-  datasets: UploadDataset[];
-  isLoading: boolean;
-  uploads: UploadRecord[];
-}) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="type-title">Recent Uploads</h2>
-        <span className="type-caption text-muted-foreground">Last 25</span>
-      </div>
-      <Alert>
-        <WarningIcon className="size-4" />
-        <AlertTitle>Ingestion timing</AlertTitle>
-        <AlertDescription>
-          Databricks waits 60 seconds after the last file change and enforces a 300 second minimum between file-arrival triggers, so ETL is not immediate.
-        </AlertDescription>
-      </Alert>
-      {isLoading ? (
-        <div className="space-y-2" role="status" aria-label="Loading uploads">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-10 w-full" />
-          ))}
-        </div>
-      ) : uploads.length === 0 ? (
-        <Empty className="border border-border py-10">
-          <EmptyContent>
-            <EmptyMedia variant="icon">
-              <DatabaseIcon />
-            </EmptyMedia>
-            <EmptyTitle>No upload history</EmptyTitle>
-            <EmptyDescription>Landed files will appear here after verification.</EmptyDescription>
-          </EmptyContent>
-        </Empty>
-      ) : (
-        <div className="border border-border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Upload ID</TableHead>
-                <TableHead>Dataset</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Size</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Completed</TableHead>
-                <TableHead>Generation</TableHead>
-                <TableHead>Error</TableHead>
-                <TableHead>Volume path</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {uploads.map((upload) => (
-                <TableRow key={upload.id}>
-                  <TableCell className="font-mono text-xs">{upload.id}</TableCell>
-                  <TableCell className="font-medium">
-                    {datasets.find((d) => d.datasetKey === upload.datasetKey)?.displayName ?? upload.datasetKey}
-                  </TableCell>
-                  <TableCell>
-                    <UploadStatusBadge status={upload.status} />
-                  </TableCell>
-                  <TableCell>{formatBytes(upload.byteSize)}</TableCell>
-                  <TableCell>{formatDateTime(upload.createdAt)}</TableCell>
-                  <TableCell>{formatDateTime(upload.completedAt)}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {upload.gcsGeneration ?? "—"}
-                  </TableCell>
-                  <TableCell className="max-w-[220px] text-xs text-muted-foreground">
-                    {upload.errorMessage ?? "—"}
-                  </TableCell>
-                  <TableCell className="max-w-[320px] truncate font-mono text-xs text-muted-foreground">
-                    {upload.volumePath}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function UploadStatusBadge({ status }: { status: UploadRecord["status"] }) {
-  if (status === "uploaded") {
-    return (
-      <Badge>
-        <CheckCircleIcon data-icon="inline-start" />
-        Landed
-      </Badge>
-    );
-  }
-  if (status === "failed") {
-    return (
-      <Badge variant="destructive">
-        <XCircleIcon data-icon="inline-start" />
-        Failed
-      </Badge>
-    );
-  }
-  return <Badge variant="outline">Initiated</Badge>;
 }
 
 async function validateFile(
@@ -674,6 +628,7 @@ async function uploadOne(
     });
     const completePayload = (await completeResponse.json().catch(() => ({}))) as {
       error?: string;
+      gcsGeneration?: string | null;
     };
 
     if (!completeResponse.ok) {
@@ -681,7 +636,11 @@ async function uploadOne(
       return "failed";
     }
 
-    updateFile(file, setFiles, { progress: 100, status: "landed" });
+    updateFile(file, setFiles, {
+      gcsGeneration: completePayload.gcsGeneration ?? undefined,
+      progress: 100,
+      status: "landed",
+    });
     return "ok";
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
@@ -759,10 +718,6 @@ function throwFileError(
 
 function fallbackContentType(extension: UploadDataset["extension"]) {
   return extension === ".pdf" ? "application/pdf" : "text/csv";
-}
-
-function formatDateTime(value: string | null) {
-  return value ? new Date(value).toLocaleString() : "—";
 }
 
 function formatBytes(bytes: number) {

@@ -49,6 +49,7 @@ export async function POST(request: Request) {
 
     await markIngestionUploadUploaded(upload.id, verification.generation ?? "");
     return NextResponse.json({
+      gcsGeneration: verification.generation ?? null,
       status: "uploaded",
       uploadId: upload.id,
       volumePath: upload.volumePath,

@@ -1,13 +1,29 @@
 import { getDb } from "@/lib/db";
-import { claimReviews, claimSyncState } from "@/lib/db/schema";
+import { claimEvents, claimFeedback, claimReviews, claimSyncState, user } from "@/lib/db/schema";
 import { and, asc, count, desc, eq, ilike, isNotNull, sql, type SQL } from "drizzle-orm";
 
 export type ClaimReview = typeof claimReviews.$inferSelect;
 export type ClaimSyncState = typeof claimSyncState.$inferSelect;
+export type ClaimFeedback = typeof claimFeedback.$inferSelect;
+export type ClaimEvent = typeof claimEvents.$inferSelect;
 export type ClaimRiskFilter = "all" | "high" | "medium" | "low";
 export type ClaimSortField = "riskScore" | "analyzedAt" | "claimId";
 export type ClaimSortOrder = "asc" | "desc";
 export type ClaimStatusFilter = "all" | "new" | "reviewed" | "actioned";
+export type ClaimFeedbackRating = "useful" | "not_useful";
+export type ClaimFeedbackReason =
+  | "wrong_risk_reason"
+  | "missing_policy"
+  | "too_vague"
+  | "not_actionable";
+export type ClaimEventType =
+  | "analysis_generated"
+  | "status_changed"
+  | "feedback_recorded"
+  | "report_generated";
+export type ClaimReviewWithReviewer = ClaimReview & {
+  reviewedByEmail: string | null;
+};
 
 export interface DiscoveredClaimId {
   claimId: string;
@@ -87,11 +103,24 @@ export async function getClaims(params: GetClaimsParams = {}): Promise<Paginated
 
 export async function getClaimReviewByClaimId(
   claimId: string,
-): Promise<ClaimReview | null> {
+): Promise<ClaimReviewWithReviewer | null> {
   const db = getDb();
   const result = await db
-    .select()
+    .select({
+      analyzedAt: claimReviews.analyzedAt,
+      claimId: claimReviews.claimId,
+      id: claimReviews.id,
+      narrative: claimReviews.narrative,
+      reviewedAt: claimReviews.reviewedAt,
+      reviewedByEmail: user.email,
+      reviewedById: claimReviews.reviewedById,
+      riskLevel: claimReviews.riskLevel,
+      riskScore: claimReviews.riskScore,
+      status: claimReviews.status,
+      topReason: claimReviews.topReason,
+    })
     .from(claimReviews)
+    .leftJoin(user, eq(claimReviews.reviewedById, user.id))
     .where(eq(claimReviews.claimId, claimId))
     .limit(1);
 
@@ -144,6 +173,80 @@ export async function upsertClaimReview(data: {
         analyzedAt: new Date(),
       },
     });
+}
+
+export async function getClaimFeedbackByClaimId(
+  claimId: string,
+  userId: string,
+): Promise<ClaimFeedback | null> {
+  const rows = await getDb()
+    .select()
+    .from(claimFeedback)
+    .where(and(eq(claimFeedback.claimId, claimId), eq(claimFeedback.userId, userId)))
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+export async function upsertClaimFeedback(data: {
+  claimId: string;
+  comment: string;
+  rating: ClaimFeedbackRating;
+  reason: ClaimFeedbackReason | null;
+  userId: string;
+  userEmail: string;
+}): Promise<ClaimFeedback> {
+  const createdAt = new Date();
+  const id = `cf_${data.claimId}_${data.userId}`;
+  const rows = await getDb()
+    .insert(claimFeedback)
+    .values({
+      claimId: data.claimId,
+      comment: data.comment,
+      createdAt,
+      id,
+      rating: data.rating,
+      reason: data.reason,
+      userId: data.userId,
+    })
+    .onConflictDoUpdate({
+      target: claimFeedback.id,
+      set: {
+        comment: data.comment,
+        createdAt,
+        rating: data.rating,
+        reason: data.reason,
+      },
+    })
+    .returning();
+
+  return rows[0];
+}
+
+export async function logClaimEvent(data: {
+  actorEmail?: string | null;
+  actorUserId?: string | null;
+  claimId: string;
+  eventType: ClaimEventType;
+  metadata?: Record<string, unknown> | null;
+}): Promise<void> {
+  await getDb().insert(claimEvents).values({
+    actorEmail: data.actorEmail ?? null,
+    actorUserId: data.actorUserId ?? null,
+    claimId: data.claimId,
+    createdAt: new Date(),
+    eventType: data.eventType,
+    id: `ce_${data.claimId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    metadata: data.metadata ?? null,
+  });
+}
+
+export async function getClaimTimeline(claimId: string): Promise<ClaimEvent[]> {
+  return getDb()
+    .select()
+    .from(claimEvents)
+    .where(eq(claimEvents.claimId, claimId))
+    .orderBy(desc(claimEvents.createdAt));
 }
 
 export async function getTopClaims(limit = 5): Promise<ClaimReview[]> {

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, real, integer } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, pgTable, real, text, timestamp } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -90,4 +90,26 @@ export const ingestionUploads = pgTable("ingestion_uploads", {
   completedAt: timestamp("completed_at"),
   gcsGeneration: text("gcs_generation"),
   errorMessage: text("error_message"),
+});
+
+export const claimFeedback = pgTable("claim_feedback", {
+  id: text("id").primaryKey(),
+  claimId: text("claim_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  rating: text("rating").notNull(),
+  reason: text("reason"),
+  comment: text("comment").notNull().default(""),
+  createdAt: timestamp("created_at").notNull(),
+});
+
+export const claimEvents = pgTable("claim_events", {
+  id: text("id").primaryKey(),
+  claimId: text("claim_id").notNull(),
+  eventType: text("event_type").notNull(),
+  actorUserId: text("actor_user_id").references(() => user.id),
+  actorEmail: text("actor_email"),
+  metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
+  createdAt: timestamp("created_at").notNull(),
 });

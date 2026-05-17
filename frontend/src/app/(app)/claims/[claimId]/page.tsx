@@ -35,13 +35,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { buildRemediationChecklist } from "@/lib/claims/remediation-checklist";
 import type { ClaimAnalysisResponse } from "@/lib/databricks/types";
 import {
   ArrowLeft,
+  Copy,
+  DownloadSimple,
   Files,
   Warning,
   PaperPlaneTilt,
   ChatText,
+  ThumbsDown,
+  ThumbsUp,
 } from "@phosphor-icons/react";
 
 // ─── Risk / Direction helpers ───────────────────────────────────────────────
@@ -50,18 +55,25 @@ function DirectionTag({ direction }: { direction: string }) {
   if (direction === "increases_risk")
     return (
       <Tooltip>
-        <TooltipTrigger render={<span />} className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-up-bg text-direction-up cursor-default">
+        <TooltipTrigger
+          render={<span />}
+          className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-up-bg text-direction-up cursor-default"
+        >
           Raises denial risk
         </TooltipTrigger>
         <TooltipContent side="top">
-          This feature pushed the model toward predicting denial. Higher contribution = stronger signal.
+          This feature pushed the model toward predicting denial. Higher
+          contribution = stronger signal.
         </TooltipContent>
       </Tooltip>
     );
   if (direction === "decreases_risk")
     return (
       <Tooltip>
-        <TooltipTrigger render={<span />} className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-down-bg text-direction-down cursor-default">
+        <TooltipTrigger
+          render={<span />}
+          className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-direction-down-bg text-direction-down cursor-default"
+        >
           Lowers denial risk
         </TooltipTrigger>
         <TooltipContent side="top">
@@ -82,6 +94,64 @@ function formatFeatureValue(value: number | null): string {
   return value.toFixed(2);
 }
 
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleString();
+}
+
+interface ClaimStatusPayload {
+  claimId: string;
+  reviewedAt: string | null;
+  reviewedByEmail: string | null;
+  reviewedById: string | null;
+  status: string;
+}
+
+interface ClaimFeedbackPayload {
+  feedback: {
+    claimId: string;
+    comment: string;
+    createdAt: string;
+    rating: "useful" | "not_useful";
+    reason:
+      | "wrong_risk_reason"
+      | "missing_policy"
+      | "too_vague"
+      | "not_actionable"
+      | null;
+    userId: string;
+  } | null;
+}
+
+interface ClaimTimelineEvent {
+  actorEmail: string | null;
+  claimId: string;
+  createdAt: string;
+  eventType:
+    | "analysis_generated"
+    | "status_changed"
+    | "feedback_recorded"
+    | "report_generated";
+  metadata: Record<string, unknown> | null;
+}
+
+function formatEventLabel(event: ClaimTimelineEvent): string {
+  switch (event.eventType) {
+    case "analysis_generated":
+      return "Analysis generated";
+    case "status_changed":
+      return `Status changed to ${String(event.metadata?.status ?? "updated")}`;
+    case "feedback_recorded":
+      return `Feedback marked ${
+        event.metadata?.rating === "useful" ? "useful" : "not useful"
+      }`;
+    case "report_generated":
+      return "Review report generated";
+    default:
+      return event.eventType;
+  }
+}
+
 // ─── Chat panel ──────────────────────────────────────────────────────────────
 
 interface ChatMessage {
@@ -92,9 +162,13 @@ interface ChatMessage {
 function ChatPanel({
   claimId,
   analysis,
+  queuedQuestion,
+  onQueuedQuestionHandled,
 }: {
   claimId: string;
   analysis: ClaimAnalysisResponse | undefined;
+  queuedQuestion: string | null;
+  onQueuedQuestionHandled: () => void;
 }) {
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -111,9 +185,6 @@ function ChatPanel({
           } denial risk. Ask me anything about it.`,
         }
       : null;
-  const visibleMessages = openingMessage
-    ? [openingMessage, ...messages]
-    : messages;
   const threadMessageCount = messages.length + (openingMessage ? 1 : 0);
 
   useEffect(() => {
@@ -192,6 +263,18 @@ function ChatPanel({
     }
   }
 
+  const sendMessageRef = useRef(sendMessage);
+
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  });
+
+  useEffect(() => {
+    if (!queuedQuestion || !analysis || isWaiting) return;
+    void sendMessageRef.current(queuedQuestion);
+    onQueuedQuestionHandled();
+  }, [queuedQuestion, analysis, isWaiting, onQueuedQuestionHandled]);
+
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -257,18 +340,30 @@ function ChatPanel({
 
         {/* Q+A log */}
         {qaPairs.map((pair, i) => (
-          <div key={i} className={i < qaPairs.length - 1 || isWaiting ? "pb-6 border-b border-border/40" : "pb-2"}>
+          <div
+            key={i}
+            className={
+              i < qaPairs.length - 1 || isWaiting
+                ? "pb-6 border-b border-border/40"
+                : "pb-2"
+            }
+          >
             {/* Question row */}
             <div className="flex items-start gap-2.5 mb-3">
-              <div className="w-0.5 self-stretch bg-foreground/20 shrink-0 mt-0.5" aria-hidden="true" />
+              <div
+                className="w-0.5 self-stretch bg-foreground/20 shrink-0 mt-0.5"
+                aria-hidden="true"
+              />
               <p className="type-label text-foreground leading-snug">
                 {pair.question}
               </p>
             </div>
             {/* Answer row */}
             {pair.answer !== null && (
-              <div className="pl-[13px]">
-                <p className="type-caption text-muted-foreground mb-1">Answer</p>
+              <div className="pl-3.25">
+                <p className="type-caption text-muted-foreground mb-1">
+                  Answer
+                </p>
                 <p className="type-body max-w-none text-foreground leading-relaxed">
                   {pair.answer}
                 </p>
@@ -323,7 +418,7 @@ function ChatPanel({
 
         {/* Typing indicator */}
         {isWaiting && (
-          <div className="pl-[13px]">
+          <div className="pl-3.25">
             <p className="type-caption text-muted-foreground mb-1">Answer</p>
             <div className="flex items-center gap-1 py-1">
               <span className="size-1.5 bg-muted-foreground rounded-full animate-pulse" />
@@ -426,7 +521,10 @@ function StatusControl({
       }}
       disabled={mutation.isPending}
     >
-      <SelectTrigger className="w-36 h-10 pointer-coarse:h-11 text-xs" aria-label="Claim status">
+      <SelectTrigger
+        className="w-36 h-10 pointer-coarse:h-11 text-xs"
+        aria-label="Claim status"
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -442,6 +540,151 @@ function StatusControl({
   );
 }
 
+function FeedbackSection({
+  initialFeedback,
+  isPending,
+  onSubmit,
+}: {
+  initialFeedback: ClaimFeedbackPayload["feedback"];
+  isPending: boolean;
+  onSubmit: (payload: {
+    comment: string;
+    rating: "useful" | "not_useful";
+    reason:
+      | "wrong_risk_reason"
+      | "missing_policy"
+      | "too_vague"
+      | "not_actionable"
+      | null;
+  }) => void;
+}) {
+  const [comment, setComment] = useState(initialFeedback?.comment ?? "");
+  const [reason, setReason] = useState<
+    "wrong_risk_reason" | "missing_policy" | "too_vague" | "not_actionable" | ""
+  >(
+    (initialFeedback?.reason ?? "") as
+      | "wrong_risk_reason"
+      | "missing_policy"
+      | "too_vague"
+      | "not_actionable"
+      | "",
+  );
+  const [rating, setRating] = useState<"useful" | "not_useful" | null>(
+    initialFeedback?.rating ?? null,
+  );
+
+  useEffect(() => {
+    setComment(initialFeedback?.comment ?? "");
+    setReason(
+      (initialFeedback?.reason ?? "") as
+        | "wrong_risk_reason"
+        | "missing_policy"
+        | "too_vague"
+        | "not_actionable"
+        | "",
+    );
+    setRating(initialFeedback?.rating ?? null);
+  }, [initialFeedback]);
+
+  return (
+    <div className="px-5 py-4 space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant={rating === "useful" ? "default" : "outline"}
+          size="sm"
+          disabled={isPending}
+          onClick={() =>
+            onSubmit({
+              comment,
+              rating: "useful",
+              reason: reason || null,
+            });
+            setRating("useful")
+          }
+        >
+          <ThumbsUp data-icon="inline-start" />
+          Useful
+        </Button>
+        <Button
+          type="button"
+          variant={rating === "not_useful" ? "default" : "outline"}
+          size="sm"
+          disabled={isPending}
+          onClick={() =>
+            onSubmit({
+              comment,
+              rating: "not_useful",
+              reason: reason || null,
+            });
+            setRating("not_useful")
+          }
+        >
+          <ThumbsDown data-icon="inline-start" />
+          Not useful
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <p className="type-label text-muted-foreground">Reason</p>
+        <Select
+          items={[
+            { value: "wrong_risk_reason", label: "Wrong risk reason" },
+            { value: "missing_policy", label: "Missing policy" },
+            { value: "too_vague", label: "Too vague" },
+            { value: "not_actionable", label: "Not actionable" },
+          ]}
+          value={reason}
+          onValueChange={(value) => setReason((value as typeof reason) ?? "")}
+        >
+          <SelectTrigger
+            className="w-full max-w-sm"
+            aria-label="Feedback reason"
+          >
+            <SelectValue placeholder="Optional reason" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="wrong_risk_reason">
+                Wrong risk reason
+              </SelectItem>
+              <SelectItem value="missing_policy">Missing policy</SelectItem>
+              <SelectItem value="too_vague">Too vague</SelectItem>
+              <SelectItem value="not_actionable">Not actionable</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <p className="type-label text-muted-foreground">Comment</p>
+        <textarea
+          value={comment}
+          onChange={(event) => setComment(event.target.value)}
+          rows={3}
+          className="w-full max-w-xl resize-none bg-transparent border border-border px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          placeholder="Optional feedback for future model improvements"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isPending}
+          onClick={() =>
+            onSubmit({
+              comment,
+              rating: rating ?? "useful",
+              reason: reason || null,
+            })
+          }
+        >
+          Save feedback detail
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ClaimDetailPage({
@@ -453,6 +696,10 @@ export default function ClaimDetailPage({
   const queryClient = useQueryClient();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [queuedChatQuestion, setQueuedChatQuestion] = useState<string | null>(
+    null,
+  );
+  const [retryCount, setRetryCount] = useState(0);
   const router = useRouter();
 
   const analysisQuery = useQuery({
@@ -478,11 +725,79 @@ export default function ClaimDetailPage({
       const res = await fetch(
         `/api/claims/${encodeURIComponent(claimId)}/status`,
       );
-      if (!res.ok) return "new";
-      const data = (await res.json()) as { status: string };
-      return data.status ?? "new";
+      if (!res.ok) {
+        return {
+          claimId,
+          reviewedAt: null,
+          reviewedByEmail: null,
+          reviewedById: null,
+          status: "new",
+        } satisfies ClaimStatusPayload;
+      }
+      return (await res.json()) as ClaimStatusPayload;
     },
     staleTime: 5 * 60 * 1000,
+  });
+
+  const feedbackQuery = useQuery({
+    queryKey: ["claim-feedback", claimId],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/claims/${encodeURIComponent(claimId)}/feedback`,
+      );
+      if (!res.ok) throw new Error("Failed to load claim feedback");
+      return (await res.json()) as ClaimFeedbackPayload;
+    },
+    enabled: !!analysisQuery.data,
+  });
+
+  const timelineQuery = useQuery({
+    queryKey: ["claim-timeline", claimId],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/claims/${encodeURIComponent(claimId)}/timeline`,
+      );
+      if (!res.ok) throw new Error("Failed to load claim activity");
+      return (await res.json()) as { events: ClaimTimelineEvent[] };
+    },
+    enabled: !!analysisQuery.data,
+  });
+
+  const feedbackMutation = useMutation({
+    mutationFn: async (payload: {
+      comment: string;
+      rating: "useful" | "not_useful";
+      reason:
+        | "wrong_risk_reason"
+        | "missing_policy"
+        | "too_vague"
+        | "not_actionable"
+        | null;
+    }) => {
+      const response = await fetch(
+        `/api/claims/${encodeURIComponent(claimId)}/feedback`,
+        {
+          body: JSON.stringify(payload),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        },
+      );
+      if (!response.ok) {
+        const errorPayload = (await response
+          .json()
+          .catch(() => ({ error: "Feedback failed" }))) as { error?: string };
+        throw new Error(errorPayload.error ?? "Feedback failed");
+      }
+      return response.json() as Promise<ClaimFeedbackPayload>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["claim-feedback", claimId] });
+      queryClient.invalidateQueries({ queryKey: ["claim-timeline", claimId] });
+      toast.success("Feedback saved");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Feedback failed");
+    },
   });
 
   // FIX 2: Next high-risk claim query
@@ -545,6 +860,8 @@ export default function ClaimDetailPage({
     }
   }, [runtimeStatusQuery.data]);
 
+
+
   useEffect(() => {
     if (analysisQuery.data) {
       queryClient.invalidateQueries({ queryKey: ["claims"] });
@@ -575,6 +892,10 @@ export default function ClaimDetailPage({
 
   const analysis = analysisQuery.data;
   const riskLevel = analysis?.riskLevel ?? "low";
+  const claimStatus = claimStatusQuery.data;
+  const remediationChecklist = analysis
+    ? buildRemediationChecklist(analysis)
+    : [];
 
   const breadcrumb = (
     <>
@@ -613,16 +934,20 @@ export default function ClaimDetailPage({
               </h1>
               {analysis && (
                 <StatusControl
-                  key={claimStatusQuery.data ?? "new"}
+                  key={claimStatus?.status ?? "new"}
                   claimId={claimId}
-                  initialStatus={claimStatusQuery.data ?? "new"}
+                  initialStatus={claimStatus?.status ?? "new"}
                 />
               )}
             </div>
 
             {/* Loading */}
             {analysisQuery.isLoading && (
-              <div role="status" aria-label="Loading claim analysis" className="space-y-4">
+              <div
+                role="status"
+                aria-label="Loading claim analysis"
+                className="space-y-4"
+              >
                 <span className="sr-only">Loading claim analysis…</span>
                 <div className="border border-border p-5 space-y-3">
                   <Skeleton className="h-12 w-32" />
@@ -649,47 +974,58 @@ export default function ClaimDetailPage({
             )}
 
             {/* FIX 3: Diagnostic error block */}
-            {analysisQuery.isError && (() => {
-              const errMsg =
-                analysisQuery.error instanceof Error
-                  ? analysisQuery.error.message
-                  : "Analysis failed";
-              const runtimeData = runtimeStatusQuery.data;
-              let runtimeHint: string | null = null;
-              if (runtimeData) {
-                if (runtimeData.analysisEndpoint === false) {
-                  runtimeHint = "The model endpoint appears offline.";
-                } else if (runtimeData.sqlWarehouse === false) {
-                  runtimeHint = "The SQL warehouse appears offline.";
+            {analysisQuery.isError &&
+              (() => {
+                const errMsg =
+                  analysisQuery.error instanceof Error
+                    ? analysisQuery.error.message
+                    : "Analysis failed";
+                const runtimeData = runtimeStatusQuery.data;
+                let runtimeHint: string | null = null;
+                if (runtimeData) {
+                  if (runtimeData.analysisEndpoint === false) {
+                    runtimeHint = "The model endpoint appears offline.";
+                  } else if (runtimeData.sqlWarehouse === false) {
+                    runtimeHint = "The SQL warehouse appears offline.";
+                  }
                 }
-              }
-              return (
-                <section className="border border-border py-5 px-5">
-                  <div className="flex items-start gap-3">
-                    <Warning
-                      className="size-4 text-status-err shrink-0 mt-0.5"
-                      aria-hidden="true"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="type-body text-foreground">{errMsg}</p>
-                      {runtimeHint && (
-                        <p className="type-caption text-muted-foreground mt-1">
-                          {runtimeHint}
-                        </p>
-                      )}
+                return (
+                  <section className="border border-border py-5 px-5">
+                    <div className="flex items-start gap-3">
+                      <Warning
+                        className="size-4 text-status-err shrink-0 mt-0.5"
+                        aria-hidden="true"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="type-body text-foreground">{errMsg}</p>
+                        {runtimeHint && (
+                          <p className="type-caption text-muted-foreground mt-1">
+                            {runtimeHint}
+                          </p>
+                        )}
+                        {retryCount >= 1 && (
+                          <p className="type-caption text-muted-foreground mt-1">
+                            {retryCount === 1
+                              ? "If the SQL warehouse was just started, wait 60 seconds then retry."
+                              : "If the issue persists, contact your system administrator."}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setRetryCount((c) => c + 1);
+                          analysisQuery.refetch();
+                        }}
+                        className="shrink-0"
+                      >
+                        Retry
+                      </Button>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => analysisQuery.refetch()}
-                      className="shrink-0"
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                </section>
-              );
-            })()}
+                  </section>
+                );
+              })()}
 
             {/* Analysis */}
             {analysis && (
@@ -757,6 +1093,47 @@ export default function ClaimDetailPage({
                                   Relevance score: {policy.relevance.toFixed(2)}
                                 </p>
                               )}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={async () => {
+                                    const citationText = [
+                                      `Document: ${policy.document}`,
+                                      `Excerpt: ${policy.excerpt}`,
+                                      policy.relevance != null
+                                        ? `Relevance: ${policy.relevance.toFixed(2)}`
+                                        : null,
+                                    ]
+                                      .filter(Boolean)
+                                      .join("\n");
+                                    await navigator.clipboard.writeText(
+                                      citationText,
+                                    );
+                                    toast.success("Citation copied");
+                                  }}
+                                >
+                                  <Copy data-icon="inline-start" />
+                                  Copy citation
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setChatOpen(true);
+                                    setQueuedChatQuestion(
+                                      `What policy issue does ${
+                                        policy.document.split("/").pop() ??
+                                        policy.document
+                                      } raise for claim ${claimId}?`,
+                                    );
+                                  }}
+                                >
+                                  Ask about this policy
+                                </Button>
+                              </div>
                             </AccordionContent>
                           </AccordionItem>
                         ))}
@@ -787,7 +1164,74 @@ export default function ClaimDetailPage({
                       </p>
                     )}
                   </div>
+                  {remediationChecklist.length > 0 && (
+                    <>
+                      <div className="px-5 py-3 border-t border-border">
+                        <h3 className="type-title">Remediation Checklist</h3>
+                      </div>
+                      <ul className="px-5 py-4 space-y-2">
+                        {remediationChecklist.map((item) => (
+                          <li
+                            key={item}
+                            className="flex items-start gap-2 text-sm"
+                          >
+                            <span aria-hidden="true" className="text-muted-foreground">–</span>
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
                 </section>
+
+                {analysis && (
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      render={<Link href={`/claims/${claimId}/report`} />}
+                      nativeButton={false}
+                    >
+                      <DownloadSimple data-icon="inline-start" />
+                      Generate Review Report
+                    </Button>
+                  </div>
+                )}
+
+                {analysis.features &&
+                  Object.keys(analysis.features).length > 0 && (
+                    <section className="border border-border">
+                    <Accordion defaultValue={[]} multiple={false}>
+                        <AccordionItem
+                          value="advanced-features"
+                          className="border-b-0"
+                        >
+                          <AccordionTrigger className="px-5 py-3 type-title hover:no-underline">
+                            Advanced model inputs
+                          </AccordionTrigger>
+                          <AccordionContent className="px-5 pb-4">
+                            <div className="space-y-2">
+                              {Object.entries(analysis.features).map(
+                                ([key, value]) => (
+                                  <div
+                                    key={key}
+                                    className="flex items-center justify-between gap-4 border-t border-border pt-2 first:border-t-0 first:pt-0"
+                                  >
+                                    <span className="type-mono text-xs text-muted-foreground">
+                                      {key}
+                                    </span>
+                                    <span className="type-mono text-xs text-foreground">
+                                      {value === null ? "—" : String(value)}
+                                    </span>
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    </section>
+                  )}
 
                 {/* Policy Sources */}
                 {analysis.policyCitations.length > 0 && (
@@ -811,6 +1255,53 @@ export default function ClaimDetailPage({
                     </ul>
                   </section>
                 )}
+
+                <section className="border border-border">
+                  <Accordion defaultValue={[]} multiple={false}>
+                    <AccordionItem value="feedback" className="border-b-0">
+                      <AccordionTrigger className="px-5 py-3 type-title hover:no-underline">
+                        Explanation Feedback
+                      </AccordionTrigger>
+                      <AccordionContent className="pb-4">
+                        <FeedbackSection
+                          key={feedbackQuery.dataUpdatedAt}
+                          initialFeedback={feedbackQuery.data?.feedback ?? null}
+                          isPending={feedbackMutation.isPending}
+                          onSubmit={(payload) => feedbackMutation.mutate(payload)}
+                        />
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                </section>
+
+                <section className="border border-border">
+                  <div className="px-5 py-3 border-b border-border">
+                    <h2 className="type-title">Claim Activity</h2>
+                  </div>
+                  <div className="px-5 py-4 space-y-3">
+                    {timelineQuery.data?.events?.length ? (
+                      timelineQuery.data.events.map((event) => (
+                        <div
+                          key={`${event.eventType}-${event.createdAt}`}
+                          className="pt-3 border-t border-dashed border-border/40 first:pt-0 first:border-t-0"
+                        >
+                          <p className="text-sm text-foreground">
+                            {formatEventLabel(event)}
+                          </p>
+                          <p className="type-caption text-muted-foreground">
+                            {formatDateTime(event.createdAt)}
+                            {event.actorEmail ? ` • ${event.actorEmail}` : ""}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="type-caption text-muted-foreground">
+                        Activity will appear here after analysis, status
+                        changes, feedback, and report generation.
+                      </p>
+                    )}
+                  </div>
+                </section>
 
                 {/* FIX 2: Next high-risk button — after Policy Sources */}
                 <div className="flex items-center justify-between pt-2 pb-4">
@@ -851,8 +1342,13 @@ export default function ClaimDetailPage({
         </div>
 
         {/* RIGHT COLUMN — chat panel (hidden below lg breakpoint) */}
-        <div className="hidden lg:flex w-[380px] xl:w-[420px] shrink-0 border-l border-border flex-col h-full">
-          <ChatPanel claimId={claimId} analysis={analysis} />
+        <div className="hidden lg:flex w-95 xl:w-105 shrink-0 border-l border-border flex-col h-full">
+          <ChatPanel
+            claimId={claimId}
+            analysis={analysis}
+            queuedQuestion={queuedChatQuestion}
+            onQueuedQuestionHandled={() => setQueuedChatQuestion(null)}
+          />
         </div>
 
         {/* Mobile chat FAB — visible only below lg breakpoint */}
@@ -869,7 +1365,7 @@ export default function ClaimDetailPage({
             <SheetContent
               side="right"
               showCloseButton
-              className="w-full sm:max-w-[400px] p-0 flex flex-col"
+              className="w-full sm:max-w-100 p-0 flex flex-col"
             >
               <SheetHeader className="sr-only">
                 <SheetTitle>Ask about this claim</SheetTitle>
@@ -877,7 +1373,12 @@ export default function ClaimDetailPage({
                   Ask follow-up questions about the current claim analysis.
                 </SheetDescription>
               </SheetHeader>
-              <ChatPanel claimId={claimId} analysis={analysis} />
+              <ChatPanel
+                claimId={claimId}
+                analysis={analysis}
+                queuedQuestion={queuedChatQuestion}
+                onQueuedQuestionHandled={() => setQueuedChatQuestion(null)}
+              />
             </SheetContent>
           </Sheet>
         </div>

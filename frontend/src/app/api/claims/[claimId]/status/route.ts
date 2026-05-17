@@ -1,5 +1,5 @@
 import { requireAuthorizedSession } from "@/lib/auth-session";
-import { getClaimReviewByClaimId, updateClaimStatus } from "@/lib/db/claims";
+import { getClaimReviewByClaimId, logClaimEvent, updateClaimStatus } from "@/lib/db/claims";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +28,9 @@ export async function GET(
 
   return Response.json({
     claimId: claimReview.claimId,
+    reviewedAt: claimReview.reviewedAt?.toISOString() ?? null,
+    reviewedByEmail: claimReview.reviewedByEmail ?? null,
+    reviewedById: claimReview.reviewedById ?? null,
     status: claimReview.status,
   });
 }
@@ -61,6 +64,14 @@ export async function PATCH(
   if (!result.ok) {
     return Response.json({ error: "Claim not found" }, { status: 404 });
   }
+
+  await logClaimEvent({
+    actorEmail: session.user.email ?? null,
+    actorUserId: session.user.id,
+    claimId,
+    eventType: "status_changed",
+    metadata: { status: parsed.data.status },
+  });
 
   return Response.json({ ok: true, status: parsed.data.status });
 }

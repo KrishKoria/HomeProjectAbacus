@@ -106,28 +106,15 @@ if str(_PROJECT_ROOT) not in sys.path:
 <claude-mem-context>
 # Memory Context
 
-# [homeprojectabacus] recent context, 2026-05-17 11:55am GMT+5:30
+# [homeprojectabacus] recent context, 2026-05-17 1:04pm GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (19,184t read) | 605,067t work | 97% savings
+Stats: 50 obs (19,879t read) | 789,361t work | 97% savings
 
 ### May 13, 2026
-1106 5:47p 🔴 Add unzip dependency to Cloud Build migration step
-1107 6:05p 🔵 Better Auth state validation failures blocking OAuth callback
-1108 " 🔵 Cloud SQL proxy attached but service references multiple instances
-1109 6:06p 🔵 No recent build history found or migration logs unavailable
-1110 " 🔵 Database schema includes Better Auth tables but deployment migration status unknown
-1111 6:07p 🔵 Better Auth route handler uses default Next.js integration without database initialization
-1112 6:08p 🔵 OAuth callback state validation failure traced in HTTP request logs
-1113 6:11p 🔵 Better Auth OAuth State Validation Issues in Cloud Run Production
-1114 6:12p 🔵 Better Auth Issue #7023 State Mismatch Fix for Next.js v1.4.4+
-1115 " 🔵 Better Auth Configuration Missing Production Deployment Settings
-1116 6:13p 🔵 Better Auth Production Cookie and OAuth State Configuration Requirements
-1117 6:16p ✅ Better Auth Configuration Updated for Production OAuth State Validation
-1118 6:51p 🔵 Current Cloud Build pipeline issues and GCP infrastructure state analyzed
 1070 9:43p ⚖️ Deployment Architecture Migrated from Vercel to GCP Cloud Run
 1071 " 🟣 GCP Cloud Run Deployment Guide Documented
 1072 " ✅ Environment and Database Configuration Updated for GCP Cloud Run
@@ -162,51 +149,34 @@ Stats: 50 obs (19,184t read) | 605,067t work | 97% savings
 1101 11:00p 🔵 Cloud Build Secret Injection Root Cause: Service Agent Permission Gap
 1102 " ⚖️ Cloud Build Secret Handling: Two-Step Approach with Direct gcloud Retrieval
 1103 11:01p ✅ Cloud Build Pipeline Refactored for Direct Secret Retrieval
-S278 Deploy GCP project after git changes - research and provide step-by-step deployment guide for Cloud Build pipeline (May 13, 11:01 PM)
 1104 11:08p ✅ Consolidated GCP Cloud Build migrations step and optimized secret handling
-S285 User asked whether IAM changes would take time to propagate to Databricks and requested troubleshooting guidance for credential validation delays (May 13, 11:08 PM)
 ### May 16, 2026
 1119 4:00p 🔵 Explored ETL data landing and storage architecture for upload feature planning
-S286 Operational questions on ETL file arrival job: Can the paused schedule/trigger for /Volumes/healthcare/bronze/raw_landing/ be unpaused now? Will Databricks deploy automatically create the volume once the external location exists? (May 16, 5:41 PM)
 S287 Confirmed readiness to unpause ETL file-arrival job trigger after verifying external volume configuration and accessibility (May 16, 5:45 PM)
 S288 Unpause Databricks file-arrival trigger and verify frontend upload paths align with ETL expected directory structure (May 16, 5:49 PM)
 S289 Clarify dataset upload routing behavior: does system auto-detect file content type or rely on user-selected dataset? (May 16, 5:56 PM)
 S290 Verify prerequisites and deployment requirements for upload feature before Cloud Build frontend deploy (May 16, 5:58 PM)
 S291 Debug file arrival trigger failure in ETL pipeline — datasets uploaded via frontend should automatically trigger ETL file arrival job, but trigger is not firing (May 16, 6:02 PM)
 S292 Debug why file arrival trigger isn't automatically triggering ETL job when datasets are uploaded via frontend — identified trigger timing behavior and delays (May 16, 6:10 PM)
+S293 Continue implementation of five validated backend/frontend improvements to homeprojectabacus healthcare claims platform. Items cover: (1) Cloud SQL connection pool limits, (2) Query validation enums, (3) GCS metadata fields, (4) Upload status messaging, (5) Server-side CSV validation. (May 16, 6:11 PM)
 ### May 17, 2026
 1120 11:48a 🔵 Five proposed backend and frontend improvements all map to real code patterns and unaddressed risks
-S293 Continue implementation of five validated backend/frontend improvements to homeprojectabacus healthcare claims platform. Items cover: (1) Cloud SQL connection pool limits, (2) Query validation enums, (3) GCS metadata fields, (4) Upload status messaging, (5) Server-side CSV validation. (May 17, 11:51 AM)
-**Investigated**: - Previous session validation notes confirming all 5 items are production-grade improvements with specific code locations
-    - Parallel documentation queries for postgres.js connection pooling, Google Cloud Storage metadata APIs, Next.js App Router patterns, and project configuration (shadcn/ui, Tailwind v4, environment schema)
-    - Examined test files (runtime-env.test.ts, claims-page.test.tsx, claims-routes.test.ts, uploads-routes.test.ts) to understand mocking and testing patterns
-    - Reviewed database schema (ingestion_uploads table structure with gcs_generation field already present)
-    - Confirmed shadcn/ui project configuration: base library, phosphor icons, "base-lyra" style, Tailwind v4, Next.js 16.2.6 with RSC enabled
+S294 Deliver implementation guidance for five validated backend/frontend improvements to homeprojectabacus healthcare claims platform covering database pooling, query validation, GCS metadata tracking, upload status UX, and server-side CSV validation. (May 17, 11:51 AM)
+S295 Evaluate and implement five frontend hardening improvements: Cloud SQL connection pooling, claim-list query validation with enums, GCS metadata tracking, recent uploads/ingestion status UI, and CSV header validation before upload signing. (May 17, 11:54 AM)
+1121 11:59a 🟣 Cloud SQL Connection Pooling Configuration
+1122 " 🟣 Claims Query Validation with Enum Constraints
+1123 " 🟣 Server-Side CSV Header Validation
+1124 " 🟣 GCS Metadata Fields for Upload Traceability
+1125 " 🟣 Upload Completion Metadata Verification
+1126 " 🟣 Enhanced Upload Status UI with Ingestion Timing Guidance
+1127 " 🟣 Comprehensive Test Coverage for New Validations
+1128 12:19p 🔵 Homeprojectabacus: Existing infrastructure and completed phases mapped from project memory
+S296 Evaluate 10 proposed feature additions to healthcare claims analysis project (remediation checklist, review report generation, upload dashboard, CSV preview, ingestion results, work queue, feedback loop, policy citations, audit timeline, advanced feature view) and determine worthiness with detailed implementation plan (May 17, 12:29 PM)
+1129 12:31p 🔵 Frontend test suite times out after 120+ seconds
+1130 12:33p 🔵 Claim detail page structure and components mapped
+1131 " 🔵 Test suite structure and patterns identified for claims, uploads, and pages
+1132 12:35p 🔵 Database schema and helper functions architecture mapped for claims and uploads
+1133 12:41p 🟣 Upload/ingestion status dashboard implemented
 
-**Learned**: - Postgres.js supports pool configuration via options object: max, idle_timeout, connect_timeout (all in seconds)
-    - Cloud Run deployment uses --max-instances=6 and --concurrency=40, requiring conservative per-instance pool sizing (~15 max)
-    - GCS signed POST policies can enforce custom metadata fields via x-goog-meta-* with conditions matching form fields
-    - Upload status component already exists in /data-upload page; primary work is enhancement (delay messaging, metadata columns) not creation
-    - CSV validation is currently client-only; server validation must check headers before signing uploads to prevent tampering
-    - Project environment validates database config at runtime with superRefine rules
-
-**Completed**: - Created 5 structured implementation tasks in task management system (all marked completed after implementation guidance provided)
-    - Delivered complete, production-grade code implementations for all 5 items with:
-      * File locations and line numbers
-      * Exact code changes with rationale
-      * Integration points with existing codebase
-      * Error handling and fallback patterns
-    - Task #1: Pool configuration with max=15, idle_timeout=30s, connect_timeout=10s
-    - Task #2: Query validation via z.enum() for risk/status with .catch("all") fallback
-    - Task #3: GCS metadata policy with x-goog-meta-* fields, fields/conditions, and getMetadata verification
-    - Task #4: Upload status messaging component with elapsed time and Databricks latency explanation (6-minute window)
-    - Task #5: Server-side CSV header validation before signing, with 400 error listing missing columns
-
-**Next Steps**: - Background system has active queries for detailed technical documentation and project inspection
-    - Sequential thinking phase analyzed each improvement item and confirmed viability
-    - Anticipated next: Code file modifications, test implementation, and build/type verification
-    - Potential secondary review: Database connection testing under load, metadata round-trip verification, upload flow E2E testing
-
-
-Access 605k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 789k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

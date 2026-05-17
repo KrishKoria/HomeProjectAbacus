@@ -105,8 +105,8 @@ describe("Claims page", () => {
     await waitFor(() => expect(claimsRefetch).toHaveBeenCalled());
     await waitFor(() => expect(statusesRefetch).toHaveBeenCalled());
     expect(
-      screen.getByRole("button", { name: "Analyze all pending" }),
+      screen.getByRole("button", { name: "Analyze 5 pending" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("5 waiting")).toBeInTheDocument();
+    expect(screen.getByText("0 analyzed, 25 pending")).toBeInTheDocument();
   });
 });
