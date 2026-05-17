@@ -22,6 +22,12 @@ const envSchema = z.object({
   CLAIMOPS_ALLOWED_EMAIL_DOMAINS: z.string().min(1),
   CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS: z.string().min(1),
   CLAIMOPS_CHAT_MODEL: z.string().default("databricks-meta-llama-3-3-70b-instruct"),
+  CLAIMOPS_APP_ORIGIN: z.string().url().optional(),
+  CLAIMOPS_GCS_LANDING_BUCKET: z.string().min(1),
+  CLAIMOPS_GCS_LANDING_PREFIX: z.string().default("claimops-raw-landing"),
+  CLAIMOPS_UPLOAD_CSV_MAX_BYTES: z.coerce.number().int().positive().default(100_000_000),
+  CLAIMOPS_UPLOAD_PDF_MAX_BYTES: z.coerce.number().int().positive().default(50_000_000),
+  CLAIMOPS_UPLOAD_SIGNED_POLICY_TTL_SECONDS: z.coerce.number().int().positive().default(900),
 }).superRefine((values, ctx) => {
   if (values.DATABASE_URL) {
     return;

@@ -57,6 +57,9 @@ variables:
   claim_analysis_endpoint_name:
     description: Databricks serving endpoint name for claim analysis.
     default: claim-denial-analysis
+  raw_landing_storage_location:
+    description: External GCS prefix backing healthcare.bronze.raw_landing.
+    default: gs://homeprojectabacus-etl-landing-monthhome/claimops-raw-landing/
 
 experimental:
   skip_name_prefix_for_schema: true
@@ -77,6 +80,7 @@ targets:
       claim_analysis_model_name: healthcare.ml.claim_denial_analysis
       claim_analysis_model_alias: champion
       claim_analysis_endpoint_name: claim-denial-analysis
+      raw_landing_storage_location: gs://homeprojectabacus-etl-landing-monthhome/claimops-raw-landing/
   prod:
     mode: production
     workspace:
@@ -87,3 +91,4 @@ targets:
       vector_search_endpoint_name: healthcare_policy_vector_endpoint
       vector_search_index_name: healthcare.gold.policy_chunks_index
       vector_search_query_model_endpoint_name: databricks-gte-large-en
+      raw_landing_storage_location: gs://homeprojectabacus-etl-landing-monthhome/claimops-raw-landing/

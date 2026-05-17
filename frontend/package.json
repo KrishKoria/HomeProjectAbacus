@@ -14,6 +14,7 @@
   "dependencies": {
     "@base-ui/react": "^1.4.1",
     "@better-auth/drizzle-adapter": "^1.6.10",
+    "@google-cloud/storage": "^7.19.0",
     "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-query": "^5.100.9",
     "better-auth": "^1.6.10",

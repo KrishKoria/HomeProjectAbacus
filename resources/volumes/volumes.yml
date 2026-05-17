@@ -4,4 +4,5 @@ resources:
       catalog_name: ${var.catalog}
       schema_name: ${var.bronze_schema}
       name: raw_landing
-      volume_type: MANAGED
+      volume_type: EXTERNAL
+      storage_location: ${var.raw_landing_storage_location}

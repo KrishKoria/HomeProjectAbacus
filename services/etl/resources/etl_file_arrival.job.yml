@@ -4,6 +4,7 @@ resources:
       name: "[${bundle.target}] Healthcare ETL File Arrival"
 
       trigger:
+        pause_status: UNPAUSED
         file_arrival:
           url: /Volumes/healthcare/bronze/raw_landing/
           min_time_between_triggers_seconds: 300
