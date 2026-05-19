@@ -106,13 +106,13 @@ if str(_PROJECT_ROOT) not in sys.path:
 <claude-mem-context>
 # Memory Context
 
-# [homeprojectabacus] recent context, 2026-05-18 1:28am GMT+5:30
+# [homeprojectabacus] recent context, 2026-05-19 10:55pm GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (19,879t read) | 789,361t work | 97% savings
+Stats: 50 obs (20,133t read) | 828,513t work | 98% savings
 
 ### May 13, 2026
 1070 9:43p ⚖️ Deployment Architecture Migrated from Vercel to GCP Cloud Run
@@ -120,8 +120,6 @@ Stats: 50 obs (19,879t read) | 789,361t work | 97% savings
 1072 " ✅ Environment and Database Configuration Updated for GCP Cloud Run
 1073 " ✅ Next.js Configuration Updated for Container Deployment
 1074 " ✅ Project Documentation Aligned to GCP/ClaimOps Identity
-1075 " ✅ Architecture Documentation Migrated from Vercel to GCP Cloud Run Model
-1076 " ✅ Deployment Handbook Extended with GCP Cloud Run and Phase-2 Hardening Sections
 1077 9:45p 🟣 Cloud Build Pipeline Configured for GCP Cloud Run Deployment
 1078 " 🟣 Multi-Stage Dockerfile for Next.js Standalone Container
 1079 " 🟣 Database Connection Layer Refactored for Dual-Mode Operation
@@ -152,8 +150,6 @@ Stats: 50 obs (19,879t read) | 789,361t work | 97% savings
 1104 11:08p ✅ Consolidated GCP Cloud Build migrations step and optimized secret handling
 ### May 16, 2026
 1119 4:00p 🔵 Explored ETL data landing and storage architecture for upload feature planning
-S290 Verify prerequisites and deployment requirements for upload feature before Cloud Build frontend deploy (May 16, 5:58 PM)
-S291 Debug file arrival trigger failure in ETL pipeline — datasets uploaded via frontend should automatically trigger ETL file arrival job, but trigger is not firing (May 16, 6:02 PM)
 S292 Debug why file arrival trigger isn't automatically triggering ETL job when datasets are uploaded via frontend — identified trigger timing behavior and delays (May 16, 6:10 PM)
 S293 Continue implementation of five validated backend/frontend improvements to homeprojectabacus healthcare claims platform. Items cover: (1) Cloud SQL connection pool limits, (2) Query validation enums, (3) GCS metadata fields, (4) Upload status messaging, (5) Server-side CSV validation. (May 16, 6:11 PM)
 ### May 17, 2026
@@ -177,15 +173,20 @@ S297 Implementation of 10 feature additions to healthcare claims analysis platfo
 1133 12:41p 🟣 Upload/ingestion status dashboard implemented
 S298 Create comprehensive architecture diagram of ClaimOps project using imagegen skill, covering frontend, Databricks ETL, ML/RAG, and all system components (May 17, 12:59 PM)
 ### May 18, 2026
-S299 Create a comprehensive frontend architecture diagram for ClaimOps by exploring the Next.js codebase in depth, understanding how all components interact, and generating a visual diagram using imagegen skill (May 18, 1:12 AM)
-**Investigated**: Conducted exhaustive frontend codebase scan including: file structure (pages, API routes, components, libs), design context (PRODUCT.md, DESIGN.md, CONTEXT.md, frontend/CLAUDE.md), auth system (Better Auth + Google OAuth), database schema (Drizzle ORM with PostgreSQL/Neon), data fetching (React Query), styling system (Tailwind v4 + shadcn/ui), Databricks integration (OAuth, SQL warehouse, ML serving endpoints), upload system (GCS + signed policies), API routes (claims analysis, chat, sync, status), React components (AppShell, claims table, chat panel, risk score display, uploads), and deployment infrastructure (Dockerfile, Cloud Build config)
+S299 Create a comprehensive frontend architecture diagram for ClaimOps by exploring the Next.js codebase in depth, understanding how all components interact, and generating a visual diagram using imagegen skill (May 18, 12:57 AM)
+S300 Create comprehensive overall architecture diagram for the ClaimOps healthcare claims AI system by verifying entire project structure end-to-end (May 18, 1:12 AM)
+### May 19, 2026
+1145 10:43p ✅ Migrated database backend from Cloud SQL to Neon with baseline migration strategy
+1146 10:53p 🔵 Baseline migration script successfully detects and skips already-applied migrations
+S301 Migrate database backend from Google Cloud SQL to Neon PostgreSQL while fixing Cloud Build migration failures caused by missing Drizzle migration journal. (May 19, 10:53 PM)
+**Investigated**: Git diff showing cloudbuild.yaml and cloudbuild.migrations.yaml changes; migration build logs (bc0c1d89) confirming baseline detection working; Cloud Run service configuration showing old Cloud SQL annotation present; database query confirming 6 migrations baselined; TypeScript and ESLint configuration; docs/deployment.md and frontend/.env.example documenting current setup; previous memory entries from Tasks 2-4 establishing Cloud Run + Cloud SQL architecture context.
 
-**Learned**: ClaimOps frontend is a clinical diagnostic console: Next.js 15 + React 19 + TypeScript architecture using split-panel layout (62%/38%) for claim details with always-visible chat at ≥1024px. Data flows: PostgreSQL (auth/sessions via Better Auth + Drizzle) ↔ React Query (client state) ↔ API routes (Node.js) ↔ Databricks (ML analysis, SQL queries, LLM chat). Risk-sorted claims queue with filtering (High/Medium/Low, New/Reviewed/Actioned). Per-claim chat uses Databricks Llama 70B with claim context. Upload flow: client → GCS signed policy → server verification → Databricks Volume. Design: flat surfaces, semantic colors only (risk levels + status), typography-forward hierarchy, sharp corners, light mode, no decorative elements. Deployed via Cloud Run with Cloud SQL Proxy, secrets management via Google Secret Manager
+**Learned**: Baseline migration script successfully detects when drizzle.__drizzle_migrations table is already populated (log message: "Drizzle migration journal already populated; skipping baseline"). Cloud Run cloudsql-instances annotation cleared to empty string via --clear-cloudsql-instances flag. Neon uses pooled URLs for app runtime and direct connection URLs for Drizzle migrations. Migration journal baseline strategy prevents re-running already-applied migrations when switching database providers. Build system validates substitutions before execution starts.
 
-**Completed**: Full codebase exploration complete: 50+ files read spanning pages, API routes, components, libs, configs, and deployment infrastructure. Design/product context loaded and analyzed. Architecture mentally modeled across auth, data access, state management, UI layers, and external integrations
+**Completed**: Modified cloudbuild.yaml to use Neon secrets (neon-database-url runtime, neon-database-direct-url migrations) and added --clear-cloudsql-instances flag. Modified cloudbuild.migrations.yaml to remove Cloud SQL Auth Proxy setup and call baseline-drizzle-migrations.ts before drizzle-kit migrate. Created frontend/scripts/baseline-drizzle-migrations.ts: 234-line TypeScript script that detects existing schema, validates all expected tables/columns exist, refuses baselining if partial, populates drizzle.__drizzle_migrations with SHA256 hashes from migration journal. Updated docs/deployment.md to replace Cloud SQL setup with Neon pooled/direct URL guidance and removed sqladmin.googleapis.com API requirement. Updated frontend/README.md to reference Cloud Run + Neon instead of Cloud SQL. Verified: build 88aecb2c SUCCESS (2m50s), migration build bc0c1d89 SUCCESS with "migrations applied successfully!", Cloud Run revision homeprojectabacus-frontend-00013-cwd running with DATABASE_URL secret, database journal contains 6 migration rows, ESLint and TypeScript checks pass, /sign-in HTTP 200, /api/runtime/status HTTP 401 (auth required, expected).
 
-**Next Steps**: Generate frontend architecture diagram using imagegen skill that visualizes: (1) Browser UI layer with pages and components; (2) React state/data fetching (React Query + hooks); (3) API routes as middleware layer; (4) Server libs (Databricks client, SQL, auth, uploads); (5) External services (PostgreSQL, Databricks, GCS); (6) Data flow arrows between layers showing claim analysis, chat, uploads, sync workflows. Diagram should be 16:9 infographic, legible, showing component groups and key interactions without overwhelming detail
+**Next Steps**: Session appears complete; all verification steps passed and changes documented. Staged files awaiting git commit: cloudbuild.yaml, cloudbuild.migrations.yaml, frontend/scripts/baseline-drizzle-migrations.ts, docs/deployment.md, frontend/README.md.
 
 
-Access 789k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 829k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

@@ -3,7 +3,7 @@
 ## Target Topology
 
 - Frontend/BFF runtime: **Cloud Run**
-- App database: **Cloud SQL for PostgreSQL**
+- App database: **Neon PostgreSQL**
 - Secrets: **Secret Manager**
 - Build/deploy: **Cloud Build + Artifact Registry**
 - Data/ML/RAG backend: **Databricks on GCP**
@@ -15,33 +15,31 @@
    - `cloudbuild.googleapis.com`
    - `artifactregistry.googleapis.com`
    - `secretmanager.googleapis.com`
-   - `sqladmin.googleapis.com`
 2. Create Artifact Registry Docker repo.
-3. Create Cloud SQL PostgreSQL instance and database/user.
+3. Create Neon PostgreSQL database and record both connection strings:
+   - pooled URL for Cloud Run runtime: `neon-database-url`
+   - direct URL for Drizzle migrations: `neon-database-direct-url`
 4. Create Cloud Run runtime service account and grant:
    - `roles/secretmanager.secretAccessor`
-   - `roles/cloudsql.client`
 5. Create Secret Manager secrets for:
    - `BETTER_AUTH_SECRET`
    - `GOOGLE_CLIENT_ID`
    - `GOOGLE_CLIENT_SECRET`
-   - `DB_PASSWORD`
+   - `DATABASE_URL` using secret `neon-database-url`
+   - migration-only `DATABASE_URL` using secret `neon-database-direct-url`
    - `DATABRICKS_CLIENT_ID`
    - `DATABRICKS_CLIENT_SECRET`
    - `CLAIMOPS_ALLOWED_EMAIL_DOMAINS`
    - `CLAIMOPS_BOOTSTRAP_ADMIN_EMAILS`
 6. Grant the Cloud Build execution service account:
    - `roles/secretmanager.secretAccessor`
-   - `roles/cloudsql.client`
    - `roles/cloudbuild.builds.editor` if you want `cloudbuild.yaml` to launch `cloudbuild.migrations.yaml` as a child build
 
 ## 2) Environment Contract
 
 See [frontend/.env.example](/C:/Users/Krish/Desktop/projects/homeprojectabacus/frontend/.env.example).
 
-Runtime supports two DB modes:
-- **Local/dev mode**: `DATABASE_URL`
-- **Cloud Run mode**: `CLOUD_SQL_CONNECTION_NAME` + `DB_USER` + `DB_PASSWORD` + `DB_NAME` (+ optional `DB_PORT`)
+Runtime uses `DATABASE_URL`. Use the pooled Neon URL for Cloud Run and local app runtime. Use the direct Neon URL only for Drizzle migrations.
 
 ## 3) Build and Deploy
 
@@ -55,7 +53,7 @@ The pipeline will:
 1. Build `frontend/Dockerfile`
 2. Push image to Artifact Registry
 3. Deploy Cloud Run revision with:
-   - Cloud SQL instance attachment
+   - any old Cloud SQL attachment cleared
    - `--set-env-vars` for non-sensitive config
    - `--set-secrets` for sensitive config
 
@@ -65,7 +63,7 @@ Database migrations can still be run as a dedicated build when committed files u
 gcloud builds submit --config cloudbuild.migrations.yaml --region asia-south1 --project monthhome
 ```
 
-The migration pipeline connects to Cloud SQL through the Cloud SQL Auth Proxy, waits for proxy readiness with `cloud-sql-proxy wait`, and then applies committed Drizzle migrations with `bunx drizzle-kit migrate`.
+The migration pipeline reads `neon-database-direct-url` from Secret Manager, runs the guarded Drizzle baseline helper for Neon cutovers that already have tables but lack `drizzle.__drizzle_migrations` rows, and then applies committed Drizzle migrations with `bunx drizzle-kit migrate`.
 
 ## 3.1) GCS-backed ETL Uploads
 
@@ -96,7 +94,7 @@ If you want the main deploy to launch the migration build first, set `_RUN_DB_MI
 gcloud builds submit --config cloudbuild.yaml --region asia-south1 --project monthhome --substitutions=_RUN_DB_MIGRATIONS=true
 ```
 
-Cloud Build does not provide a native `include` or `import` feature for one build config to embed another. The `_RUN_DB_MIGRATIONS=true` path works by starting a nested child build with `gcloud builds submit --config cloudbuild.migrations.yaml .`, which resubmits the current workspace as build source before the Cloud Run deploy step is allowed to continue. If proxy startup fails, the build now fails at the `cloud-sql-proxy wait` timeout boundary instead of retry-loop TCP probe errors.
+Cloud Build does not provide a native `include` or `import` feature for one build config to embed another. The `_RUN_DB_MIGRATIONS=true` path works by starting a nested child build with `gcloud builds submit --config cloudbuild.migrations.yaml .`, which resubmits the current workspace as build source before the Cloud Run deploy step is allowed to continue.
 
 ## 4) OAuth Callback Configuration
 
@@ -135,7 +133,7 @@ uv run pytest -q tests/test_claim_analysis_serving.py tests/test_frontend_contra
 Operational checks:
 1. `GET /api/runtime/status` returns healthy Databricks dependencies.
 2. Sign in flow succeeds.
-3. Claim analysis API completes and persists status to Cloud SQL.
+3. Claim analysis API completes and persists status to Neon.
 
 ## 7) Rollback
 
